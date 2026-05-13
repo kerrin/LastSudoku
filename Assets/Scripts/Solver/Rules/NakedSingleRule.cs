@@ -46,14 +46,19 @@ namespace Sudoku.Solver.Rules
                     int value = cell.Candidates.First();
                     var change = new CellChange { Row = r, Column = c, OldValue = cell.Value, NewValue = value };
                     board.SetValue(cell, value);
-                    // remove candidate from peers
+                    result.Changes.Add(change);
+                    // remove candidate from peers — record removals as separate changes per peer
                     foreach (var peer in board.GetPeers(cell))
                     {
-                        if (peer.Candidates.Remove(value)) change.RemovedCandidates.Add(value);
+                        if (peer.Candidates.Remove(value))
+                        {
+                            var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                            peerChange.RemovedCandidates.Add(value);
+                            result.Changes.Add(peerChange);
+                        }
                     }
                     result.Applied = true;
                     result.Description = $"Placed {value} at ({r},{c}) via Naked Single";
-                    result.Changes.Add(change);
                     return result;
                 }
             }

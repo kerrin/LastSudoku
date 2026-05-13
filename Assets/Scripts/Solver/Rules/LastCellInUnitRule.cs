@@ -42,10 +42,18 @@ namespace Sudoku.Solver.Rules
                 if (missing == -1) return false;
                 var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
                 board.SetValue(empty, missing);
-                foreach (var peer in board.GetPeers(empty)) if (peer.Candidates.Remove(missing)) change.RemovedCandidates.Add(missing);
+                result.Changes.Add(change);
+                foreach (var peer in board.GetPeers(empty))
+                {
+                    if (peer.Candidates.Remove(missing))
+                    {
+                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                        peerChange.RemovedCandidates.Add(missing);
+                        result.Changes.Add(peerChange);
+                    }
+                }
                 result.Applied = true;
                 result.Description = $"Placed {missing} at ({empty.Row},{empty.Column}) via Last-Cell-In-Unit";
-                result.Changes.Add(change);
                 return true;
             }
 

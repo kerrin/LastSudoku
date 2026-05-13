@@ -83,13 +83,19 @@ namespace Sudoku.Solver.Rules
             var (cell, digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             board.SetValue(cell, digit);
+            r.Changes.Add(change);
             foreach (var peer in board.GetPeers(cell))
             {
-                if (peer.Candidates.Remove(digit)) change.RemovedCandidates.Add(digit);
+                if (peer.Candidates.Remove(digit))
+                {
+                    var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                    peerChange.RemovedCandidates.Add(digit);
+                    r.Changes.Add(peerChange);
+                }
             }
             r.Applied = true;
             r.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Missing Single";
-            r.Changes.Add(change);
+            
             return r;
         }
     }

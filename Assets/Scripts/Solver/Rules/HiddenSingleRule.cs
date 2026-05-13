@@ -72,13 +72,18 @@ namespace Sudoku.Solver.Rules
             var (cell, digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             board.SetValue(cell, digit);
+            result.Changes.Add(change);
             foreach (var peer in board.GetPeers(cell))
             {
-                if (peer.Candidates.Remove(digit)) change.RemovedCandidates.Add(digit);
+                if (peer.Candidates.Remove(digit))
+                {
+                    var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                    peerChange.RemovedCandidates.Add(digit);
+                    result.Changes.Add(peerChange);
+                }
             }
             result.Applied = true;
             result.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Hidden Single";
-            result.Changes.Add(change);
             return result;
         }
     }

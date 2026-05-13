@@ -107,3 +107,10 @@ InitTestScene*.unity*
 
 # Project Settings
 .claude/
+
+# Editor and OS files
+.vscode/
+.idea/
+*.iml
+.DS_Store
+Thumbs.db
