@@ -2,9 +2,9 @@ using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
-namespace Sudoku.Tests.Editor.Solver
+namespace Sudoku.Tests.Editor
 {
-    public class RightAngleTests
+    public class StrongLinkIntersectionRuleTests
     {
         [Test]
         public void RightAngle_RemovesCandidateSeeingBothEndpoints()
@@ -28,7 +28,7 @@ namespace Sudoku.Tests.Editor.Solver
             board.Cells[1, 2].Candidates.Clear(); board.Cells[1, 2].Candidates.Add(d);
 
             var registry = new RuleRegistry();
-            registry.Register(new RightAngleRule());
+            registry.Register(new StrongLinkIntersectionRule());
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);

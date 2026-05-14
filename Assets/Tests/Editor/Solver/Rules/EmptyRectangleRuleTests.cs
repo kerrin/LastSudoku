@@ -2,9 +2,9 @@ using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
-namespace Sudoku.Tests.Editor.Solver
+namespace Sudoku.Tests.Editor
 {
-    public class EmptyRectangleTests
+    public class EmptyRectangleRuleTests
     {
         [Test]
         public void EmptyRectangle_RemovesCandidateOutsideBox()

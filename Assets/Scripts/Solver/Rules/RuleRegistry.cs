@@ -38,6 +38,8 @@ namespace Sudoku.Solver.Rules
             Register(new MissingSingleRule());
             Register(new EmptyRectangleRule());
             Register(new SkyscraperRule());
+            Register(new StrongLinkIntersectionRule());
+            // Register the Right Angle rule (forced placements based on 3-corner pattern)
             Register(new RightAngleRule());
         }
 

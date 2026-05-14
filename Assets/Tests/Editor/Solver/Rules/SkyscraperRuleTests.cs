@@ -2,9 +2,9 @@ using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
-namespace Sudoku.Tests.Editor.Solver
+namespace Sudoku.Tests.Editor
 {
-    public class SkyscraperTests
+    public class SkyscraperRuleTests
     {
         [Test]
         public void Skyscraper_RemovesCandidateSeeingBothEndpoints()
