@@ -92,17 +92,21 @@ namespace Sudoku.Solver
                 }
             }
 
-            // draw heavier box lines for 3x3 boundaries if typical 9x9
+            // draw heavier box lines for box boundaries (guard against zero box sizes)
             HandlesBeginGUI();
             float lineWidth = Mathf.Max(2f, CellSize / 8f);
+            int boxW = board.BoxWidth;
+            int boxH = board.BoxHeight;
             for (int i = 0; i <= size; i++)
             {
                 float px = x0 + i * CellSize;
                 float py = y0 + i * CellSize;
                 // vertical
-                DrawLine(new Vector2(px, y0), new Vector2(px, y0 + size * CellSize), (i % (board.BoxWidth) == 0) ? lineWidth : 1f);
+                bool thickV = boxW > 0 && (i % boxW == 0);
+                DrawLine(new Vector2(px, y0), new Vector2(px, y0 + size * CellSize), thickV ? lineWidth : 1f);
                 // horizontal
-                DrawLine(new Vector2(x0, py), new Vector2(x0 + size * CellSize, py), (i % (board.BoxHeight) == 0) ? lineWidth : 1f);
+                bool thickH = boxH > 0 && (i % boxH == 0);
+                DrawLine(new Vector2(x0, py), new Vector2(x0 + size * CellSize, py), thickH ? lineWidth : 1f);
             }
             HandlesEndGUI();
         }
