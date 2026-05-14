@@ -23,39 +23,8 @@ namespace Sudoku.Solver.Rules
             {
                 for (int b = 0; b < size; b++)
                 {
-                    var cells = new List<Cell>();
-                    foreach (Cell cell in board.GetBox(b))
-                    {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
-                    }
-                    if (cells.Count == 0) continue;
-
-                    // all in same row?
-                    bool sameRow = true;
-                    int row = cells[0].Row;
-                    foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
-                    if (sameRow)
-                    {
-                        // any candidate in that row outside the box?
-                        foreach (Cell rc in board.GetRow(row))
-                        {
-                            if (rc.Box == b) continue;
-                            if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) return true;
-                        }
-                    }
-
-                    // all in same column?
-                    bool sameCol = true;
-                    int col = cells[0].Column;
-                    foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
-                    if (sameCol)
-                    {
-                        foreach (Cell cc in board.GetColumn(col))
-                        {
-                            if (cc.Box == b) continue;
-                            if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) return true;
-                        }
-                    }
+                    var info = FindElimination(board, digit, b);
+                    if (info != null && info.Targets.Count > 0) return true;
                 }
             }
             return false;
@@ -69,83 +38,95 @@ namespace Sudoku.Solver.Rules
             {
                 for (int b = 0; b < size; b++)
                 {
-                    var cells = new List<Cell>();
-                    foreach (Cell cell in board.GetBox(b))
-                    {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
-                    }
-                    if (cells.Count == 0) continue;
+                    var info = FindElimination(board, digit, b);
+                    if (info == null || info.Targets.Count == 0) continue;
 
-                    // row-based elimination
-                    bool sameRow = true;
-                    int row = cells[0].Row;
-                    foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
-                    if (sameRow)
+                    // record used cells
+                    foreach (Cell used in info.Used)
                     {
-                        // mark the candidate cells inside the box as used for deduction
-                        foreach (Cell used in cells)
+                        if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
+                            result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
+                    }
+
+                    bool applied = false;
+                    foreach (Cell target in info.Targets)
+                    {
+                        if (!target.Value.HasValue && target.Candidates.Remove(digit))
                         {
-                            if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
-                                result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
-                        }
-                        bool applied = false;
-                        foreach (Cell rc in board.GetRow(row))
-                        {
-                            if (rc.Box == b) continue;
-                            if (!rc.Value.HasValue && rc.Candidates.Remove(digit))
-                            {
-                                var change = new CellChange { Row = rc.Row, Column = rc.Column };
-                                change.RemovedCandidates.Add(digit);
-                                result.Changes.Add(change);
-                                if (!result.UsedCells.Exists(u => u.Row == rc.Row && u.Column == rc.Column))
-                                    result.UsedCells.Add(new UsedCell { Row = rc.Row, Column = rc.Column });
-                                applied = true;
-                            }
-                        }
-                        if (applied)
-                        {
-                            result.Applied = true;
-                            result.Description = $"Removed {digit} from row {row} outside box {b} via Empty Rectangle";
-                            return result;
+                            var change = new CellChange { Row = target.Row, Column = target.Column };
+                            change.RemovedCandidates.Add(digit);
+                            result.Changes.Add(change);
+                            if (!result.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column))
+                                result.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column });
+                            applied = true;
                         }
                     }
 
-                    // column-based elimination
-                    bool sameCol = true;
-                    int col = cells[0].Column;
-                    foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
-                    if (sameCol)
+                    if (applied)
                     {
-                        foreach (Cell used in cells)
-                        {
-                            if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
-                                result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
-                        }
-                        bool applied = false;
-                        foreach (Cell cc in board.GetColumn(col))
-                        {
-                            if (cc.Box == b) continue;
-                            if (!cc.Value.HasValue && cc.Candidates.Remove(digit))
-                            {
-                                var change = new CellChange { Row = cc.Row, Column = cc.Column };
-                                change.RemovedCandidates.Add(digit);
-                                result.Changes.Add(change);
-                                if (!result.UsedCells.Exists(u => u.Row == cc.Row && u.Column == cc.Column))
-                                    result.UsedCells.Add(new UsedCell { Row = cc.Row, Column = cc.Column });
-                                applied = true;
-                            }
-                        }
-                        if (applied)
-                        {
-                            result.Applied = true;
-                            result.Description = $"Removed {digit} from column {col} outside box {b} via Empty Rectangle";
-                            return result;
-                        }
+                        result.Applied = true;
+                        result.Description = info.Description;
+                        return result;
                     }
                 }
             }
             result.Applied = false;
             return result;
+        }
+
+        private class ElimInfo
+        {
+            public List<Cell> Used = new List<Cell>();
+            public List<Cell> Targets = new List<Cell>();
+            public string Description;
+        }
+
+        private ElimInfo FindElimination(Board board, int digit, int boxIndex)
+        {
+            var cells = new List<Cell>();
+            foreach (Cell cell in board.GetBox(boxIndex))
+            {
+                if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
+            }
+            if (cells.Count == 0) return null;
+
+            // all in same row?
+            bool sameRow = true;
+            int row = cells[0].Row;
+            foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
+            if (sameRow)
+            {
+                var targets = new List<Cell>();
+                foreach (Cell rc in board.GetRow(row))
+                {
+                    if (rc.Box == boxIndex) continue;
+                    if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) targets.Add(rc);
+                }
+                if (targets.Count > 0)
+                {
+                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from row {row} outside box {boxIndex} via Empty Rectangle" };
+                }
+            }
+
+            // all in same column?
+            bool sameCol = true;
+            int col = cells[0].Column;
+            foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
+            if (sameCol)
+            {
+                var targets = new List<Cell>();
+                foreach (Cell cc in board.GetColumn(col))
+                {
+                    if (cc.Box == boxIndex) continue;
+                    if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) targets.Add(cc);
+                }
+                if (targets.Count > 0)
+                {
+                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from column {col} outside box {boxIndex} via Empty Rectangle" };
+                }
+            }
+
+            return null;
         }
 
         public bool UpdateCandidates(Board board)
