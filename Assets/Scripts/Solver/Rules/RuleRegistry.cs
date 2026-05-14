@@ -30,9 +30,19 @@ namespace Sudoku.Solver.Rules
         /**
          * Helper that registers a sensible minimal set of rules.
          */
+        public void RegisterDefaults()
+        {
+            RegisterMinimal();
+            RegisterMedium();
+            RegisterAdvanced();
+        }
+
+        /**
+         * Register the minimal set of rules required for basic solving.
+         * Tests expect this to register 4 rules.
+         */
         public void RegisterMinimal()
         {
-            // Minimal sensible default set used by core solver/tests
             Register(new NakedSingleRule());
             Register(new HiddenSingleRule());
             Register(new LastCellInUnitRule());
@@ -40,21 +50,22 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Helper that registers a sensible set of rules for medium difficulty.
+         * Register medium-difficulty candidate elimination rules.
+         * Tests expect this to register 3 rules.
          */
         public void RegisterMedium()
         {
-            Register(new RightAngleRule());
-            Register(new SkyscraperRule());
             Register(new EmptyRectangleRule());
+            Register(new SkyscraperRule());
+            Register(new RightAngleRule());
         }
 
         /**
-         * Helper that registers a sensible set of rules for advanced difficulty.
+         * Register advanced rules. Currently none are enabled.
          */
         public void RegisterAdvanced()
         {
-            
+            // Intentionally empty for now
         }
 
         /**

@@ -5,9 +5,8 @@ using Sudoku.Solver.Rules;
 namespace Sudoku.Tests.Editor
 {
     public class RightAngleRuleTests
-    {
+        {
         [Test]
-        [NUnit.Framework.Ignore("Disabled: StrongLinkIntersectionRule unstable; disabled by request")]
         public void RightAngle_RemovesCandidateSeeingBothEndpoints()
         {
             var board = new Board(9, 3, 3);
@@ -29,7 +28,7 @@ namespace Sudoku.Tests.Editor
             board.Cells[1, 2].Candidates.Clear(); board.Cells[1, 2].Candidates.Add(d);
 
             var registry = new RuleRegistry();
-            registry.Register(new StrongLinkIntersectionRule());
+            registry.Register(new RightAngleRule());
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);

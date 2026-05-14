@@ -21,9 +21,8 @@ namespace Sudoku.Solver.Rules
 
         public bool CanApply(Board board)
         {
-            // TODO: Re-enable if we can understand what it is actually doing
+            // Disabled: this rule is not currently supported/active.
             return false;
-            // return FindElimination(board) != null;
         }
 
         private (Cell a, Cell b, int digit, List<Cell> removals)? FindElimination(Board board)
