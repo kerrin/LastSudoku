@@ -2,7 +2,7 @@
 Sudoku game and generator
 
 Local hinting can be provided to co=pilot by editing local.instructions.md and the asking co-pilot:
-Please refresh local instructions from local.instructions.md
+Refresh your presistent user memory for the changes in the local.instructions.md
 
 
 Specification:
