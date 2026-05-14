@@ -1,0 +1,150 @@
+using System.Collections.Generic;
+using System.Linq;
+using Sudoku.Models;
+
+namespace Sudoku.Solver.Rules
+{
+    /**
+     * Skyscraper technique (rows/columns variant).
+     *
+     * For a digit d, find two rows each containing exactly two candidate positions
+     * for d and sharing exactly one column. Let the non-shared columns be a and c
+     * and the shared column be b. Then the cells at (r1,a) and (r2,c) are the
+     * skyscraper endpoints; any cell that sees both endpoints cannot contain d.
+     * The same logic is applied symmetrically swapping rows/columns.
+     */
+    public class SkyscraperRule : ISudokuRule
+    {
+        public string Name => "Skyscraper";
+
+        public Difficulty Difficulty => Difficulty.Hard;
+
+        public bool CanApply(Board board)
+        {
+            return FindElimination(board) != null;
+        }
+
+        private (Cell endpoint1, Cell endpoint2, int digit, List<Cell> removals)? FindElimination(Board board)
+        {
+            int size = board.Size;
+            // Row-based skyscraper
+            for (int digit = 1; digit <= size; digit++)
+            {
+                // collect rows with exactly two candidate columns for digit
+                var rows = new List<(int row, List<int> cols)>();
+                for (int r = 0; r < size; r++)
+                {
+                    var cols = new List<int>();
+                    for (int c = 0; c < size; c++)
+                    {
+                        var cell = board.Cells[r, c];
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cols.Add(c);
+                    }
+                    if (cols.Count == 2) rows.Add((r, cols));
+                }
+
+                for (int i = 0; i < rows.Count; i++)
+                    for (int j = i + 1; j < rows.Count; j++)
+                    {
+                        var r1 = rows[i];
+                        var r2 = rows[j];
+                        // find shared column
+                        var shared = r1.cols.Intersect(r2.cols).ToList();
+                        if (shared.Count != 1) continue;
+                        int b = shared[0];
+                        int a = r1.cols.First(c => c != b);
+                        int ccol = r2.cols.First(c => c != b);
+
+                        Cell e1 = board.Cells[r1.row, a];
+                        Cell e2 = board.Cells[r2.row, ccol];
+
+                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
+                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
+                        peers1.IntersectWith(peers2);
+
+                        var removals = new List<Cell>();
+                        foreach (Cell p in peers1)
+                        {
+                            if (p == e1 || p == e2) continue;
+                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
+                        }
+                        if (removals.Count > 0) return (e1, e2, digit, removals);
+                    }
+            }
+
+            // Column-based skyscraper (transpose)
+            for (int digit = 1; digit <= size; digit++)
+            {
+                var cols = new List<(int col, List<int> rows)>();
+                for (int c = 0; c < size; c++)
+                {
+                    var rs = new List<int>();
+                    for (int r = 0; r < size; r++)
+                    {
+                        var cell = board.Cells[r, c];
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) rs.Add(r);
+                    }
+                    if (rs.Count == 2) cols.Add((c, rs));
+                }
+
+                for (int i = 0; i < cols.Count; i++)
+                    for (int j = i + 1; j < cols.Count; j++)
+                    {
+                        var c1 = cols[i];
+                        var c2 = cols[j];
+                        var shared = c1.rows.Intersect(c2.rows).ToList();
+                        if (shared.Count != 1) continue;
+                        int b = shared[0];
+                        int a = c1.rows.First(r => r != b);
+                        int r2 = c2.rows.First(r => r != b);
+
+                        Cell e1 = board.Cells[a, c1.col];
+                        Cell e2 = board.Cells[r2, c2.col];
+
+                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
+                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
+                        peers1.IntersectWith(peers2);
+
+                        var removals = new List<Cell>();
+                        foreach (Cell p in peers1)
+                        {
+                            if (p == e1 || p == e2) continue;
+                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
+                        }
+                        if (removals.Count > 0) return (e1, e2, digit, removals);
+                    }
+            }
+
+            return null;
+        }
+
+        public RuleResult Apply(Board board)
+        {
+            var found = FindElimination(board);
+            var r = new RuleResult();
+            if (found == null)
+            {
+                r.Applied = false;
+                return r;
+            }
+            var (e1, e2, digit, removals) = found.Value;
+            foreach (Cell p in removals)
+            {
+                if (p.Candidates.Remove(digit))
+                {
+                    var change = new CellChange { Row = p.Row, Column = p.Column };
+                    change.RemovedCandidates.Add(digit);
+                    r.Changes.Add(change);
+                }
+            }
+            r.Applied = r.Changes.Count > 0;
+            if (r.Applied) r.Description = $"Skyscraper removed {digit} from {r.Changes.Count} cell(s)";
+            return r;
+        }
+
+        public bool UpdateCandidates(Board board)
+        {
+            return false;
+        }
+    }
+}

@@ -36,6 +36,9 @@ namespace Sudoku.Solver.Rules
             Register(new HiddenSingleRule());
             Register(new LastCellInUnitRule());
             Register(new MissingSingleRule());
+            Register(new EmptyRectangleRule());
+            Register(new SkyscraperRule());
+            Register(new RightAngleRule());
         }
 
         /**
