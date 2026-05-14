@@ -4,10 +4,10 @@ using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
 {
-    /// <summary>
-    /// Lightweight solver engine that uses a <see cref="RuleRegistry"/> to
-    /// iteratively apply techniques until the puzzle is solved or no progress is made.
-    /// </summary>
+    /**
+     * Lightweight solver engine that uses a <see cref="RuleRegistry"/> to
+     * iteratively apply techniques until the puzzle is solved or no progress is made.
+     */
     public class SolverEngine
     {
         public RuleRegistry Registry { get; }
@@ -18,11 +18,11 @@ namespace Sudoku.Solver
             if (registry == null) Registry.RegisterDefaults();
         }
 
-        /// <summary>
-        /// Attempt to solve the board by repeatedly applying registered rules.
-        /// Returns true if the board is fully solved after the run; also returns
-        /// the list of steps that were performed.
-        /// </summary>
+        /**
+         * Attempt to solve the board by repeatedly applying registered rules.
+         * Returns true if the board is fully solved after the run; also returns
+         * the list of steps that were performed.
+         */
         public bool Solve(Board board, int maxSteps, out List<(ISudokuRule rule, RuleResult result)> steps)
         {
             steps = Registry.ApplyAll(board, maxSteps);
@@ -37,9 +37,9 @@ namespace Sudoku.Solver
             return true;
         }
 
-        /// <summary>
-        /// Convenience overload with a default step limit.
-        /// </summary>
+        /**
+         * Convenience overload with a default step limit.
+         */
         public bool Solve(Board board, out List<(ISudokuRule rule, RuleResult result)> steps)
         {
             return Solve(board, 1000, out steps);

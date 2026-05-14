@@ -4,10 +4,10 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// If a row, column or box contains exactly one unsolved cell, place
-    /// the missing digit into that cell.
-    /// </summary>
+    /**
+     * If a row, column or box contains exactly one unsolved cell, place
+     * the missing digit into that cell.
+     */
     public class LastCellInUnitRule : ISudokuRule
     {
         public string Name => "Last Cell In Unit";
@@ -16,7 +16,7 @@ namespace Sudoku.Solver.Rules
 
         public bool CanApply(Board board)
         {
-            // returns true if any unit has exactly one empty cell
+            /** returns true if any unit has exactly one empty cell */
             int size = board.Size;
             for (int r = 0; r < size; r++) if (board.GetRow(r).Count(c => !c.Value.HasValue) == 1) return true;
             for (int c = 0; c < size; c++) if (board.GetColumn(c).Count(cell => !cell.Value.HasValue) == 1) return true;
@@ -29,13 +29,13 @@ namespace Sudoku.Solver.Rules
             var result = new RuleResult();
             int size = board.Size;
 
-            // helper to handle a unit
+            /** helper to handle a unit */
             bool HandleUnit(IEnumerable<Cell> unit)
             {
                 var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
                 if (empties.Count != 1) return false;
                 Cell empty = empties[0];
-                // find missing digit
+                /** find missing digit */
                 var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
                 int missing = -1;
                 for (int d = 1; d <= size; d++) if (!present.Contains(d)) { missing = d; break; }
@@ -57,11 +57,11 @@ namespace Sudoku.Solver.Rules
                 return true;
             }
 
-            // rows
+            /** rows */
             for (int r = 0; r < size; r++) if (HandleUnit(board.GetRow(r))) return result;
-            // columns
+            /** columns */
             for (int c = 0; c < size; c++) if (HandleUnit(board.GetColumn(c))) return result;
-            // boxes
+            /** boxes */
             for (int b = 0; b < size; b++) if (HandleUnit(board.GetBox(b))) return result;
 
             result.Applied = false;

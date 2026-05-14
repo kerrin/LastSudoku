@@ -2,40 +2,38 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Interface describing a single solving rule/technique that can be
-    /// applied to a <see cref="Board"/> instance.
-    /// </summary>
+    /**
+     * Interface describing a single solving rule/technique that can be
+     * applied to a <see cref="Board"/> instance.
+     */
     public interface ISudokuRule
     {
-        /// <summary>
-        /// Human-friendly rule name.
-        /// </summary>
+        /** Human-friendly rule name. */
         string Name { get; }
 
-        /// <summary>
-        /// Update candidate sets on the provided <paramref name="board"/> where
-        /// candidates can be eliminated without assigning values. Return true if
-        /// any candidate set was changed.
-        /// </summary>
+        /**
+         * Update candidate sets on the provided <paramref name="board"/> where
+         * candidates can be eliminated without assigning values. Return true if
+         * any candidate set was changed.
+         */
         bool UpdateCandidates(Board board);
 
-        /// <summary>
-        /// Return true if this rule is applicable to the given <paramref name="board"/>.
-        /// </summary>
-        /// <param name="board">The puzzle board to inspect.</param>
+        /**
+         * Return true if this rule is applicable to the given <paramref name="board"/>.
+         * @param board The puzzle board to inspect.
+         */
         bool CanApply(Board board);
 
-        /// <summary>
-        /// Apply the rule to the <paramref name="board"/>. Returns a <see cref="RuleResult"/>
-        /// describing any changes made (or not made).
-        /// </summary>
+        /**
+         * Apply the rule to the <paramref name="board"/>. Returns a <see cref="RuleResult"/>
+         * describing any changes made (or not made).
+         */
         RuleResult Apply(Board board);
 
-        /// <summary>
-        /// Difficulty classification for the rule (used for rating puzzles or choosing
-        /// which techniques to run).
-        /// </summary>
+        /**
+         * Difficulty classification for the rule (used for rating puzzles or choosing
+         * which techniques to run).
+         */
         Difficulty Difficulty { get; }
     }
 }

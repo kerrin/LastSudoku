@@ -19,7 +19,7 @@ namespace Sudoku.Models
 
         public Board() { }
 
-        // Construct a board with dimensions and allocate the cell grid.
+        /** Construct a board with dimensions and allocate the cell grid. */
         public Board(int size, int boxWidth, int boxHeight)
         {
             // Basic sanitization to avoid zero/invalid box sizes which can

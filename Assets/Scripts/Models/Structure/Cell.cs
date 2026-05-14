@@ -39,7 +39,7 @@ namespace Sudoku.Models
 
         public Cell() { }
 
-        // Convenience constructor to initialize position and optional value.
+        /** Convenience constructor to initialize position and optional value. */
         public Cell(int row, int column, int? value = null, bool isGiven = false)
         {
             Row = row;
@@ -53,13 +53,13 @@ namespace Sudoku.Models
             }
         }
 
-        // Compute the 0-based box index for a standard 3x3 box layout.
+        /** Compute the 0-based box index for a standard 3x3 box layout. */
         public static int ComputeBox(int row, int column)
         {
             return (row / 3) * 3 + (column / 3);
         }
 
-        // Produce a shallow clone of the cell (candidates are copied).
+        /** Produce a shallow clone of the cell (candidates are copied). */
         public Cell Clone()
         {
             var c = new Cell

@@ -1,8 +1,8 @@
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Rough difficulty categories used to rate rules/techniques.
-    /// </summary>
+    /**
+     * Rough difficulty categories used to rate rules/techniques.
+     */
     public enum Difficulty
     {
         Easy,

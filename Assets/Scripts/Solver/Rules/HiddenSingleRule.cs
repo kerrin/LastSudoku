@@ -3,11 +3,11 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Hidden Single (also called Single Position) — for a given digit in a unit
-    /// (row/column/box), if only one cell can contain that digit according to candidates,
-    /// place it there.
-    /// </summary>
+    /**
+     * Hidden Single (also called Single Position) — for a given digit in a unit
+     * (row/column/box), if only one cell can contain that digit according to candidates,
+     * place it there.
+     */
     public class HiddenSingleRule : ISudokuRule
     {
         public string Name => "Hidden Single";

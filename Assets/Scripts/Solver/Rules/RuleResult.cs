@@ -3,40 +3,40 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Describes a single change made to a cell by a rule application.
-    /// </summary>
+    /**
+     * Describes a single change made to a cell by a rule application.
+     */
     public class CellChange
     {
-        /// <summary>Zero-based row index.</summary>
+        /** Zero-based row index. */
         public int Row;
 
-        /// <summary>Zero-based column index.</summary>
+        /** Zero-based column index. */
         public int Column;
 
-        /// <summary>Previous value (null if empty).</summary>
+        /** Previous value (null if empty). */
         public int? OldValue;
 
-        /// <summary>New value assigned by the rule (null if none).</summary>
+        /** New value assigned by the rule (null if none). */
         public int? NewValue;
 
-        /// <summary>Candidate digits removed from the cell as part of the change.</summary>
+        /** Candidate digits removed from the cell as part of the change. */
         public List<int> RemovedCandidates = new List<int>();
     }
 
-    /// <summary>
-    /// Result returned by an <see cref="ISudokuRule"/> after attempting to apply it.
-    /// Contains whether the rule was applied, a short description, and any cell changes.
-    /// </summary>
+    /**
+     * Result returned by an <see cref="ISudokuRule"/> after attempting to apply it.
+     * Contains whether the rule was applied, a short description, and any cell changes.
+     */
     public class RuleResult
     {
-        /// <summary>True when the rule made at least one change to the board.</summary>
+        /** True when the rule made at least one change to the board. */
         public bool Applied;
 
-        /// <summary>Short human-readable description of the change.</summary>
+        /** Short human-readable description of the change. */
         public string Description;
 
-        /// <summary>List of changes performed by the rule.</summary>
+        /** List of changes performed by the rule. */
         public List<CellChange> Changes = new List<CellChange>();
     }
 }

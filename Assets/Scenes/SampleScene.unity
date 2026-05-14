@@ -258,15 +258,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Sudoku.Solver.SolverRunner
   PuzzleRows:
-  - 53..7....
-  - 6..195...
-  - .98....6.
-  - 8...6...3
-  - 4..8.3..1
-  - 7...2...6
-  - .6....28.
-  - ...419..5
-  - ....8..79
+  - 8...7....
+  - .753.8...
+  - 6.9.1....
+  - .....14.8
+  - .........
+  - ..7...3.2
+  - 24....5..
+  - 9..4.76..
+  - ....36...
 --- !u!4 &1402721394
 Transform:
   m_ObjectHideFlags: 0

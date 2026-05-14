@@ -4,21 +4,21 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Implements the Naked Single technique: when a cell has exactly one candidate
-    /// it must be that digit.
-    /// </summary>
+    /**
+     * Implements the Naked Single technique: when a cell has exactly one candidate
+     * it must be that digit.
+     */
     public class NakedSingleRule : ISudokuRule
     {
-        /// <summary>Rule display name.</summary>
+        /** Rule display name. */
         public string Name => "Naked Single";
 
-        /// <summary>Difficulty classification for this rule.</summary>
+        /** Difficulty classification for this rule. */
         public Difficulty Difficulty => Difficulty.Easy;
 
-        /// <summary>
-        /// Quick check to see if any cell has exactly one candidate.
-        /// </summary>
+        /**
+         * Quick check to see if any cell has exactly one candidate.
+         */
         public bool CanApply(Board board)
         {
             for (int r = 0; r < board.Size; r++)
@@ -30,10 +30,10 @@ namespace Sudoku.Solver.Rules
             return false;
         }
 
-        /// <summary>
-        /// Apply the first naked-single found: set the cell and remove the digit
-        /// from all peers' candidate sets.
-        /// </summary>
+        /**
+         * Apply the first naked-single found: set the cell and remove the digit
+         * from all peers' candidate sets.
+         */
         public RuleResult Apply(Board board)
         {
             var result = new RuleResult();

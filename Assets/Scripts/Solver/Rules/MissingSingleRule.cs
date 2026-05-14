@@ -4,34 +4,34 @@ using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
-    /// <summary>
-    /// Also called "Single Position" — when a digit can only occupy one cell
-    /// within a unit (row, column, or box), it must be placed there.
-    /// </summary>
+    /**
+     * Also called "Single Position" — when a digit can only occupy one cell
+     * within a unit (row, column, or box), it must be placed there.
+     */
     public class MissingSingleRule : ISudokuRule
     {
-        /// <summary>Rule display name.</summary>
+        /** Rule display name. */
         public string Name => "Missing Single";
 
-        /// <summary>Difficulty classification for this rule.</summary>
+        /** Difficulty classification for this rule. */
         public Difficulty Difficulty => Difficulty.Easy;
 
-        /// <summary>Return true if any unit contains a digit that has only one candidate position.</summary>
+        /** Return true if any unit contains a digit that has only one candidate position. */
         public bool CanApply(Board board)
         {
             return FindAny(board) != null;
         }
 
-        /// <summary>
-        /// Find the first (cell,digit) pair where the digit is the only candidate
-        /// within its row, column, or box. Returns null when none found.
-        /// </summary>
+        /**
+         * Find the first (cell,digit) pair where the digit is the only candidate
+         * within its row, column, or box. Returns null when none found.
+         */
         private (Cell cell, int digit)? FindAny(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
             {
-                // rows
+                /** rows */
                 for (int r = 0; r < size; r++)
                 {
                     var candidates = new List<Cell>();
@@ -42,7 +42,7 @@ namespace Sudoku.Solver.Rules
                     if (candidates.Count == 1) return (candidates[0], digit);
                 }
 
-                // columns
+                /** columns */
                 for (int c = 0; c < size; c++)
                 {
                     var candidates = new List<Cell>();
@@ -53,7 +53,7 @@ namespace Sudoku.Solver.Rules
                     if (candidates.Count == 1) return (candidates[0], digit);
                 }
 
-                // boxes
+                /** boxes */
                 for (int b = 0; b < size; b++)
                 {
                     var candidates = new List<Cell>();
@@ -67,10 +67,10 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        /// <summary>
-        /// Apply the Missing Single found by <see cref="FindAny"/>: set the digit
-        /// into the located cell and remove it from peer candidates.
-        /// </summary>
+        /**
+         * Apply the Missing Single found by <see cref="FindAny"/>: set the digit
+         * into the located cell and remove it from peer candidates.
+         */
         public RuleResult Apply(Board board)
         {
             var r = new RuleResult();

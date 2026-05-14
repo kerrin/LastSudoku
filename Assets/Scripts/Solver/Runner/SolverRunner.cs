@@ -5,11 +5,11 @@ using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
 {
-    /// <summary>
-    /// Temporary Simple Unity runner component to load a 9x9 puzzle from inspector rows
-    /// and execute the registered rule engine. Use the context menu to run steps.
-    /// Just used for testing.
-    /// </summary>
+    /**
+     * Temporary Simple Unity runner component to load a 9x9 puzzle from inspector rows
+     * and execute the registered rule engine. Use the context menu to run steps.
+     * Just used for testing.
+     */
     public class SolverRunner : MonoBehaviour
     {
         [Tooltip("Provide 9 strings each with 9 characters (digits 1-9 or . for empty)")]
@@ -20,19 +20,19 @@ namespace Sudoku.Solver
 
         private Board _board;
 
-        /// <summary>
-        /// Expose the currently loaded board (may be null until loaded).
-        /// </summary>
+        /**
+         * Expose the currently loaded board (may be null until loaded).
+         */
         public Board CurrentBoard => _board;
 
-        /// <summary>
-        /// Last rule that was applied via the runner (null when none).
-        /// </summary>
+        /**
+         * Last rule that was applied via the runner (null when none).
+         */
         public Sudoku.Solver.Rules.ISudokuRule LastAppliedRule { get; private set; }
 
-        /// <summary>
-        /// Result of the last rule application (null when none or not applied).
-        /// </summary>
+        /**
+         * Result of the last rule application (null when none or not applied).
+         */
         public Sudoku.Solver.Rules.RuleResult LastRuleResult { get; private set; }
 
         private void Awake()
@@ -50,9 +50,9 @@ namespace Sudoku.Solver
             if (Engine == null) Engine = new SolverEngine(Registry);
         }
 
-        /// <summary>
-        /// Parse the `PuzzleRows` into a standard 9x9 Board. Logs errors if format invalid.
-        /// </summary>
+        /**
+         * Parse the `PuzzleRows` into a standard 9x9 Board. Logs errors if format invalid.
+         */
         [ContextMenu("Load Board From Rows")]
         public void LoadBoardFromRows()
         {

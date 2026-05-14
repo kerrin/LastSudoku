@@ -5,10 +5,10 @@ using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
 {
-    /// <summary>
-    /// Simple Game-view visualizer for a `Board` instance provided by a `SolverRunner`.
-    /// Draws the grid and cell values/candidates using IMGUI in `OnGUI`.
-    /// </summary>
+    /**
+     * Simple Game-view visualizer for a `Board` instance provided by a `SolverRunner`.
+     * Draws the grid and cell values/candidates using IMGUI in `OnGUI`.
+     */
     [ExecuteInEditMode]
     public class BoardVisualizer : MonoBehaviour
     {
@@ -128,7 +128,7 @@ namespace Sudoku.Solver
             }
         }
 
-        // Minimal wrapper for drawing lines using GL via Handles style when in OnGUI.
+        /** Minimal wrapper for drawing lines using GL via Handles style when in OnGUI. */
         private void HandlesBeginGUI()
         {
             // nothing for now - reserved for future GL calls
