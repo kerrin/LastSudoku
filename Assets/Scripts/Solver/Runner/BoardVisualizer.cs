@@ -29,8 +29,9 @@ namespace Sudoku.Solver
         private void EnsureStyles()
         {
             if (_centerStyle != null) return;
-            _centerStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, CellSize / 2) };
-            _candidateStyle = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.Max(8, CellSize / 4) };
+            var baseLabel = GUI.skin != null ? GUI.skin.label : new GUIStyle();
+            _centerStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, CellSize / 2) };
+            _candidateStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.Max(8, CellSize / 4) };
         }
 
         private void OnValidate()
@@ -40,11 +41,14 @@ namespace Sudoku.Solver
 
         private void OnGUI()
         {
-            if (Runner == null || Runner.CurrentBoard == null) return;
-            EnsureStyles();
+            try
+            {
+                if (Runner == null || Runner.CurrentBoard == null) return;
+                EnsureStyles();
 
-            Board board = Runner.CurrentBoard;
-            int size = board.Size;
+                Board board = Runner.CurrentBoard;
+                if (board.Cells == null) return;
+                int size = board.Size;
             float x0 = Offset.x;
             float y0 = Offset.y;
 
@@ -57,21 +61,25 @@ namespace Sudoku.Solver
                     // highlight if part of last applied change
                     if (Runner.LastRuleResult != null && Runner.LastRuleResult.Applied)
                     {
-                        foreach (CellChange ch in Runner.LastRuleResult.Changes)
+                        var changes = Runner.LastRuleResult.Changes;
+                        if (changes != null)
                         {
-                            if (ch.Row == r && ch.Column == c)
+                            foreach (CellChange ch in changes)
                             {
-                                // placed value
-                                if (ch.NewValue.HasValue)
+                                if (ch.Row == r && ch.Column == c)
                                 {
-                                    DrawHighlight(cellRect, new Color(0.15f, 0.65f, 0.15f, 0.35f));
+                                    // placed value
+                                    if (ch.NewValue.HasValue)
+                                    {
+                                        DrawHighlight(cellRect, new Color(0.15f, 0.65f, 0.15f, 0.35f));
+                                    }
+                                    // candidate removals
+                                    else if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
+                                    {
+                                        DrawHighlight(cellRect, new Color(1f, 0.8f, 0.2f, 0.35f));
+                                    }
+                                    break;
                                 }
-                                // candidate removals
-                                else if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
-                                {
-                                    DrawHighlight(cellRect, new Color(1f, 0.8f, 0.2f, 0.35f));
-                                }
-                                break;
                             }
                         }
                     }
@@ -80,6 +88,7 @@ namespace Sudoku.Solver
                     GUI.Box(cellRect, "");
 
                     Cell cell = board.Cells[r, c];
+                    if (cell == null) continue;
                     if (cell.Value.HasValue)
                     {
                         // draw solved digit centered
@@ -110,10 +119,17 @@ namespace Sudoku.Solver
                 DrawLine(new Vector2(x0, py), new Vector2(x0 + size * CellSize, py), thickH ? lineWidth : 1f);
             }
             HandlesEndGUI();
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+                return;
+            }
         }
 
         private void DrawCandidates(Rect rect, Cell cell)
         {
+            if (cell == null || cell.Candidates == null) return;
             // small 3x3 layout for candidates assuming up to 9 digits
             int size = 3;
             float cs = rect.width / size;

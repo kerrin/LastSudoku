@@ -8,11 +8,11 @@ using Sudoku.Solver;
 /// </summary>
 public static class CreateSolverGameObject
 {
-    [MenuItem("Tools/Sudoku/Create Solver GameObject")]
-    public static void Create()
+    [MenuItem("Tools/Sudoku/Create Solver GameObject (Easy)")]
+    public static void CreateEasy()
     {
-        var go = new GameObject("Solver");
-        Undo.RegisterCreatedObjectUndo(go, "Create Solver GameObject");
+        var go = new GameObject("Solver (Easy)");
+        Undo.RegisterCreatedObjectUndo(go, "Create Solver GameObject (Easy)");
 
         var runner = Undo.AddComponent<SolverRunner>(go);
         var visual = Undo.AddComponent<BoardVisualizer>(go);
@@ -30,6 +30,36 @@ public static class CreateSolverGameObject
             ".6....28.",
             "...419..5",
             "....8..79"
+        };
+
+        // Ensure scene is marked dirty so the user can save
+        EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
+
+        Selection.activeGameObject = go;
+    }
+
+        [MenuItem("Tools/Sudoku/Create Solver GameObject (Hard)")]
+    public static void CreateHard()
+    {
+        var go = new GameObject("Solver (Hard)");
+        Undo.RegisterCreatedObjectUndo(go, "Create Solver GameObject (Hard)");
+
+        var runner = Undo.AddComponent<SolverRunner>(go);
+        var visual = Undo.AddComponent<BoardVisualizer>(go);
+        visual.Runner = runner;
+
+        // Provide a common sample puzzle (use '.' for empty cells)
+        runner.PuzzleRows = new string[]
+        {
+            "8...7....",
+            ".753.8...",
+            "6.9.1....",
+            ".....14.8",
+            ".........",
+            "..7...3.2",
+            "24....5..",
+            "9..4.76..",
+            "....36..."
         };
 
         // Ensure scene is marked dirty so the user can save

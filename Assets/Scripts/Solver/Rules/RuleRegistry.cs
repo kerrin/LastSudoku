@@ -42,7 +42,7 @@ namespace Sudoku.Solver.Rules
          * Apply the first applicable rule and return the pair (rule, result).
          * If no rule applies, (null, RuleResult{Applied=false}) is returned.
          */
-        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
+        public (ISudokuRule rule, RuleResult result) UpdateCandidates(Board board)
         {
             // Give each rule a chance to update the candidate sets before
             // attempting to apply any rule that may place values.
@@ -57,7 +57,15 @@ namespace Sudoku.Solver.Rules
                     Debug.LogWarning($"UpdateCandidates threw for {r.GetType().Name}: {ex.Message}");
                 }
             }
-
+            return (null, new RuleResult { Applied = false });
+        }
+        
+        /**
+         * Apply the first applicable rule and return the pair (rule, result).
+         * If no rule applies, (null, RuleResult{Applied=false}) is returned.
+         */
+        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
+        {
             foreach (ISudokuRule rule in _rules)
             {
                 if (rule.CanApply(board))

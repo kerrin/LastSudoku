@@ -21,6 +21,12 @@ public class SolverRunnerEditor : Editor
             EditorUtility.SetDirty(runner);
         }
 
+        if (GUILayout.Button("Initialise Candidates"))
+        {
+            runner.InitialiseCandidates();
+            EditorUtility.SetDirty(runner);
+        }
+
         if (GUILayout.Button("Run Next Rule Step"))
         {
             runner.RunNextStep();

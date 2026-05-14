@@ -62,6 +62,18 @@ namespace Sudoku.Solver
                 return;
             }
 
+            // Clear other SolverRunner instances in the scene to avoid conflicting models
+            var runners = FindObjectsOfType<SolverRunner>();
+            foreach (var r in runners)
+            {
+                if (r == this) continue;
+#if UNITY_EDITOR
+                DestroyImmediate(r.gameObject);
+#else
+                Destroy(r.gameObject);
+#endif
+            }
+
             var board = new Board(9, 3, 3);
             for (int r = 0; r < 9; r++)
             {
@@ -86,6 +98,23 @@ namespace Sudoku.Solver
             }
             _board = board;
             Debug.Log("Board loaded from PuzzleRows:\n" + BoardToString(_board));
+        }
+
+        [ContextMenu("Initialise Candidates")]
+        public void InitialiseCandidates()
+        {
+            if (_board == null) LoadBoardFromRows();
+            if (_board == null) return;
+            EnsureEngine();
+            (ISudokuRule rule, RuleResult result) = Registry.UpdateCandidates(_board);
+            LastAppliedRule = rule;
+            LastRuleResult = result;
+            if (rule == null || result == null || !result.Applied)
+            {
+                Debug.Log("No applicable rule found.");
+                return;
+            }
+            Debug.Log($"Initialised candidates using '{rule.Name}': {result.Description}\n{BoardToString(_board)}");
         }
 
         [ContextMenu("Run Next Rule Step")]
