@@ -6,8 +6,9 @@ using Sudoku.Solver.Rules;
 namespace Sudoku.Solver
 {
     /// <summary>
-    /// Simple Unity runner component to load a 9x9 puzzle from inspector rows
+    /// Temporary Simple Unity runner component to load a 9x9 puzzle from inspector rows
     /// and execute the registered rule engine. Use the context menu to run steps.
+    /// Just used for testing.
     /// </summary>
     public class SolverRunner : MonoBehaviour
     {
@@ -75,7 +76,10 @@ namespace Sudoku.Solver
                     char ch = rowStr[c];
                     int? val = null;
                     bool isGiven = false;
-                    if (ch >= '1' && ch <= '9') { val = ch - '0'; isGiven = true; }
+                    if (ch >= '1' && ch <= '9') { 
+                        val = ch - '0'; 
+                        isGiven = true; 
+                    }
                     var cell = new Cell(r, c, val, isGiven);
                     board.Cells[r, c] = cell;
                 }
