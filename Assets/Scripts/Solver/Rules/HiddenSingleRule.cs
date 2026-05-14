@@ -14,17 +14,29 @@ namespace Sudoku.Solver.Rules
 
         public Difficulty Difficulty => Difficulty.Easy;
 
+        private enum UnitKind { Row, Column, Box }
+
         public bool CanApply(Board board)
         {
             return FindAny(board) != null;
         }
 
-        private (Cell cell, int digit)? FindAny(Board board)
+        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindAny(Board board)
+        {
+            var rowRes = FindInRows(board);
+            if (rowRes != null) return rowRes;
+            var colRes = FindInColumns(board);
+            if (colRes != null) return colRes;
+            var boxRes = FindInBoxes(board);
+            if (boxRes != null) return boxRes;
+            return null;
+        }
+
+        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInRows(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
             {
-                // rows
                 for (int r = 0; r < size; r++)
                 {
                     var candidates = new List<Cell>();
@@ -32,10 +44,17 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Row, r);
                 }
+            }
+            return null;
+        }
 
-                // columns
+        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInColumns(Board board)
+        {
+            int size = board.Size;
+            for (int digit = 1; digit <= size; digit++)
+            {
                 for (int c = 0; c < size; c++)
                 {
                     var candidates = new List<Cell>();
@@ -43,10 +62,17 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Column, c);
                 }
+            }
+            return null;
+        }
 
-                // boxes
+        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInBoxes(Board board)
+        {
+            int size = board.Size;
+            for (int digit = 1; digit <= size; digit++)
+            {
                 for (int b = 0; b < size; b++)
                 {
                     var candidates = new List<Cell>();
@@ -54,7 +80,7 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Box, b);
                 }
             }
             return null;
@@ -63,47 +89,33 @@ namespace Sudoku.Solver.Rules
         public RuleResult Apply(Board board)
         {
             var result = new RuleResult();
-            (Cell cell, int digit)? found = FindAny(board);
+            (Cell cell, int digit, UnitKind unit, int unitIndex)? found = FindAny(board);
             if (found == null)
             {
                 result.Applied = false;
                 return result;
             }
-            (Cell cell, int digit) = found.Value;
+            (Cell cell, int digit, UnitKind unit, int unitIndex) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
-
-            // Mark the candidate cells in the unit that established the hidden single
-            // (these are the cells that contained the candidate for `digit`). This is
-            // more helpful than highlighting the whole unit.
-            var unitCandidates = new List<Cell>();
-            // check row
-            foreach (Cell rc in board.GetRow(cell.Row)) if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) unitCandidates.Add(rc);
-            // if nothing found in row, check column
-            if (unitCandidates.Count == 0)
+            // Highlight the whole unit (row/column/box) that contained the single candidate.
+            List<Cell> unitCells = new List<Cell>();
+            switch (unit)
             {
-                unitCandidates.Clear();
-                foreach (Cell cc in board.GetColumn(cell.Column)) if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) unitCandidates.Add(cc);
-            }
-            // if still only target, check box
-            if (unitCandidates.Count == 0)
-            {
-                unitCandidates.Clear();
-                foreach (Cell bc in board.GetBox(cell.Box)) if (!bc.Value.HasValue && bc.Candidates.Contains(digit)) unitCandidates.Add(bc);
+                case UnitKind.Row:
+                    unitCells.AddRange(board.GetRow(unitIndex));
+                    break;
+                case UnitKind.Column:
+                    unitCells.AddRange(board.GetColumn(unitIndex));
+                    break;
+                case UnitKind.Box:
+                    unitCells.AddRange(board.GetBox(unitIndex));
+                    break;
             }
 
-            // add candidate cells to UsedCells
-            foreach (Cell u in unitCandidates)
+            foreach (Cell u in unitCells)
             {
                 if (!result.UsedCells.Exists(x => x.Row == u.Row && x.Column == u.Column))
                     result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column });
-            }
-
-            // Also mark peers that already have values (these are often the
-            // constraints that made the hidden-single possible).
-            foreach (Cell peer in board.GetPeers(cell))
-            {
-                if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                    result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
             }
 
             board.SetValue(cell, digit);
