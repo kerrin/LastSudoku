@@ -15,7 +15,11 @@ namespace Sudoku.Solver
         public SolverEngine(RuleRegistry registry = null)
         {
             Registry = registry ?? new RuleRegistry();
-            if (registry == null) Registry.RegisterDefaults();
+            if (registry == null) {
+                Registry.RegisterMinimal();
+                Registry.RegisterMedium();
+                Registry.RegisterAdvanced();
+            }
         }
 
         /**

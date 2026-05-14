@@ -3,47 +3,65 @@ using Sudoku.Solver.Rules;
 
 namespace Sudoku.Tests.Editor
 {
-    /// <summary>
-    /// Tests for <see cref="RuleRegistry"/>, which holds the available rules and orchestrates applying them.
-    /// The tests assert registration of defaults, that no rules fire on a truly empty board, and that
-    /// registered rules are applied when the board contains a change.
-    /// </summary>
+    /** 
+     * Tests for <see cref="RuleRegistry"/>, which holds the available rules and orchestrates applying them.
+     * The tests assert registration of defaults, that no rules fire on a truly empty board, and that
+     * registered rules are applied when the board contains a change.
+     */
     public class RuleRegistryTests
     {
-        /// <summary>
-        /// Ensure that calling <c>RegisterDefaults</c> populates the registry with the expected rules.
-        /// </summary>
+        /** Ensure that calling <c>RegisterDefaults</c> populates the registry with the expected rules. */
         [Test]
-        public void RegisterDefaults_AddsExpectedRules()
+        public void RegisterMinimal_AddsExpectedRules()
         {
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
             Assert.AreEqual(4, registry.Rules.Count);
         }
 
-        /// <summary>
-        /// When the board has no candidates or values, <c>ApplyAll</c> should return an empty result set.
-        /// </summary>
+        /** Ensure that calling <c>RegisterMedium</c> populates the registry with the expected rules. */
+        [Test]
+        public void RegisterMedium_AddsExpectedRules()
+        {
+            var registry = new RuleRegistry();
+            registry.RegisterMedium();
+            Assert.AreEqual(3, registry.Rules.Count);
+        }
+
+        /** Ensure that calling <c>RegisterAdvanced</c> populates the registry with the expected rules. */
+        [Test]
+        public void RegisterAdvanced_AddsExpectedRules()
+        {
+            var registry = new RuleRegistry();
+            registry.RegisterAdvanced();
+            Assert.AreEqual(0, registry.Rules.Count);
+        }
+
+        /** When the board has no candidates or values, <c>ApplyAll</c> should return an empty result set. */
         [Test]
         public void ApplyAll_NoChangesOnEmptyBoard()
         {
             var board = TestHelpers.CreateEmptyBoard();
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
+            registry.RegisterMedium();
+            registry.RegisterAdvanced();
             var applied = registry.ApplyAll(board);
             Assert.IsEmpty(applied);
         }
 
-        /// <summary>
-        /// Create a simple change (a naked single) and verify that <c>ApplyAll</c> reports at least one applied rule
-        /// and that the applied rule is the expected one.
-        /// </summary>
+        /** 
+         * Create a simple change (a naked single) and verify that <c>ApplyAll</c> reports at least one applied rule
+         * and that the applied rule is the expected one. 
+         */
         [Test]
         public void ApplyAll_AppliesRegisteredRules_WhenBoardHasChanges()
         {
             var board = TestHelpers.CreateEmptyBoard();
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
+            registry.RegisterMedium();
+            registry.RegisterAdvanced();
 
             // make a naked single to ensure ApplyAll applies something
             var target = board.Cells[3, 3];

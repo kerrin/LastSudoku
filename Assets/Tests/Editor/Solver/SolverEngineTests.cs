@@ -25,7 +25,9 @@ namespace Sudoku.Tests.Solver
             }
 
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
+            registry.RegisterMedium();
+            registry.RegisterAdvanced();
             var engine = new SolverEngine(registry);
 
             // Apply rules (we don't expect the whole board to be solved).

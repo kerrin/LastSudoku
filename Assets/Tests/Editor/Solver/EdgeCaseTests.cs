@@ -47,7 +47,9 @@ namespace Sudoku.Tests.Solver
             board.Cells[4, 4].Candidates.Clear();
 
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
+            registry.RegisterMedium();
+            registry.RegisterAdvanced();
 
             // Should not throw and should simply produce no applied steps.
             List<(ISudokuRule rule, RuleResult result)> steps = null;
@@ -73,7 +75,9 @@ namespace Sudoku.Tests.Solver
                 }
 
             var registry = new RuleRegistry();
-            registry.RegisterDefaults();
+            registry.RegisterMinimal();
+            registry.RegisterMedium();
+            registry.RegisterAdvanced();
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNull(rule);

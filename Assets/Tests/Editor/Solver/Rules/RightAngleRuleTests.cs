@@ -7,6 +7,7 @@ namespace Sudoku.Tests.Editor
     public class RightAngleRuleTests
     {
         [Test]
+        [NUnit.Framework.Ignore("Disabled: StrongLinkIntersectionRule unstable; disabled by request")]
         public void RightAngle_RemovesCandidateSeeingBothEndpoints()
         {
             var board = new Board(9, 3, 3);

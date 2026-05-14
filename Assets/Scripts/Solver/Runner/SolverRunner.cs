@@ -45,7 +45,9 @@ namespace Sudoku.Solver
             if (Registry == null)
             {
                 Registry = new RuleRegistry();
-                Registry.RegisterDefaults();
+                Registry.RegisterMinimal();
+                Registry.RegisterMedium();
+                Registry.RegisterAdvanced();
             }
             if (Engine == null) Engine = new SolverEngine(Registry);
         }

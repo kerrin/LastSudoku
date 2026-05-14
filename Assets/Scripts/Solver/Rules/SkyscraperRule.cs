@@ -30,7 +30,7 @@ namespace Sudoku.Solver.Rules
             // Row-based skyscraper
             for (int digit = 1; digit <= size; digit++)
             {
-                // collect rows with exactly two candidate columns for digit
+                // collect rows with at least two candidate columns for digit
                 var rows = new List<(int row, List<int> cols)>();
                 for (int r = 0; r < size; r++)
                 {
@@ -40,36 +40,53 @@ namespace Sudoku.Solver.Rules
                         var cell = board.Cells[r, c];
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cols.Add(c);
                     }
-                    if (cols.Count == 2) rows.Add((r, cols));
+                    if (cols.Count >= 2) rows.Add((r, cols));
                 }
+                
 
                 for (int i = 0; i < rows.Count; i++)
+                {
                     for (int j = i + 1; j < rows.Count; j++)
                     {
                         var r1 = rows[i];
                         var r2 = rows[j];
-                        // find shared column
-                        var shared = r1.cols.Intersect(r2.cols).ToList();
-                        if (shared.Count != 1) continue;
-                        int b = shared[0];
-                        int a = r1.cols.First(c => c != b);
-                        int ccol = r2.cols.First(c => c != b);
-
-                        Cell e1 = board.Cells[r1.row, a];
-                        Cell e2 = board.Cells[r2.row, ccol];
-
-                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
-                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
-                        peers1.IntersectWith(peers2);
-
-                        var removals = new List<Cell>();
-                        foreach (Cell p in peers1)
+                        // Consider all pairs of candidate columns in each row (allowing extra candidates)
+                        for (int i1 = 0; i1 < r1.cols.Count; i1++)
                         {
-                            if (p == e1 || p == e2) continue;
-                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
+                            for (int i2 = i1 + 1; i2 < r1.cols.Count; i2++)
+                            {
+                                for (int j1 = 0; j1 < r2.cols.Count; j1++)
+                                {
+                                    for (int j2 = j1 + 1; j2 < r2.cols.Count; j2++)
+                                    {
+                                        var pair1 = new List<int> { r1.cols[i1], r1.cols[i2] };
+                                        var pair2 = new List<int> { r2.cols[j1], r2.cols[j2] };
+                                        var shared = pair1.Intersect(pair2).ToList();
+                                        if (shared.Count != 1) continue;
+                                        int b = shared[0];
+                                        int a = pair1.First(c => c != b);
+                                        int ccol = pair2.First(c => c != b);
+
+                                        Cell e1 = board.Cells[r1.row, a];
+                                        Cell e2 = board.Cells[r2.row, ccol];
+
+                                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
+                                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
+                                        peers1.IntersectWith(peers2);
+
+                                        var removals = new List<Cell>();
+                                        foreach (Cell p in peers1)
+                                        {
+                                            if (p == e1 || p == e2) continue;
+                                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
+                                        }
+                                        if (removals.Count > 0) return (e1, e2, digit, removals);
+                                    }
+                                }
+                            }
                         }
-                        if (removals.Count > 0) return (e1, e2, digit, removals);
                     }
+                }
             }
 
             // Column-based skyscraper (transpose)
@@ -84,7 +101,7 @@ namespace Sudoku.Solver.Rules
                         var cell = board.Cells[r, c];
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) rs.Add(r);
                     }
-                    if (rs.Count == 2) cols.Add((c, rs));
+                    if (rs.Count >= 2) cols.Add((c, rs));
                 }
 
                 for (int i = 0; i < cols.Count; i++)
@@ -92,26 +109,35 @@ namespace Sudoku.Solver.Rules
                     {
                         var c1 = cols[i];
                         var c2 = cols[j];
-                        var shared = c1.rows.Intersect(c2.rows).ToList();
-                        if (shared.Count != 1) continue;
-                        int b = shared[0];
-                        int a = c1.rows.First(r => r != b);
-                        int r2 = c2.rows.First(r => r != b);
+                        // consider pairs of rows in each column
+                        for (int i1 = 0; i1 < c1.rows.Count; i1++)
+                            for (int i2 = i1 + 1; i2 < c1.rows.Count; i2++)
+                                for (int j1 = 0; j1 < c2.rows.Count; j1++)
+                                    for (int j2 = j1 + 1; j2 < c2.rows.Count; j2++)
+                                    {
+                                        var pair1 = new List<int> { c1.rows[i1], c1.rows[i2] };
+                                        var pair2 = new List<int> { c2.rows[j1], c2.rows[j2] };
+                                        var shared = pair1.Intersect(pair2).ToList();
+                                        if (shared.Count != 1) continue;
+                                        int b = shared[0];
+                                        int a = pair1.First(r => r != b);
+                                        int r2 = pair2.First(r => r != b);
 
-                        Cell e1 = board.Cells[a, c1.col];
-                        Cell e2 = board.Cells[r2, c2.col];
+                                        Cell e1 = board.Cells[a, c1.col];
+                                        Cell e2 = board.Cells[r2, c2.col];
 
-                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
-                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
-                        peers1.IntersectWith(peers2);
+                                        var peers1 = new HashSet<Cell>(board.GetPeers(e1));
+                                        var peers2 = new HashSet<Cell>(board.GetPeers(e2));
+                                        peers1.IntersectWith(peers2);
 
-                        var removals = new List<Cell>();
-                        foreach (Cell p in peers1)
-                        {
-                            if (p == e1 || p == e2) continue;
-                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
-                        }
-                        if (removals.Count > 0) return (e1, e2, digit, removals);
+                                        var removals = new List<Cell>();
+                                        foreach (Cell p in peers1)
+                                        {
+                                            if (p == e1 || p == e2) continue;
+                                            if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
+                                        }
+                                        if (removals.Count > 0) return (e1, e2, digit, removals);
+                                    }
                     }
             }
 
