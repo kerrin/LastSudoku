@@ -1,8 +1,8 @@
 # LastSudoku
 Sudoku game and generator
 
-Local hinting can be provided to co=pilot by editing local.instructions.md and the asking co-pilot:
-Refresh your presistent user memory for the changes in the local.instructions.md
+Local hinting can be provided to co=pilot by editing .instructions.md and the asking co-pilot:
+Refresh your presistent user memory for the changes in the .instructions.md
 
 
 Specification:
