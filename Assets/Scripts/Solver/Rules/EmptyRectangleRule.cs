@@ -82,6 +82,12 @@ namespace Sudoku.Solver.Rules
                     foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
                     if (sameRow)
                     {
+                        // mark the candidate cells inside the box as used for deduction
+                        foreach (Cell used in cells)
+                        {
+                            if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
+                                result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
+                        }
                         bool applied = false;
                         foreach (Cell rc in board.GetRow(row))
                         {
@@ -91,6 +97,8 @@ namespace Sudoku.Solver.Rules
                                 var change = new CellChange { Row = rc.Row, Column = rc.Column };
                                 change.RemovedCandidates.Add(digit);
                                 result.Changes.Add(change);
+                                if (!result.UsedCells.Exists(u => u.Row == rc.Row && u.Column == rc.Column))
+                                    result.UsedCells.Add(new UsedCell { Row = rc.Row, Column = rc.Column });
                                 applied = true;
                             }
                         }
@@ -108,6 +116,11 @@ namespace Sudoku.Solver.Rules
                     foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
                     if (sameCol)
                     {
+                        foreach (Cell used in cells)
+                        {
+                            if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
+                                result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
+                        }
                         bool applied = false;
                         foreach (Cell cc in board.GetColumn(col))
                         {
@@ -117,6 +130,8 @@ namespace Sudoku.Solver.Rules
                                 var change = new CellChange { Row = cc.Row, Column = cc.Column };
                                 change.RemovedCandidates.Add(digit);
                                 result.Changes.Add(change);
+                                if (!result.UsedCells.Exists(u => u.Row == cc.Row && u.Column == cc.Column))
+                                    result.UsedCells.Add(new UsedCell { Row = cc.Row, Column = cc.Column });
                                 applied = true;
                             }
                         }

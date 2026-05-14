@@ -82,6 +82,13 @@ namespace Sudoku.Solver.Rules
             }
             (Cell cell, int digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
+            // mark peers with values as used
+            foreach (Cell peer in board.GetPeers(cell))
+            {
+                if (peer.Value.HasValue && !r.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                    r.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+            }
+
             board.SetValue(cell, digit);
             r.Changes.Add(change);
             foreach (Cell peer in board.GetPeers(cell))
@@ -91,6 +98,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     r.Changes.Add(peerChange);
+                    if (!r.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                        r.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                 }
             }
             r.Applied = true;

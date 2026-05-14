@@ -58,7 +58,8 @@ namespace Sudoku.Solver
                 for (int c = 0; c < size; c++)
                 {
                     Rect cellRect = new Rect(x0 + c * CellSize, y0 + r * CellSize, CellSize, CellSize);
-                    // highlight if part of last applied change
+                    // highlight changes from the last applied rule (placed values / candidate removals)
+                    bool highlighted = false;
                     if (Runner.LastRuleResult != null && Runner.LastRuleResult.Applied)
                     {
                         var changes = Runner.LastRuleResult.Changes;
@@ -72,12 +73,27 @@ namespace Sudoku.Solver
                                     if (ch.NewValue.HasValue)
                                     {
                                         DrawHighlight(cellRect, new Color(0.15f, 0.65f, 0.15f, 0.35f));
+                                        highlighted = true;
                                     }
                                     // candidate removals
                                     else if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
                                     {
                                         DrawHighlight(cellRect, new Color(1f, 0.8f, 0.2f, 0.35f));
+                                        highlighted = true;
                                     }
+                                    break;
+                                }
+                            }
+                        }
+
+                        // if this cell wasn't changed but was used to deduce the result, draw the used-cell highlight
+                        if (!highlighted && Runner.LastRuleResult.UsedCells != null)
+                        {
+                            foreach (var uc in Runner.LastRuleResult.UsedCells)
+                            {
+                                if (uc.Row == r && uc.Column == c)
+                                {
+                                    DrawHighlight(cellRect, new Color(0.1f, 0.6f, 1f, 0.45f));
                                     break;
                                 }
                             }

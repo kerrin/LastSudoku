@@ -83,6 +83,9 @@ namespace Sudoku.Solver.Rules
                 return r;
             }
             var (a, b, digit, removals) = found.Value;
+            // mark the two strong-link endpoints as used for deduction
+            if (!r.UsedCells.Exists(u => u.Row == a.Row && u.Column == a.Column)) r.UsedCells.Add(new UsedCell { Row = a.Row, Column = a.Column });
+            if (!r.UsedCells.Exists(u => u.Row == b.Row && u.Column == b.Column)) r.UsedCells.Add(new UsedCell { Row = b.Row, Column = b.Column });
             foreach (Cell p in removals)
             {
                 if (p.Candidates.Remove(digit))
@@ -90,6 +93,7 @@ namespace Sudoku.Solver.Rules
                     var change = new CellChange { Row = p.Row, Column = p.Column };
                     change.RemovedCandidates.Add(digit);
                     r.Changes.Add(change);
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
                 }
             }
             r.Applied = r.Changes.Count > 0;

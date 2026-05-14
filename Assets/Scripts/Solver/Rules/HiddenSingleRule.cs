@@ -71,6 +71,41 @@ namespace Sudoku.Solver.Rules
             }
             (Cell cell, int digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
+
+            // Mark the candidate cells in the unit that established the hidden single
+            // (these are the cells that contained the candidate for `digit`). This is
+            // more helpful than highlighting the whole unit.
+            var unitCandidates = new List<Cell>();
+            // check row
+            foreach (Cell rc in board.GetRow(cell.Row)) if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) unitCandidates.Add(rc);
+            // if nothing found in row, check column
+            if (unitCandidates.Count == 0)
+            {
+                unitCandidates.Clear();
+                foreach (Cell cc in board.GetColumn(cell.Column)) if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) unitCandidates.Add(cc);
+            }
+            // if still only target, check box
+            if (unitCandidates.Count == 0)
+            {
+                unitCandidates.Clear();
+                foreach (Cell bc in board.GetBox(cell.Box)) if (!bc.Value.HasValue && bc.Candidates.Contains(digit)) unitCandidates.Add(bc);
+            }
+
+            // add candidate cells to UsedCells
+            foreach (Cell u in unitCandidates)
+            {
+                if (!result.UsedCells.Exists(x => x.Row == u.Row && x.Column == u.Column))
+                    result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column });
+            }
+
+            // Also mark peers that already have values (these are often the
+            // constraints that made the hidden-single possible).
+            foreach (Cell peer in board.GetPeers(cell))
+            {
+                if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                    result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+            }
+
             board.SetValue(cell, digit);
             result.Changes.Add(change);
             foreach (Cell peer in board.GetPeers(cell))
@@ -80,6 +115,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     result.Changes.Add(peerChange);
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                 }
             }
             result.Applied = true;

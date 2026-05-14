@@ -41,6 +41,13 @@ namespace Sudoku.Solver.Rules
                 for (int d = 1; d <= size; d++) if (!present.Contains(d)) { missing = d; break; }
                 if (missing == -1) return false;
                 var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
+                // mark present cells in the unit as used for deduction
+                foreach (Cell p in unit.Where(c => c.Value.HasValue))
+                {
+                    if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
+                        result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                }
+
                 board.SetValue(empty, missing);
                 result.Changes.Add(change);
                 foreach (Cell peer in board.GetPeers(empty))
@@ -50,6 +57,8 @@ namespace Sudoku.Solver.Rules
                         var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                         peerChange.RemovedCandidates.Add(missing);
                         result.Changes.Add(peerChange);
+                        if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                            result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                     }
                 }
                 result.Applied = true;

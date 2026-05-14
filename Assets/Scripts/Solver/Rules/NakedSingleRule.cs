@@ -46,6 +46,13 @@ namespace Sudoku.Solver.Rules
                     if (cell.Candidates.Count != 1) continue;
                     int value = cell.Candidates.First();
                     var change = new CellChange { Row = r, Column = c, OldValue = cell.Value, NewValue = value };
+                    // mark peers with values as used for deduction
+                    foreach (Cell peer in board.GetPeers(cell))
+                    {
+                        if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                            result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                    }
+
                     board.SetValue(cell, value);
                     result.Changes.Add(change);
                     // remove candidate from peers — record removals as separate changes per peer
@@ -56,6 +63,8 @@ namespace Sudoku.Solver.Rules
                             var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                             peerChange.RemovedCandidates.Add(value);
                             result.Changes.Add(peerChange);
+                            if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                                result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                         }
                     }
                     result.Applied = true;

@@ -38,5 +38,19 @@ namespace Sudoku.Solver.Rules
 
         /** List of changes performed by the rule. */
         public List<CellChange> Changes = new List<CellChange>();
+
+        /**
+         * Cells that were consulted/used when deducing the rule result (but may not
+         * themselves have changed). This is useful for UI highlighting of contributing
+         * cells.
+         */
+        public List<UsedCell> UsedCells = new List<UsedCell>();
+    }
+
+    /** Minimal coordinate describing a cell that was used during deduction. */
+    public class UsedCell
+    {
+        public int Row;
+        public int Column;
     }
 }

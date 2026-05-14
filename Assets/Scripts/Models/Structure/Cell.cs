@@ -9,6 +9,7 @@ namespace Sudoku.Models
     {
         None,
         Highlight,
+        UsedInDeduction,
         Given,
         Solved,
     }
