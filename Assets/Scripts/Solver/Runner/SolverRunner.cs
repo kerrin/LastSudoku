@@ -94,7 +94,7 @@ namespace Sudoku.Solver
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
-            var (rule, result) = Registry.ApplyNext(_board);
+            (ISudokuRule rule, RuleResult result) = Registry.ApplyNext(_board);
             LastAppliedRule = rule;
             LastRuleResult = result;
             if (rule == null || result == null || !result.Applied)
@@ -115,7 +115,7 @@ namespace Sudoku.Solver
             // store last applied step if any
             if (steps != null && steps.Count > 0)
             {
-                var last = steps[steps.Count - 1];
+                (ISudokuRule rule, RuleResult result) last = steps[steps.Count - 1];
                 LastAppliedRule = last.rule;
                 LastRuleResult = last.result;
             }
@@ -125,7 +125,7 @@ namespace Sudoku.Solver
                 LastRuleResult = null;
             }
             Debug.Log($"Solver finished. Solved={solved}. Steps={steps.Count}\n{BoardToString(_board)}");
-            foreach (var s in steps)
+            foreach ((ISudokuRule rule, RuleResult result) s in steps)
             {
                 Debug.Log($"{s.rule.Name}: {s.result.Description}");
             }
@@ -139,7 +139,7 @@ namespace Sudoku.Solver
             for (int r = 0; r < _board.Size; r++)
                 for (int c = 0; c < _board.Size; c++)
                 {
-                    var cell = _board.Cells[r, c];
+                    Cell cell = _board.Cells[r, c];
                     if (!cell.Value.HasValue)
                     {
                         cell.Candidates.Clear();

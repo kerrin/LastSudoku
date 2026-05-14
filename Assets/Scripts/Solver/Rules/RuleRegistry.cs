@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Sudoku.Models;
+using UnityEngine;
 
 namespace Sudoku.Solver.Rules
 {
@@ -43,12 +44,29 @@ namespace Sudoku.Solver.Rules
         /// </summary>
         public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
         {
-            foreach (var rule in _rules)
+            // Give each rule a chance to update the candidate sets before
+            // attempting to apply any rule that may place values.
+            foreach (ISudokuRule r in _rules)
+            {
+                try
+                {
+                    if (r.UpdateCandidates(board)) Debug.Log($"Rule {r.GetType().Name} updated candidates.");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"UpdateCandidates threw for {r.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            foreach (ISudokuRule rule in _rules)
             {
                 if (rule.CanApply(board))
                 {
-                    var res = rule.Apply(board);
+                    Debug.Log($"Applying rule: {rule.GetType().Name}");
+                    RuleResult res = rule.Apply(board);
                     if (res != null && res.Applied) return (rule, res);
+                } else {
+                    Debug.Log($"Rule {rule.GetType().Name} cannot apply.");
                 }
             }
             return (null, new RuleResult { Applied = false });
@@ -63,7 +81,7 @@ namespace Sudoku.Solver.Rules
             var results = new List<(ISudokuRule, RuleResult)>();
             for (int i = 0; i < maxIterations; i++)
             {
-                var (rule, result) = ApplyNext(board);
+                (ISudokuRule rule, RuleResult result) = ApplyNext(board);
                 if (rule == null || !result.Applied) break;
                 results.Add((rule, result));
             }

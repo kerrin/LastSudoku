@@ -14,6 +14,13 @@ namespace Sudoku.Solver.Rules
         string Name { get; }
 
         /// <summary>
+        /// Update candidate sets on the provided <paramref name="board"/> where
+        /// candidates can be eliminated without assigning values. Return true if
+        /// any candidate set was changed.
+        /// </summary>
+        bool UpdateCandidates(Board board);
+
+        /// <summary>
         /// Return true if this rule is applicable to the given <paramref name="board"/>.
         /// </summary>
         /// <param name="board">The puzzle board to inspect.</param>

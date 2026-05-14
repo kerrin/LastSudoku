@@ -35,7 +35,7 @@ namespace Sudoku.Solver.Rules
                 for (int r = 0; r < size; r++)
                 {
                     var candidates = new List<Cell>();
-                    foreach (var cell in board.GetRow(r))
+                    foreach (Cell cell in board.GetRow(r))
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
@@ -46,7 +46,7 @@ namespace Sudoku.Solver.Rules
                 for (int c = 0; c < size; c++)
                 {
                     var candidates = new List<Cell>();
-                    foreach (var cell in board.GetColumn(c))
+                    foreach (Cell cell in board.GetColumn(c))
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
@@ -57,7 +57,7 @@ namespace Sudoku.Solver.Rules
                 for (int b = 0; b < size; b++)
                 {
                     var candidates = new List<Cell>();
-                    foreach (var cell in board.GetBox(b))
+                    foreach (Cell cell in board.GetBox(b))
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
@@ -74,17 +74,17 @@ namespace Sudoku.Solver.Rules
         public RuleResult Apply(Board board)
         {
             var r = new RuleResult();
-            var found = FindAny(board);
+            (Cell cell, int digit)? found = FindAny(board);
             if (found == null)
             {
                 r.Applied = false;
                 return r;
             }
-            var (cell, digit) = found.Value;
+            (Cell cell, int digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             board.SetValue(cell, digit);
             r.Changes.Add(change);
-            foreach (var peer in board.GetPeers(cell))
+            foreach (Cell peer in board.GetPeers(cell))
             {
                 if (peer.Candidates.Remove(digit))
                 {
@@ -97,6 +97,38 @@ namespace Sudoku.Solver.Rules
             r.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Missing Single";
             
             return r;
+        }
+
+        public bool UpdateCandidates(Board board)
+        {
+            bool changed = false;
+            int size = board.Size;
+            for (int r = 0; r < size; r++)
+            {
+                for (int c = 0; c < size; c++)
+                {
+                    Cell cell = board.Cells[r, c];
+                    if (cell.Value.HasValue)
+                    {
+                        if (cell.Candidates.Count != 0)
+                        {
+                            cell.Candidates.Clear();
+                            changed = true;
+                        }
+                        continue;
+                    }
+                    var present = new bool[size + 1];
+                    foreach (Cell peer in board.GetPeers(cell)) if (peer.Value.HasValue) present[peer.Value.Value] = true;
+                    var newCandidates = new HashSet<int>();
+                    for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
+                    if (!newCandidates.SetEquals(cell.Candidates))
+                    {
+                        cell.Candidates = newCandidates;
+                        changed = true;
+                    }
+                }
+            }
+            return changed;
         }
     }
 }

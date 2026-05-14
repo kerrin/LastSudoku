@@ -48,9 +48,9 @@ namespace Sudoku.Solver.Rules
         public static IEnumerable<Cell> GetPeers(this Board board, Cell cell)
         {
             var seen = new HashSet<Cell>();
-            foreach (var c in board.GetRow(cell.Row)) if (!ReferenceEquals(c, cell)) seen.Add(c);
-            foreach (var c in board.GetColumn(cell.Column)) if (!ReferenceEquals(c, cell)) seen.Add(c);
-            foreach (var c in board.GetBox(cell.Box)) if (!ReferenceEquals(c, cell)) seen.Add(c);
+            foreach (Cell c in board.GetRow(cell.Row)) if (!ReferenceEquals(c, cell)) seen.Add(c);
+            foreach (Cell c in board.GetColumn(cell.Column)) if (!ReferenceEquals(c, cell)) seen.Add(c);
+            foreach (Cell c in board.GetBox(cell.Box)) if (!ReferenceEquals(c, cell)) seen.Add(c);
             return seen;
         }
 

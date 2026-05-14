@@ -1,6 +1,7 @@
 using System.Text;
 using UnityEngine;
 using Sudoku.Models;
+using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
 {
@@ -56,7 +57,7 @@ namespace Sudoku.Solver
                     // highlight if part of last applied change
                     if (Runner.LastRuleResult != null && Runner.LastRuleResult.Applied)
                     {
-                        foreach (var ch in Runner.LastRuleResult.Changes)
+                        foreach (CellChange ch in Runner.LastRuleResult.Changes)
                         {
                             if (ch.Row == r && ch.Column == c)
                             {
@@ -78,7 +79,7 @@ namespace Sudoku.Solver
                     // background
                     GUI.Box(cellRect, "");
 
-                    var cell = board.Cells[r, c];
+                    Cell cell = board.Cells[r, c];
                     if (cell.Value.HasValue)
                     {
                         // draw solved digit centered
