@@ -175,9 +175,9 @@ namespace Sudoku.Solver.Rules
             return r;
         }
 
-        public bool UpdateCandidates(Board board)
+        public RuleResult ApplyOnlyCandidates(Board board)
         {
-            return false;
+            return new RuleResult { Applied = false };
         }
 
         // Helper: return all 2-element subsets of a list (if list has exactly 2, returns a single subset)

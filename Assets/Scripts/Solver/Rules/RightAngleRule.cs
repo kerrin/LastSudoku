@@ -30,75 +30,90 @@ namespace Sudoku.Solver.Rules
             int boxesPerRow = size / board.BoxWidth;
             int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
 
-            // Candidate-based detection removed.
-
-            // If no candidate-based elimination was found, fall back to values-only
-            // deduction: find boxes where three of the four corner cells are filled
-            // and the fourth can be deduced by missing digits in box/row/column.
-            for (int box = 0; box < boxCount; box++)
+            for (int digit = 1; digit <= size; digit++)
             {
-                int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
-                int startBoxCol = (box % boxesPerRow) * board.BoxWidth;
-                int endBoxRow = startBoxRow + board.BoxHeight - 1;
-                int endBoxCol = startBoxCol + board.BoxWidth - 1;
+                var allRowPairs = new List<(Cell a, Cell b)>();
+                var allColPairs = new List<(Cell a, Cell b)>();
 
-                var cornerCells = new List<Cell>
+                // gather all row-pairs and col-pairs across every box
+                for (int box = 0; box < boxCount; box++)
                 {
-                    board.Cells[startBoxRow, startBoxCol],
-                    board.Cells[startBoxRow, endBoxCol],
-                    board.Cells[endBoxRow, startBoxCol],
-                    board.Cells[endBoxRow, endBoxCol]
-                };
+                    int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
+                    int startBoxCol = (box % boxesPerRow) * board.BoxWidth;
 
-                // Collect digits already placed in this box (values-only)
-                var placedInBox = new HashSet<int>();
-                for (int r = startBoxRow; r <= endBoxRow; r++)
-                    for (int c = startBoxCol; c <= endBoxCol; c++)
+                    var boxCells = new List<Cell>();
+                    // Get the cells in the current box that contain the digit as a candidate
+                    for (int r = startBoxRow; r < startBoxRow + board.BoxHeight; r++)
+                        for (int c = startBoxCol; c < startBoxCol + board.BoxWidth; c++)
+                        {
+                            var cell = board.Cells[r, c];
+                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) boxCells.Add(cell);
+                        }
+
+                    if (boxCells.Count < 2) continue;
+                    for (int i = 0; i < boxCells.Count; i++)
+                        for (int j = i + 1; j < boxCells.Count; j++)
+                        {
+                            var a = boxCells[i];
+                            var b = boxCells[j];
+                            if (a.Row == b.Row) allRowPairs.Add((a, b));
+                            if (a.Column == b.Column) allColPairs.Add((a, b));
+                        }
+                }
+
+                if (allRowPairs.Count == 0 || allColPairs.Count == 0) continue;
+
+                // helpers
+                List<Cell> CandidatesInRow(int row)
+                {
+                    var list = new List<Cell>();
+                    for (int cc = 0; cc < size; cc++)
                     {
-                        var cell = board.Cells[r, c];
-                        if (cell.Value.HasValue) placedInBox.Add(cell.Value.Value);
+                        var c = board.Cells[row, cc];
+                        if (!c.Value.HasValue && c.Candidates.Contains(digit)) list.Add(c);
                     }
+                    return list;
+                }
 
-                foreach (var emptyCornerCandidate in cornerCells)
+                List<Cell> CandidatesInColumn(int col)
                 {
-                    if (emptyCornerCandidate.Value.HasValue) continue;
-
-                    // count how many of the other three corners are filled
-                    var otherCorners = cornerCells.Where(c => c != emptyCornerCandidate).ToList();
-                    if (otherCorners.Count(c => c.Value.HasValue) != 3) continue;
-
-                    // digits missing from box
-                    var missingInBox = new HashSet<int>();
-                    for (int d = 1; d <= size; d++) if (!placedInBox.Contains(d)) missingInBox.Add(d);
-
-                    // digits missing from the row
-                    var missingInRow = new HashSet<int>();
-                    var row = emptyCornerCandidate.Row;
-                    var presentInRow = new HashSet<int>();
-                    for (int cc = 0; cc < size; cc++) if (board.Cells[row, cc].Value.HasValue) presentInRow.Add(board.Cells[row, cc].Value.Value);
-                    for (int d = 1; d <= size; d++) if (!presentInRow.Contains(d)) missingInRow.Add(d);
-
-                    // digits missing from the column
-                    var missingInCol = new HashSet<int>();
-                    var col = emptyCornerCandidate.Column;
-                    var presentInCol = new HashSet<int>();
-                    for (int rr = 0; rr < size; rr++) if (board.Cells[rr, col].Value.HasValue) presentInCol.Add(board.Cells[rr, col].Value.Value);
-                    for (int d = 1; d <= size; d++) if (!presentInCol.Contains(d)) missingInCol.Add(d);
-
-                    // intersection: digits that fit in box, row and column
-                    var intersection = missingInBox.Intersect(missingInRow).Intersect(missingInCol).ToList();
-                    UnityEngine.Debug.Log($"RightAngle: box {box} corners=({cornerCells[0].Value},{cornerCells[1].Value},{cornerCells[2].Value},{cornerCells[3].Value}) missingInBox={missingInBox.Count} missingInRow={missingInRow.Count} missingInCol={missingInCol.Count} intersection=[{string.Join(',', intersection)}]");
-                    if (intersection.Count == 1)
+                    var list = new List<Cell>();
+                    for (int rr = 0; rr < size; rr++)
                     {
-                        var digit = intersection[0];
-                        UnityEngine.Debug.Log($"RightAngle: box {box} emptyCorner ({emptyCornerCandidate.Row},{emptyCornerCandidate.Column}) deduced {digit}");
-                        // endpoints: pick two of the filled corners for explanation
-                        var filled = otherCorners.Where(c => c.Value.HasValue).ToList();
-                        var e1 = filled[0];
-                        var e2 = filled.Count > 1 ? filled[1] : null;
-                        return (e1, e2, digit, new List<Cell> { emptyCornerCandidate });
+                        var c = board.Cells[rr, col];
+                        if (!c.Value.HasValue && c.Candidates.Contains(digit)) list.Add(c);
+                    }
+                    return list;
+                }
+
+                var removals = new List<Cell>();
+                (Cell e1, Cell e2) endpoints = (null, null);
+
+                foreach (var rp in allRowPairs)
+                {
+                    var fullRow = CandidatesInRow(rp.a.Row);
+                    if (fullRow.Count != 2) continue;
+                    if (!(fullRow.Contains(rp.a) && fullRow.Contains(rp.b))) continue;
+
+                    foreach (var cp in allColPairs)
+                    {
+                        var fullCol = CandidatesInColumn(cp.a.Column);
+                        if (fullCol.Count != 2) continue;
+                        if (!(fullCol.Contains(cp.a) && fullCol.Contains(cp.b))) continue;
+
+                        int interRow = rp.a.Row;
+                        int interCol = cp.a.Column;
+                        var inter = board.Cells[interRow, interCol];
+                        if (inter == rp.a || inter == rp.b || inter == cp.a || inter == cp.b) continue;
+                        if (!inter.Value.HasValue && inter.Candidates.Contains(digit))
+                        {
+                            if (!removals.Contains(inter)) removals.Add(inter);
+                            if (endpoints.e1 == null) endpoints = (rp.a, cp.a);
+                        }
                     }
                 }
+
+                if (removals.Count > 0) return (endpoints.e1, endpoints.e2, digit, removals);
             }
             return null;
         }
@@ -121,23 +136,24 @@ namespace Sudoku.Solver.Rules
             foreach (var p in removals)
             {
                 // place the digit into the intersection cell
-                    if (!p.Value.HasValue)
-                    {
-                        UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({p.Row},{p.Column})");
-                        var change = new CellChange { Row = p.Row, Column = p.Column, OldValue = p.Value, NewValue = digit };
-                        p.Value = digit;
-                        r.Changes.Add(change);
-                        if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
-                    }
+                if (!p.Value.HasValue)
+                {
+                    UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({p.Row},{p.Column})");
+                    var change = new CellChange { Row = p.Row, Column = p.Column, OldValue = p.Value, NewValue = digit };
+                    p.Value = digit;
+                    p.Candidates.Clear();
+                    r.Changes.Add(change);
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                }
             }
             r.Applied = r.Changes.Count > 0;
             if (r.Applied) r.Description = $"Right-angle placed {digit} into {r.Changes.Count} cell(s)";
             return r;
         }
 
-        public bool UpdateCandidates(Board board)
+        public RuleResult ApplyOnlyCandidates(Board board)
         {
-            return false;
+            return new RuleResult { Applied = false };
         }
 
         // (no helper subsets required)

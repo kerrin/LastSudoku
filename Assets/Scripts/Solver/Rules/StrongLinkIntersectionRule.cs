@@ -96,9 +96,9 @@ namespace Sudoku.Solver.Rules
             return r;
         }
 
-        public bool UpdateCandidates(Board board)
+        public RuleResult ApplyOnlyCandidates(Board board)
         {
-            return false;
+            return new RuleResult { Applied = false };
         }
     }
 }

@@ -108,7 +108,7 @@ namespace Sudoku.Solver
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
-            (ISudokuRule rule, RuleResult result) = Registry.UpdateCandidates(_board);
+            (ISudokuRule rule, RuleResult result) = Registry.ApplyOnlyCandidates(_board);
             LastAppliedRule = rule;
             LastRuleResult = result;
             if (rule == null || result == null || !result.Applied)

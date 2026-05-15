@@ -136,8 +136,9 @@ namespace Sudoku.Solver.Rules
             return result;
         }
 
-        public bool UpdateCandidates(Board board)
+        public RuleResult ApplyOnlyCandidates(Board board)
         {
+            var result = new RuleResult();
             bool changed = false;
             int size = board.Size;
             for (int r = 0; r < size; r++)
@@ -149,7 +150,10 @@ namespace Sudoku.Solver.Rules
                     {
                         if (cell.Candidates.Count != 0)
                         {
+                            var change = new CellChange { Row = r, Column = c };
+                            foreach (int rem in cell.Candidates) change.RemovedCandidates.Add(rem);
                             cell.Candidates.Clear();
+                            result.Changes.Add(change);
                             changed = true;
                         }
                         continue;
@@ -160,12 +164,20 @@ namespace Sudoku.Solver.Rules
                     for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
                     if (!newCandidates.SetEquals(cell.Candidates))
                     {
+                        var change = new CellChange { Row = r, Column = c };
+                        foreach (int old in new List<int>(cell.Candidates))
+                        {
+                            if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
+                        }
                         cell.Candidates = newCandidates;
+                        if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
                         changed = true;
                     }
                 }
             }
-            return changed;
+            result.Applied = changed;
+            if (changed) result.Description = "Updated candidate sets via Hidden Single candidate refresh";
+            return result;
         }
     }
 }

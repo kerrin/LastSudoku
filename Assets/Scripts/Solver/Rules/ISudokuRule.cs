@@ -15,8 +15,10 @@ namespace Sudoku.Solver.Rules
          * Update candidate sets on the provided <paramref name="board"/> where
          * candidates can be eliminated without assigning values. Return true if
          * any candidate set was changed.
+         *
+         * This method only updates candidate sets and does not place any values.
          */
-        bool UpdateCandidates(Board board);
+        RuleResult ApplyOnlyCandidates(Board board);
 
         /**
          * Return true if this rule is applicable to the given <paramref name="board"/>.
