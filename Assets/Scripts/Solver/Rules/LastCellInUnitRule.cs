@@ -34,22 +34,27 @@ namespace Sudoku.Solver.Rules
             {
                 var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
                 if (empties.Count != 1) return false;
-                Cell empty = empties[0];
+
                 /** find missing digit */
+                Cell empty = empties[0];
                 var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
                 int missing = -1;
                 for (int d = 1; d <= size; d++) if (!present.Contains(d)) { missing = d; break; }
                 if (missing == -1) return false;
-                var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
+
                 // mark present cells in the unit as used for deduction
+                var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
                 foreach (Cell p in unit.Where(c => c.Value.HasValue))
                 {
                     if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
                         result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
                 }
 
+                // place the missing digit in the empty cell
                 board.SetValue(empty, missing);
                 result.Changes.Add(change);
+
+                // Remove the placed digit from candidates of all peers — record removals as separate changes per peer
                 foreach (Cell peer in board.GetPeers(empty))
                 {
                     if (peer.Candidates.Remove(missing))
