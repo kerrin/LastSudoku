@@ -80,7 +80,12 @@ namespace Sudoku.Solver.Rules
          * `RuleResult` will be enacted fully (value assignments + candidate
          * removals) or only candidate removals.
          */
-        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board, bool enactAll = true)
+        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
+        {
+            return ApplyNext(board, true);
+        }
+
+        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board, bool enactAll)
         {
             // Iterate rules in order and apply the first that reports changes.
             foreach (ISudokuRule r in _rules)
