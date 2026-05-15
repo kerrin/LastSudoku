@@ -75,5 +75,10 @@ namespace Sudoku.Models
             };
             return c;
         }
+
+        public override string ToString()
+        {
+            return $"Cell({Row},{Column}): Value={Value}, Given={IsGiven}, Candidates=[{string.Join(",", Candidates)}], Color={Color}";
+        }
     }
 }

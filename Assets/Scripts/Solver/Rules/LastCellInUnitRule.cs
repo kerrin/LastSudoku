@@ -28,55 +28,9 @@ namespace Sudoku.Solver.Rules
         {
             var result = new RuleResult();
             int size = board.Size;
-
-            /** helper to handle a unit */
-            bool HandleUnit(IEnumerable<Cell> unit)
-            {
-                var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
-                if (empties.Count != 1) return false;
-
-                /** find missing digit */
-                Cell empty = empties[0];
-                var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
-                int missing = -1;
-                for (int d = 1; d <= size; d++) if (!present.Contains(d)) { missing = d; break; }
-                if (missing == -1) return false;
-
-                // mark present cells in the unit as used for deduction
-                var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
-                foreach (Cell p in unit.Where(c => c.Value.HasValue))
-                {
-                    if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
-                        result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
-                }
-
-                // place the missing digit in the empty cell
-                board.SetValue(empty, missing);
-                result.Changes.Add(change);
-
-                // Remove the placed digit from candidates of all peers — record removals as separate changes per peer
-                foreach (Cell peer in board.GetPeers(empty))
-                {
-                    if (peer.Candidates.Remove(missing))
-                    {
-                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
-                        peerChange.RemovedCandidates.Add(missing);
-                        result.Changes.Add(peerChange);
-                        if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                            result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
-                    }
-                }
-                result.Applied = true;
-                result.Description = $"Placed {missing} at ({empty.Row},{empty.Column}) via Last-Cell-In-Unit";
-                return true;
-            }
-
-            /** rows */
-            for (int r = 0; r < size; r++) if (HandleUnit(board.GetRow(r))) return result;
-            /** columns */
-            for (int c = 0; c < size; c++) if (HandleUnit(board.GetColumn(c))) return result;
-            /** boxes */
-            for (int b = 0; b < size; b++) if (HandleUnit(board.GetBox(b))) return result;
+            for (int r = 0; r < size; r++) if (ProcessSingleEmptyUnit(board.GetRow(r), board, result)) return result;
+            for (int c = 0; c < size; c++) if (ProcessSingleEmptyUnit(board.GetColumn(c), board, result)) return result;            /** boxes */
+            for (int b = 0; b < size; b++) if (ProcessSingleEmptyUnit(board.GetBox(b), board, result)) return result;
 
             result.Applied = false;
             return result;
@@ -85,45 +39,91 @@ namespace Sudoku.Solver.Rules
         public RuleResult ApplyOnlyCandidates(Board board)
         {
             var result = new RuleResult();
-            bool changed = false;
             int size = board.Size;
-            for (int r = 0; r < size; r++)
+            // First try unit-level candidate deductions (rows, columns, boxes)
+            for (int r = 0; r < size; r++) if (ProcessSingleEmptyUnitCandidates(board.GetRow(r), board, result)) { result.Applied = true; return result; }
+            for (int c = 0; c < size; c++) if (ProcessSingleEmptyUnitCandidates(board.GetColumn(c), board, result)) { result.Applied = true; return result; }
+            for (int b = 0; b < size; b++) if (ProcessSingleEmptyUnitCandidates(board.GetBox(b), board, result)) { result.Applied = true; return result; }
+            
+            result.Applied = false;
+            return result;
+        }
+
+        private bool ProcessSingleEmptyUnit(IEnumerable<Cell> unit, Board board, RuleResult result)
+        {
+            var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
+            if (empties.Count != 1) return false;
+
+            int size = board.Size;
+            Cell empty = empties[0];
+            var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
+
+            int missing = -1;
+            for (int d = 1; d <= size; d++) if (!present.Contains(d)) { missing = d; break; }
+            if (missing == -1) return false;
+
+            var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
+            foreach (Cell p in unit.Where(c => c.Value.HasValue))
             {
-                for (int c = 0; c < size; c++)
+                if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
+                    result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+            }
+
+            board.SetValue(empty, missing);
+            result.Changes.Add(change);
+
+            foreach (Cell peer in board.GetPeers(empty))
+            {
+                if (peer.Candidates.Remove(missing))
                 {
-                    Cell cell = board.Cells[r, c];
-                    if (cell.Value.HasValue)
+                    var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                    peerChange.RemovedCandidates.Add(missing);
+                    result.Changes.Add(peerChange);
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                }
+            }
+            result.Applied = true;
+            result.Description = $"Placed {missing} at ({empty.Row},{empty.Column}) via Last-Cell-In-Unit";
+            return true;
+        }
+
+        private bool ProcessSingleEmptyUnitCandidates(IEnumerable<Cell> unit, Board board, RuleResult result)
+        {
+            var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
+            if (empties.Count != 1) return false;
+
+            int size = board.Size;
+            Cell empty = empties[0];
+            var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
+
+            var newCandidates = new HashSet<int>();
+            for (int d = 1; d <= size; d++) if (!present.Contains(d)) newCandidates.Add(d);
+
+            if (!newCandidates.SetEquals(empty.Candidates))
+            {
+                var change = new CellChange { Row = empty.Row, Column = empty.Column };
+                foreach (int old in new List<int>(empty.Candidates)) if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
+                empty.Candidates = newCandidates;
+                if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
+            }
+
+            if (newCandidates.Count == 1)
+            {
+                int missing = newCandidates.First();
+                foreach (Cell peer in board.GetPeers(empty))
+                {
+                    if (peer.Value.HasValue) continue;
+                    if (peer.Candidates.Remove(missing))
                     {
-                        if (cell.Candidates.Count != 0)
-                        {
-                            var change = new CellChange { Row = r, Column = c };
-                            foreach (int rem in cell.Candidates) change.RemovedCandidates.Add(rem);
-                            cell.Candidates.Clear();
-                            result.Changes.Add(change);
-                            changed = true;
-                        }
-                        continue;
-                    }
-                    var present = new bool[size + 1];
-                    foreach (Cell peer in board.GetPeers(cell)) if (peer.Value.HasValue) present[peer.Value.Value] = true;
-                    var newCandidates = new HashSet<int>();
-                    for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
-                    if (!newCandidates.SetEquals(cell.Candidates))
-                    {
-                        var change = new CellChange { Row = r, Column = c };
-                        foreach (int old in new List<int>(cell.Candidates))
-                        {
-                            if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
-                        }
-                        cell.Candidates = newCandidates;
-                        if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
-                        changed = true;
+                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                        peerChange.RemovedCandidates.Add(missing);
+                        result.Changes.Add(peerChange);
                     }
                 }
             }
-            result.Applied = changed;
-            if (changed) result.Description = "Updated candidate sets via Last-Cell-In-Unit candidate refresh";
-            return result;
+
+            return true;
         }
     }
 }

@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using NUnit.Framework;
+using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Tests.Editor
@@ -142,5 +144,60 @@ namespace Sudoku.Tests.Editor
             Assert.IsNull(board.Cells[0, 0].Value);
             Assert.IsNull(board.Cells[2, 2].Value);
         }
+
+        /**
+         * Populate row 2 with values 1..8, leaving the last cell empty. The rule should list the candidate as only 9 in the last cell
+         * and remove 9 from peers' candidate sets.
+         */
+        [Test]
+        public void LastCellInUnitRule_CandidatesForMissingDigit_WhenOneEmpty_Row()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            // prepare row 2 with values 1..8 placed, leaving one empty cell
+            for (int c = 0; c < 8; c++)
+            {
+                board.Cells[2, c].Value = c + 1; // values 1..8
+                board.Cells[2, c].Candidates.Clear();
+            }
+            // last cell at (2,8) remains empty and initially has full candidates
+            var rule = new LastCellInUnitRule();
+            Assert.IsTrue(rule.CanApply(board));
+
+            var res = rule.ApplyOnlyCandidates(board);
+            Assert.IsTrue(res.Applied);
+            // missing digit should be 9 and only 9 in candidates
+            Assert.IsTrue(board.Cells[2, 8].Candidates.Contains(9));
+            Assert.AreEqual(1, board.Cells[2, 8].Candidates.Count);
+            foreach (Cell peer in board.GetPeers(board.Cells[2, 8])) Assert.IsFalse(peer.Candidates.Contains(9), "For peer " + peer);
+        }
+
+        
+
+        /**
+         * Populate row 2 with values 1..8, leaving the last cell empty. The rule should list the candidate as only 9 in the last cell
+         * and remove 9 from peers' candidate sets.
+         */
+        [Test]
+        public void LastCellInUnitRule_CandidatesForMissingDigit_WhenMultipleEmpty_Row()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            // prepare row 2 with values 1..7 placed, leaving the last 2 cells empty
+            for (int c = 0; c < 7; c++)
+            {
+                board.Cells[2, c].Value = c + 1; // values 1..7
+                board.Cells[2, c].Candidates.Clear();
+            }
+            // last 2 cells at (2,7) and (2,8) remain empty and initially have full candidates
+            var rule = new LastCellInUnitRule();
+            Assert.IsFalse(rule.CanApply(board));
+
+            var res = rule.ApplyOnlyCandidates(board);
+            Assert.IsFalse(res.Applied);
+            // missing digit should be 8 and 9 and only 8 and 9 in candidates for the two empty cells
+            Assert.IsTrue(board.Cells[2, 7].Candidates.Contains(8));
+            Assert.IsTrue(board.Cells[2, 8].Candidates.Contains(9));
+            // As we didn't apply any changes, the candidates should remain unchanged (full set of 1..9) for the empty cells
+            Assert.AreEqual(9, board.Cells[2, 8].Candidates.Count);
+            Assert.AreEqual(9, board.Cells[2, 7].Candidates.Count);}
     }
 }
