@@ -31,7 +31,8 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(rule.CanApply(board));
 
             var res = rule.Apply(board);
-            Assert.IsTrue(res.Applied);
+            Assert.IsTrue(res.Apply);
+            res.EnactAll(board);
             Assert.AreEqual(7, board.Cells[0, 3].Value);
             // ensure peers no longer contain 7
             foreach (var peer in board.GetPeers(board.Cells[0, 3]))

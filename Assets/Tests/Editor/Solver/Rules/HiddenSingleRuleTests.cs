@@ -29,7 +29,8 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(rule.CanApply(board));
 
             var res = rule.Apply(board);
-            Assert.IsTrue(res.Applied);
+            Assert.IsTrue(res.Apply);
+            res.EnactAll(board);
             Assert.AreEqual(3, board.Cells[1, 5].Value);
             foreach (var peer in board.GetPeers(board.Cells[1, 5])) Assert.IsFalse(peer.Candidates.Contains(3));
         }

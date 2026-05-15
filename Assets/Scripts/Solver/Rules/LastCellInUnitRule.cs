@@ -32,20 +32,7 @@ namespace Sudoku.Solver.Rules
             for (int c = 0; c < size; c++) if (ProcessSingleEmptyUnit(board.GetColumn(c), board, result)) return result;            /** boxes */
             for (int b = 0; b < size; b++) if (ProcessSingleEmptyUnit(board.GetBox(b), board, result)) return result;
 
-            result.Applied = false;
-            return result;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            var result = new RuleResult();
-            int size = board.Size;
-            // First try unit-level candidate deductions (rows, columns, boxes)
-            for (int r = 0; r < size; r++) if (ProcessSingleEmptyUnitCandidates(board.GetRow(r), board, result)) { result.Applied = true; return result; }
-            for (int c = 0; c < size; c++) if (ProcessSingleEmptyUnitCandidates(board.GetColumn(c), board, result)) { result.Applied = true; return result; }
-            for (int b = 0; b < size; b++) if (ProcessSingleEmptyUnitCandidates(board.GetBox(b), board, result)) { result.Applied = true; return result; }
-            
-            result.Applied = false;
+            result.Apply = false;
             return result;
         }
 
@@ -63,18 +50,20 @@ namespace Sudoku.Solver.Rules
             if (missing == -1) return false;
 
             var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
+            // When only enacting candidates, remove all other candidates from the empty cell
+            for (int v = 1; v <= size; v++) if (v != missing) change.RemovedCandidates.Add(v);
             foreach (Cell p in unit.Where(c => c.Value.HasValue))
             {
                 if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
                     result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
             }
 
-            board.SetValue(empty, missing);
+            // Record placement and peer candidate removals (do not modify board here)
             result.Changes.Add(change);
 
             foreach (Cell peer in board.GetPeers(empty))
             {
-                if (peer.Candidates.Remove(missing))
+                if (peer.Candidates.Contains(missing))
                 {
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(missing);
@@ -83,46 +72,8 @@ namespace Sudoku.Solver.Rules
                         result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                 }
             }
-            result.Applied = true;
+            result.Apply = true;
             result.Description = $"Placed {missing} at ({empty.Row},{empty.Column}) via Last-Cell-In-Unit";
-            return true;
-        }
-
-        private bool ProcessSingleEmptyUnitCandidates(IEnumerable<Cell> unit, Board board, RuleResult result)
-        {
-            var empties = unit.Where(cell => !cell.Value.HasValue).ToList();
-            if (empties.Count != 1) return false;
-
-            int size = board.Size;
-            Cell empty = empties[0];
-            var present = unit.Where(c => c.Value.HasValue).Select(c => c.Value.Value).ToHashSet();
-
-            var newCandidates = new HashSet<int>();
-            for (int d = 1; d <= size; d++) if (!present.Contains(d)) newCandidates.Add(d);
-
-            if (!newCandidates.SetEquals(empty.Candidates))
-            {
-                var change = new CellChange { Row = empty.Row, Column = empty.Column };
-                foreach (int old in new List<int>(empty.Candidates)) if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
-                empty.Candidates = newCandidates;
-                if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
-            }
-
-            if (newCandidates.Count == 1)
-            {
-                int missing = newCandidates.First();
-                foreach (Cell peer in board.GetPeers(empty))
-                {
-                    if (peer.Value.HasValue) continue;
-                    if (peer.Candidates.Remove(missing))
-                    {
-                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
-                        peerChange.RemovedCandidates.Add(missing);
-                        result.Changes.Add(peerChange);
-                    }
-                }
-            }
-
             return true;
         }
     }

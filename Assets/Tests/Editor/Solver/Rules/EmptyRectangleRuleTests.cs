@@ -37,7 +37,7 @@ namespace Sudoku.Tests.Editor
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);
-            Assert.IsTrue(result.Applied);
+            Assert.IsTrue(result.Apply);
             Assert.IsFalse(board.Cells[1, 3].Candidates.Contains(digit));
         }
     }

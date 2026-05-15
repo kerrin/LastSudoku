@@ -8,10 +8,11 @@ namespace Sudoku.Tests.Editor
     /// </summary>
     internal static class TestHelpers
     {
-        /// <summary>
-        /// Create an empty 9x9 <see cref="Board"/> with fresh <see cref="Cell"/> instances.
-        /// Tests manipulate the returned board's cells directly (candidates/values).
-        /// </summary>
+        /**
+         * Create an empty 9x9 <see cref="Board"/> with fresh <see cref="Cell"/> instances.
+         * Tests manipulate the returned board's cells directly (candidates/values).
+         * The board is initialized with all candidates (1-9) in each cell, but no values set.
+         */
         public static Board CreateEmptyBoard()
         {
             var board = new Board(9, 3, 3);

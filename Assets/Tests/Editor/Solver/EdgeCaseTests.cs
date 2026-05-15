@@ -81,7 +81,7 @@ namespace Sudoku.Tests.Solver
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNull(rule);
-            Assert.IsFalse(result.Applied);
+            Assert.IsFalse(result.Apply);
         }
     }
 }

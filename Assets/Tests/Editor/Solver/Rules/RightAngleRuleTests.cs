@@ -34,7 +34,7 @@ namespace Sudoku.Tests.Editor
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);
-            Assert.IsTrue(result.Applied);
+            Assert.IsTrue(result.Apply);
 
             // Rule should place the digit at the intersection cell
             Assert.AreEqual(d, board.Cells[1, 2].Value, "Expected the RightAngleRule to place the digit at the intersection cell");
@@ -163,7 +163,7 @@ namespace Sudoku.Tests.Editor
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);
             Assert.IsInstanceOf<RightAngleRule>(rule);
-            Assert.IsTrue(result.Applied);
+            Assert.IsTrue(result.Apply);
             // With value-placement semantics, expect the rule to have placed 8 at (1,4)
             Assert.AreEqual(8, board.Cells[1, 4].Value, "Expected the RightAngleRule to place digit 8 at (1,4)");
             Assert.IsEmpty(board.Cells[1, 4].Candidates, "Candidates should be cleared when a value is placed");

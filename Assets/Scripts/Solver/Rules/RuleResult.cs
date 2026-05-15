@@ -30,8 +30,8 @@ namespace Sudoku.Solver.Rules
      */
     public class RuleResult
     {
-        /** True when the rule made at least one change to the board. */
-        public bool Applied;
+        /** True when the rule wants to make at least one change to the board. */
+        public bool Apply;
 
         /** Short human-readable description of the change. */
         public string Description;
@@ -45,6 +45,40 @@ namespace Sudoku.Solver.Rules
          * cells.
          */
         public List<UsedCell> UsedCells = new List<UsedCell>();
+
+        /**
+         * Enact only candidate removals recorded in `Changes` on the provided board.
+         * Values recorded in `NewValue` are ignored.
+         */
+        public void EnactCandidates(Board board)
+        {
+            foreach (var change in Changes)
+            {
+                if (change.RemovedCandidates == null || change.RemovedCandidates.Count == 0) continue;
+                var cell = board.Cells[change.Row, change.Column];
+                foreach (int v in change.RemovedCandidates) cell.Candidates.Remove(v);
+            }
+        }
+
+        /**
+         * Enact both candidate removals and value assignments recorded in `Changes`.
+         */
+        public void EnactAll(Board board)
+        {
+            foreach (var change in Changes)
+            {
+                var cell = board.Cells[change.Row, change.Column];
+                if (change.NewValue.HasValue)
+                {
+                    // set the value and clear the cell's own candidates
+                    board.SetValue(cell, change.NewValue.Value);
+                }
+                if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
+                {
+                    foreach (int v in change.RemovedCandidates) cell.Candidates.Remove(v);
+                }
+            }
+        }
     }
 
     /** Minimal coordinate describing a cell that was used during deduction. */

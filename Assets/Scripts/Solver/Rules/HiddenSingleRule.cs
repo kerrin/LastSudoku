@@ -92,7 +92,7 @@ namespace Sudoku.Solver.Rules
             (Cell cell, int digit, UnitKind unit, int unitIndex)? found = FindAny(board);
             if (found == null)
             {
-                result.Applied = false;
+                result.Apply = false;
                 return result;
             }
             (Cell cell, int digit, UnitKind unit, int unitIndex) = found.Value;
@@ -118,11 +118,11 @@ namespace Sudoku.Solver.Rules
                     result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column });
             }
 
-            board.SetValue(cell, digit);
+            // Record the placement and peer candidate removals (do not modify board here)
             result.Changes.Add(change);
             foreach (Cell peer in board.GetPeers(cell))
             {
-                if (peer.Candidates.Remove(digit))
+                if (peer.Candidates.Contains(digit))
                 {
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
@@ -131,52 +131,8 @@ namespace Sudoku.Solver.Rules
                         result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                 }
             }
-            result.Applied = true;
+            result.Apply = true;
             result.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Hidden Single";
-            return result;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            var result = new RuleResult();
-            bool changed = false;
-            int size = board.Size;
-            for (int r = 0; r < size; r++)
-            {
-                for (int c = 0; c < size; c++)
-                {
-                    Cell cell = board.Cells[r, c];
-                    if (cell.Value.HasValue)
-                    {
-                        if (cell.Candidates.Count != 0)
-                        {
-                            var change = new CellChange { Row = r, Column = c };
-                            foreach (int rem in cell.Candidates) change.RemovedCandidates.Add(rem);
-                            cell.Candidates.Clear();
-                            result.Changes.Add(change);
-                            changed = true;
-                        }
-                        continue;
-                    }
-                    var present = new bool[size + 1];
-                    foreach (Cell peer in board.GetPeers(cell)) if (peer.Value.HasValue) present[peer.Value.Value] = true;
-                    var newCandidates = new HashSet<int>();
-                    for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
-                    if (!newCandidates.SetEquals(cell.Candidates))
-                    {
-                        var change = new CellChange { Row = r, Column = c };
-                        foreach (int old in new List<int>(cell.Candidates))
-                        {
-                            if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
-                        }
-                        cell.Candidates = newCandidates;
-                        if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
-                        changed = true;
-                    }
-                }
-            }
-            result.Applied = changed;
-            if (changed) result.Description = "Updated candidate sets via Hidden Single candidate refresh";
             return result;
         }
     }

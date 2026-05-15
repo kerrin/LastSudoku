@@ -27,7 +27,9 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(rule.CanApply(board));
 
             var res = rule.Apply(board);
-            Assert.IsTrue(res.Applied);
+            Assert.IsTrue(res.Apply);
+            // enact recorded changes on the board
+            res.EnactAll(board);
             Assert.AreEqual(5, board.Cells[0, 0].Value);
             // peers must have had candidate 5 removed
             foreach (var peer in board.GetPeers(target))

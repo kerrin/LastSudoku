@@ -53,12 +53,12 @@ namespace Sudoku.Solver.Rules
                             result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                     }
 
-                    board.SetValue(cell, value);
+                    // Record the value placement (do not modify the board here)
                     result.Changes.Add(change);
-                    // remove candidate from peers — record removals as separate changes per peer
+                    // record candidate removal from peers as separate changes per peer
                     foreach (Cell peer in board.GetPeers(cell))
                     {
-                        if (peer.Candidates.Remove(value))
+                        if (peer.Candidates.Contains(value))
                         {
                             var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                             peerChange.RemovedCandidates.Add(value);
@@ -67,56 +67,12 @@ namespace Sudoku.Solver.Rules
                                 result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                         }
                     }
-                    result.Applied = true;
+                    result.Apply = true;
                     result.Description = $"Placed {value} at ({r},{c}) via Naked Single";
                     return result;
                 }
             }
-            result.Applied = false;
-            return result;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            var result = new RuleResult();
-            bool changed = false;
-            int size = board.Size;
-            for (int r = 0; r < size; r++)
-            {
-                for (int c = 0; c < size; c++)
-                {
-                    Cell cell = board.Cells[r, c];
-                    if (cell.Value.HasValue)
-                    {
-                        if (cell.Candidates.Count != 0)
-                        {
-                            var change = new CellChange { Row = r, Column = c };
-                            foreach (int rem in cell.Candidates) change.RemovedCandidates.Add(rem);
-                            cell.Candidates.Clear();
-                            result.Changes.Add(change);
-                            changed = true;
-                        }
-                        continue;
-                    }
-                    var present = new bool[size + 1];
-                    foreach (Cell peer in board.GetPeers(cell)) if (peer.Value.HasValue) present[peer.Value.Value] = true;
-                    var newCandidates = new HashSet<int>();
-                    for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
-                    if (!newCandidates.SetEquals(cell.Candidates))
-                    {
-                        var change = new CellChange { Row = r, Column = c };
-                        foreach (int old in new List<int>(cell.Candidates))
-                        {
-                            if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
-                        }
-                        cell.Candidates = newCandidates;
-                        if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
-                        changed = true;
-                    }
-                }
-            }
-            result.Applied = changed;
-            if (changed) result.Description = "Updated candidate sets via Naked Single candidate refresh";
+            result.Apply = false;
             return result;
         }
     }

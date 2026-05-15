@@ -73,82 +73,38 @@ namespace Sudoku.Solver.Rules
          */
         public RuleResult Apply(Board board)
         {
-            var r = new RuleResult();
+            var result = new RuleResult();
             (Cell cell, int digit)? found = FindAny(board);
             if (found == null)
             {
-                r.Applied = false;
-                return r;
+                    result.Apply = false;
+                return result;
             }
             (Cell cell, int digit) = found.Value;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             // mark peers with values as used
             foreach (Cell peer in board.GetPeers(cell))
             {
-                if (peer.Value.HasValue && !r.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                    r.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                    result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
             }
 
-            board.SetValue(cell, digit);
-            r.Changes.Add(change);
+            // Record placement and peer candidate removals (do not modify board here)
+            result.Changes.Add(change);
             foreach (Cell peer in board.GetPeers(cell))
             {
-                if (peer.Candidates.Remove(digit))
+                if (peer.Candidates.Contains(digit))
                 {
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
-                    r.Changes.Add(peerChange);
-                    if (!r.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                        r.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                    result.Changes.Add(peerChange);
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
                 }
             }
-            r.Applied = true;
-            r.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Missing Single";
+                result.Apply = true;
+            result.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Missing Single";
             
-            return r;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            var result = new RuleResult();
-            bool changed = false;
-            int size = board.Size;
-            for (int r = 0; r < size; r++)
-            {
-                for (int c = 0; c < size; c++)
-                {
-                    Cell cell = board.Cells[r, c];
-                    if (cell.Value.HasValue)
-                    {
-                        if (cell.Candidates.Count != 0)
-                        {
-                            var change = new CellChange { Row = r, Column = c };
-                            foreach (int rem in cell.Candidates) change.RemovedCandidates.Add(rem);
-                            cell.Candidates.Clear();
-                            result.Changes.Add(change);
-                            changed = true;
-                        }
-                        continue;
-                    }
-                    var present = new bool[size + 1];
-                    foreach (Cell peer in board.GetPeers(cell)) if (peer.Value.HasValue) present[peer.Value.Value] = true;
-                    var newCandidates = new HashSet<int>();
-                    for (int d = 1; d <= size; d++) if (!present[d]) newCandidates.Add(d);
-                    if (!newCandidates.SetEquals(cell.Candidates))
-                    {
-                        var change = new CellChange { Row = r, Column = c };
-                        foreach (int old in new List<int>(cell.Candidates))
-                        {
-                            if (!newCandidates.Contains(old)) change.RemovedCandidates.Add(old);
-                        }
-                        cell.Candidates = newCandidates;
-                        if (change.RemovedCandidates.Count > 0) result.Changes.Add(change);
-                        changed = true;
-                    }
-                }
-            }
-            result.Applied = changed;
-            if (changed) result.Description = "Updated candidate sets via Missing Single candidate refresh";
             return result;
         }
     }

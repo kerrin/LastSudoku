@@ -153,7 +153,7 @@ namespace Sudoku.Solver.Rules
             var r = new RuleResult();
             if (found == null)
             {
-                r.Applied = false;
+                r.Apply = false;
                 return r;
             }
             var (e1, e2, digit, removals) = found.Value;
@@ -162,7 +162,7 @@ namespace Sudoku.Solver.Rules
             if (!r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column });
             foreach (Cell p in removals)
             {
-                if (p.Candidates.Remove(digit))
+                if (p.Candidates.Contains(digit))
                 {
                     var change = new CellChange { Row = p.Row, Column = p.Column };
                     change.RemovedCandidates.Add(digit);
@@ -170,16 +170,11 @@ namespace Sudoku.Solver.Rules
                     if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
                 }
             }
-            r.Applied = r.Changes.Count > 0;
-            if (r.Applied) r.Description = $"Skyscraper removed {digit} from {r.Changes.Count} cell(s)";
+            r.Apply = r.Changes.Count > 0;
+            if (r.Apply) r.Description = $"Skyscraper removed {digit} from {r.Changes.Count} cell(s)";
             return r;
         }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            return new RuleResult { Applied = false };
-        }
-
+        
         // Helper: return all 2-element subsets of a list (if list has exactly 2, returns a single subset)
         private static List<List<int>> GetTwoElementSubsets(List<int> items)
         {

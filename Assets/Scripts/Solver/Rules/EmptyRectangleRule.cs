@@ -51,7 +51,7 @@ namespace Sudoku.Solver.Rules
                     bool applied = false;
                     foreach (Cell target in info.Targets)
                     {
-                        if (!target.Value.HasValue && target.Candidates.Remove(digit))
+                        if (!target.Value.HasValue && target.Candidates.Contains(digit))
                         {
                             var change = new CellChange { Row = target.Row, Column = target.Column };
                             change.RemovedCandidates.Add(digit);
@@ -64,13 +64,13 @@ namespace Sudoku.Solver.Rules
 
                     if (applied)
                     {
-                        result.Applied = true;
+                        result.Apply = true;
                         result.Description = info.Description;
                         return result;
                     }
                 }
             }
-            result.Applied = false;
+            result.Apply = false;
             return result;
         }
 
@@ -127,11 +127,6 @@ namespace Sudoku.Solver.Rules
             }
 
             return null;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            return new RuleResult { Applied = false };
         }
     }
 }

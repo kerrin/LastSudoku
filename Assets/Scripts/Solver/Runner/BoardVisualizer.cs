@@ -60,7 +60,7 @@ namespace Sudoku.Solver
                     Rect cellRect = new Rect(x0 + c * CellSize, y0 + r * CellSize, CellSize, CellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     bool highlighted = false;
-                    if (Runner.LastRuleResult != null && Runner.LastRuleResult.Applied)
+                        if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
                     {
                         var changes = Runner.LastRuleResult.Changes;
                         if (changes != null)

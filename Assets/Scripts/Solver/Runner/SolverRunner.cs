@@ -111,7 +111,7 @@ namespace Sudoku.Solver
             (ISudokuRule rule, RuleResult result) = Registry.ApplyOnlyCandidates(_board);
             LastAppliedRule = rule;
             LastRuleResult = result;
-            if (rule == null || result == null || !result.Applied)
+            if (rule == null || result == null || !result.Apply)
             {
                 Debug.Log("No applicable rule found.");
                 return;
@@ -128,7 +128,7 @@ namespace Sudoku.Solver
             (ISudokuRule rule, RuleResult result) = Registry.ApplyNext(_board);
             LastAppliedRule = rule;
             LastRuleResult = result;
-            if (rule == null || result == null || !result.Applied)
+            if (rule == null || result == null || !result.Apply)
             {
                 Debug.Log("No applicable rule found.");
                 return;

@@ -124,7 +124,7 @@ namespace Sudoku.Solver.Rules
             var r = new RuleResult();
             if (found == null)
             {
-                r.Applied = false;
+                r.Apply = false;
                 return r;
             }
             var (e1, e2, digit, removals) = found.Value;
@@ -135,27 +135,20 @@ namespace Sudoku.Solver.Rules
 
             foreach (var p in removals)
             {
-                // place the digit into the intersection cell
+                // record placing the digit into the intersection cell (do not modify board here)
                 if (!p.Value.HasValue)
                 {
                     UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({p.Row},{p.Column})");
                     var change = new CellChange { Row = p.Row, Column = p.Column, OldValue = p.Value, NewValue = digit };
-                    p.Value = digit;
-                    p.Candidates.Clear();
+                    // record candidate clearing as removed candidates
+                    for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
                     r.Changes.Add(change);
                     if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
                 }
             }
-            r.Applied = r.Changes.Count > 0;
-            if (r.Applied) r.Description = $"Right-angle placed {digit} into {r.Changes.Count} cell(s)";
+            r.Apply = r.Changes.Count > 0;
+            if (r.Apply) r.Description = $"Right-angle placed {digit} into {r.Changes.Count} cell(s)";
             return r;
         }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            return new RuleResult { Applied = false };
-        }
-
-        // (no helper subsets required)
     }
 }

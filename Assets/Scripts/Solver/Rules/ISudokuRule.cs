@@ -11,14 +11,7 @@ namespace Sudoku.Solver.Rules
         /** Human-friendly rule name. */
         string Name { get; }
 
-        /**
-         * Update candidate sets on the provided <paramref name="board"/> where
-         * candidates can be eliminated without assigning values. Return true if
-         * any candidate set was changed.
-         *
-         * This method only updates candidate sets and does not place any values.
-         */
-        RuleResult ApplyOnlyCandidates(Board board);
+
 
         /**
          * Return true if this rule is applicable to the given <paramref name="board"/>.
@@ -26,9 +19,12 @@ namespace Sudoku.Solver.Rules
          */
         bool CanApply(Board board);
 
+
         /**
          * Apply the rule to the <paramref name="board"/>. Returns a <see cref="RuleResult"/>
-         * describing any changes made (or not made).
+         * describing any changes made (or not made). The returned result is
+         * non-mutating: callers must call `EnactAll` or `EnactCandidates` on the
+         * `RuleResult` to apply the recorded changes to the board.
          */
         RuleResult Apply(Board board);
 

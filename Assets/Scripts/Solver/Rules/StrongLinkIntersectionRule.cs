@@ -75,7 +75,7 @@ namespace Sudoku.Solver.Rules
             var r = new RuleResult();
             if (found == null)
             {
-                r.Applied = false;
+                r.Apply = false;
                 return r;
             }
             var (a, b, digit, removals) = found.Value;
@@ -83,7 +83,7 @@ namespace Sudoku.Solver.Rules
             if (!r.UsedCells.Exists(u => u.Row == b.Row && u.Column == b.Column)) r.UsedCells.Add(new UsedCell { Row = b.Row, Column = b.Column });
             foreach (Cell p in removals)
             {
-                if (p.Candidates.Remove(digit))
+                if (p.Candidates.Contains(digit))
                 {
                     var change = new CellChange { Row = p.Row, Column = p.Column };
                     change.RemovedCandidates.Add(digit);
@@ -91,14 +91,9 @@ namespace Sudoku.Solver.Rules
                     if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
                 }
             }
-            r.Applied = r.Changes.Count > 0;
-            if (r.Applied) r.Description = $"Strong link intersection removed {digit} from {r.Changes.Count} cell(s)";
+            r.Apply = r.Changes.Count > 0;
+            if (r.Apply) r.Description = $"Strong link intersection removed {digit} from {r.Changes.Count} cell(s)";
             return r;
-        }
-
-        public RuleResult ApplyOnlyCandidates(Board board)
-        {
-            return new RuleResult { Applied = false };
         }
     }
 }

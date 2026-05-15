@@ -80,10 +80,12 @@ namespace Sudoku.Solver.Rules
             {
                 try
                 {
-                    RuleResult res = r.ApplyOnlyCandidates(board);
-                    if (res != null && res.Applied)
+                    // Call the unified Apply and enact only candidate removals.
+                    RuleResult res = r.Apply(board);
+                    if (res != null && res.Apply)
                     {
-                        Debug.Log($"Rule {r.GetType().Name} updated candidates.");
+                        Debug.Log($"Rule {r.GetType().Name} updated candidates (via Apply).");
+                        res.EnactCandidates(board);
                         return (r, res);
                     }
                 }
@@ -92,7 +94,7 @@ namespace Sudoku.Solver.Rules
                     Debug.LogWarning($"ApplyOnlyCandidates threw for {r.GetType().Name}: {ex.Message}");
                 }
             }
-            return (null, new RuleResult { Applied = false });
+            return (null, new RuleResult { Apply = false });
         }
         
         /**
@@ -107,12 +109,17 @@ namespace Sudoku.Solver.Rules
                 {
                     Debug.Log($"Applying rule: {rule.GetType().Name}");
                     RuleResult res = rule.Apply(board);
-                    if (res != null && res.Applied) return (rule, res);
+                    if (res != null && res.Apply)
+                    {
+                        // Enact both value assignments and candidate removals
+                        res.EnactAll(board);
+                        return (rule, res);
+                    }
                 } else {
                     Debug.Log($"Rule {rule.GetType().Name} cannot apply.");
                 }
             }
-            return (null, new RuleResult { Applied = false });
+            return (null, new RuleResult { Apply = false });
         }
 
         /**
@@ -125,7 +132,7 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < maxIterations; i++)
             {
                 (ISudokuRule rule, RuleResult result) = ApplyNext(board);
-                if (rule == null || !result.Applied) break;
+                if (rule == null || !result.Apply) break;
                 results.Add((rule, result));
             }
             return results;
