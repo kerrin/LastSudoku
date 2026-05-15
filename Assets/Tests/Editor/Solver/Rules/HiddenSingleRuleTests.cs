@@ -28,7 +28,7 @@ namespace Sudoku.Tests.Editor
             var rule = new HiddenSingleRule();
             Assert.IsTrue(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             res.EnactAll(board);
             Assert.AreEqual(3, board.Cells[1, 5].Value);

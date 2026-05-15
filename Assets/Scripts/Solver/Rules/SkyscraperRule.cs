@@ -147,7 +147,7 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        public RuleResult Apply(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
             var found = FindElimination(board);
             var r = new RuleResult();

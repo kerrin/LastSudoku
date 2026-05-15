@@ -34,7 +34,7 @@ namespace Sudoku.Solver.Rules
          * Apply the first naked-single found: set the cell and remove the digit
          * from all peers' candidate sets.
          */
-        public RuleResult Apply(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
             for (int r = 0; r < board.Size; r++)

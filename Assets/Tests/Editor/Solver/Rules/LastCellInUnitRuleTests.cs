@@ -36,7 +36,7 @@ namespace Sudoku.Tests.Editor
             var target = board.Cells[2, 8];
             foreach (var peer in board.GetPeers(target)) Assert.IsTrue(peer.Value.HasValue || peer.Candidates.Contains(9), "Precondition: peer should contain 9 or be filled");
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             res.EnactAll(board);
             // missing digit should be 9
@@ -69,7 +69,7 @@ namespace Sudoku.Tests.Editor
             var rule = new LastCellInUnitRule();
             Assert.IsFalse(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsFalse(res.Apply);
             // last 2 cells should remain empty
             Assert.IsNull(board.Cells[2, 7].Value);
@@ -101,7 +101,7 @@ namespace Sudoku.Tests.Editor
             var target = board.Cells[8, 2];
             foreach (var peer in board.GetPeers(target)) Assert.IsTrue(peer.Value.HasValue || peer.Candidates.Contains(9), "Precondition: peer should contain 9 or be filled");
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             res.EnactAll(board);
             // missing digit should be 9
@@ -146,7 +146,7 @@ namespace Sudoku.Tests.Editor
             foreach (var peer in board.GetColumn(target.Column)) if (!ReferenceEquals(peer, target)) Assert.IsTrue(peer.Value.HasValue || peer.Candidates.Contains(9), $"Precondition: column peer should contain 9 at ({peer.Row},{peer.Column})");
             foreach (var peer in board.GetBox(target.Box)) if (!ReferenceEquals(peer, target)) Assert.IsTrue(peer.Value.HasValue || peer.Candidates.Contains(9), $"Precondition: box peer should contain 9 at ({peer.Row},{peer.Column})");
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             res.EnactAll(board);
             // missing digit should be 9
@@ -188,7 +188,7 @@ namespace Sudoku.Tests.Editor
             var rule = new LastCellInUnitRule();
             Assert.IsFalse(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsFalse(res.Apply);
             // empty cells should remain empty
             Assert.IsNull(board.Cells[0, 0].Value);
@@ -216,7 +216,7 @@ namespace Sudoku.Tests.Editor
             var target = board.Cells[2, 8];
             foreach (Cell peer in board.GetPeers(target)) Assert.IsTrue(peer.Candidates.Contains(9), "Precondition: peer should contain 9");
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             if (res.Apply) res.EnactCandidates(board);
             // missing digit should be 9 and only 9 in candidates
@@ -253,7 +253,7 @@ namespace Sudoku.Tests.Editor
             var rule = new LastCellInUnitRule();
             Assert.IsFalse(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsFalse(res.Apply);
             // missing digit should be 8 and 9 and only 8 and 9 in candidates for the two empty cells
             // (no changes enacted)

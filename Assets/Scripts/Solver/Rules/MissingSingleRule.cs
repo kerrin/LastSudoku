@@ -71,7 +71,7 @@ namespace Sudoku.Solver.Rules
          * Apply the Missing Single found by <see cref="FindAny"/>: set the digit
          * into the located cell and remove it from peer candidates.
          */
-        public RuleResult Apply(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
             (Cell cell, int digit)? found = FindAny(board);

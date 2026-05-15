@@ -26,7 +26,7 @@ namespace Sudoku.Tests.Editor
             var rule = new NakedSingleRule();
             Assert.IsTrue(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             // enact recorded changes on the board
             res.EnactAll(board);

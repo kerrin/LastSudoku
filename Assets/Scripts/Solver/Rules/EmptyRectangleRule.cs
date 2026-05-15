@@ -30,7 +30,7 @@ namespace Sudoku.Solver.Rules
             return false;
         }
 
-        public RuleResult Apply(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
             int size = board.Size;

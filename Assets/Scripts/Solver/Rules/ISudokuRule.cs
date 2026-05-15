@@ -11,22 +11,19 @@ namespace Sudoku.Solver.Rules
         /** Human-friendly rule name. */
         string Name { get; }
 
-
-
         /**
          * Return true if this rule is applicable to the given <paramref name="board"/>.
          * @param board The puzzle board to inspect.
          */
         bool CanApply(Board board);
 
-
         /**
-         * Apply the rule to the <paramref name="board"/>. Returns a <see cref="RuleResult"/>
-         * describing any changes made (or not made). The returned result is
-         * non-mutating: callers must call `EnactAll` or `EnactCandidates` on the
-         * `RuleResult` to apply the recorded changes to the board.
+         * Calculate the changes this rule would make to the <paramref name="board"/>.
+         * Returns a <see cref="RuleResult"/> describing any changes (or not).
+         * The returned result is non-mutating: callers must call `EnactAll` or
+         * `EnactCandidates` on the `RuleResult` to apply the recorded changes to the board.
          */
-        RuleResult Apply(Board board);
+        RuleResult CalculateChanges(Board board);
 
         /**
          * Difficulty classification for the rule (used for rating puzzles or choosing

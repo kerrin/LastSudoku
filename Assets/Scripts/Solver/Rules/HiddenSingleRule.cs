@@ -86,7 +86,7 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        public RuleResult Apply(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
             (Cell cell, int digit, UnitKind unit, int unitIndex)? found = FindAny(board);

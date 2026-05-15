@@ -30,7 +30,7 @@ namespace Sudoku.Tests.Editor
             var rule = new MissingSingleRule();
             Assert.IsTrue(rule.CanApply(board));
 
-            var res = rule.Apply(board);
+            var res = rule.CalculateChanges(board);
             Assert.IsTrue(res.Apply);
             res.EnactAll(board);
             Assert.AreEqual(7, board.Cells[0, 3].Value);

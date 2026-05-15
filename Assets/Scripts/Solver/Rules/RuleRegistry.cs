@@ -81,7 +81,7 @@ namespace Sudoku.Solver.Rules
                 try
                 {
                     // Call the unified Apply and enact only candidate removals.
-                    RuleResult res = r.Apply(board);
+                    RuleResult res = r.CalculateChanges(board);
                     if (res != null && res.Apply)
                     {
                         Debug.Log($"Rule {r.GetType().Name} updated candidates (via Apply).");
@@ -108,7 +108,7 @@ namespace Sudoku.Solver.Rules
                 if (rule.CanApply(board))
                 {
                     Debug.Log($"Applying rule: {rule.GetType().Name}");
-                    RuleResult res = rule.Apply(board);
+                    RuleResult res = rule.CalculateChanges(board);
                     if (res != null && res.Apply)
                     {
                         // Enact both value assignments and candidate removals
