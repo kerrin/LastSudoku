@@ -31,7 +31,7 @@ namespace Sudoku.Solver.Rules
             for (int digit = 1; digit <= size; digit++)
             {
                 UnityEngine.Debug.Log($"Skyscraper: checking digit {digit}");
-                // collect rows with exactly two candidate columns for digit
+                // collect rows with two or more candidate columns for digit
                 var rows = new List<(int row, List<int> cols)>();
                 for (int r = 0; r < size; r++)
                 {
@@ -58,7 +58,10 @@ namespace Sudoku.Solver.Rules
                         foreach (var cols1 in options1)
                             foreach (var cols2 in options2)
                             {
-                                var shared = new List<int>(cols1);
+                                    // require that at least one of the rows actually has exactly two candidates
+                                    if (!(r1.cols.Count == 2 || r2.cols.Count == 2)) continue;
+
+                                    var shared = new List<int>(cols1);
                                 shared = shared.FindAll(x => cols2.Contains(x));
                                 if (shared.Count != 1) continue;
                                 int b = shared[0];
@@ -113,6 +116,9 @@ namespace Sudoku.Solver.Rules
                         foreach (var rows1 in options1)
                             foreach (var rows2 in options2)
                             {
+                                // require that at least one of the columns lists actually has exactly two candidates
+                                if (!(c1.rows.Count == 2 || c2.rows.Count == 2)) continue;
+
                                 var shared = new List<int>(rows1);
                                 shared = shared.FindAll(x => rows2.Contains(x));
                                 if (shared.Count != 1) continue;

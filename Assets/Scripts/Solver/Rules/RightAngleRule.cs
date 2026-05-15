@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
@@ -18,78 +19,81 @@ namespace Sudoku.Solver.Rules
         public string Name => "Right Angle";
 
         public Difficulty Difficulty => Difficulty.Medium;
-
         public bool CanApply(Board board)
         {
-            return FindPlacement(board) != null;
+            return FindElimination(board) != null;
         }
 
-        private (Cell target, int digit)? FindPlacement(Board board)
+        private (Cell e1, Cell e2, int digit, List<Cell> removals)? FindElimination(Board board)
         {
             int size = board.Size;
             int boxesPerRow = size / board.BoxWidth;
+            int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
 
             for (int digit = 1; digit <= size; digit++)
             {
-                int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
                 for (int box = 0; box < boxCount; box++)
                 {
                     int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
                     int startBoxCol = (box % boxesPerRow) * board.BoxWidth;
 
-                    // iterate every 2x2 sub-square inside the box (top-left offsets)
-                    for (int rOff = 0; rOff <= board.BoxHeight - 2; rOff++)
-                    for (int cOff = 0; cOff <= board.BoxWidth - 2; cOff++)
+                    // collect candidate cells in rows and columns inside this box (allow more than two, we'll consider subsets)
+                    var rowLinks = new List<(int row, List<Cell> cells)>();
+                    for (int r = startBoxRow; r < startBoxRow + board.BoxHeight; r++)
                     {
-                        // collect the four corner cells of the 2x2
-                        var coords = new (int r, int c)[4]
+                        var cells = new List<Cell>();
+                        for (int c = startBoxCol; c < startBoxCol + board.BoxWidth; c++)
                         {
-                            (startBoxRow + rOff,     startBoxCol + cOff),
-                            (startBoxRow + rOff,     startBoxCol + cOff + 1),
-                            (startBoxRow + rOff + 1, startBoxCol + cOff),
-                            (startBoxRow + rOff + 1, startBoxCol + cOff + 1),
-                        };
-
-                        int have = 0;
-                        (int r, int c) missing = (-1, -1);
-                        for (int i = 0; i < 4; i++)
-                        {
-                            var (r, c) = coords[i];
                             var cell = board.Cells[r, c];
-                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) have++;
-                            else missing = (r, c);
+                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
                         }
-
-                        // Need exactly three corners that contain candidate 'digit'
-                        if (have != 3) continue;
-
-                        var target = board.Cells[missing.r, missing.c];
-                        if (target.Value.HasValue) continue;
-
-                        // Check the row outside this box: none of the cells in the same row
-                        // but outside the current box may contain the digit as a candidate.
-                        bool rowHasOther = false;
-                        for (int c = 0; c < size; c++)
-                        {
-                            if (c >= startBoxCol && c < startBoxCol + board.BoxWidth) continue; // skip cells inside box
-                            var cell = board.Cells[target.Row, c];
-                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) { rowHasOther = true; break; }
-                        }
-                        if (rowHasOther) continue;
-
-                        // Check the column outside this box similarly
-                        bool colHasOther = false;
-                        for (int r = 0; r < size; r++)
-                        {
-                            if (r >= startBoxRow && r < startBoxRow + board.BoxHeight) continue;
-                            var cell = board.Cells[r, target.Column];
-                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) { colHasOther = true; break; }
-                        }
-                        if (colHasOther) continue;
-
-                        // Both row and column outside the box have no other candidates -> forced
-                        return (target, digit);
+                        if (cells.Count >= 2) rowLinks.Add((r, cells));
                     }
+
+                    var colLinks = new List<(int col, List<Cell> cells)>();
+                    for (int c = startBoxCol; c < startBoxCol + board.BoxWidth; c++)
+                    {
+                        var cells = new List<Cell>();
+                        for (int r = startBoxRow; r < startBoxRow + board.BoxHeight; r++)
+                        {
+                            var cell = board.Cells[r, c];
+                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
+                        }
+                        if (cells.Count >= 2) colLinks.Add((c, cells));
+                    }
+
+                    // consider any 2-element subsets of the candidate cells in a box row and a box column
+                    foreach (var rl in rowLinks)
+                        foreach (var cl in colLinks)
+                        {
+                            var rowPairs = GetTwoElementCellSubsets(rl.cells);
+                            var colPairs = GetTwoElementCellSubsets(cl.cells);
+                            foreach (var pairR in rowPairs)
+                                foreach (var pairC in colPairs)
+                                {
+                                    foreach (var rCell in pairR)
+                                        foreach (var cCell in pairC)
+                                        {
+                                            if (rCell.Row == cCell.Row || rCell.Column == cCell.Column) continue;
+                                            var e1 = rCell;
+                                            var e2 = cCell;
+                                            var inter = board.Cells[e1.Row, e2.Column];
+                                            if (inter == e1 || inter == e2) continue;
+                                            if (!inter.Value.HasValue && inter.Candidates.Contains(digit))
+                                            {
+                                                   // do not use link pairs that include the intersection cell itself
+                                                   if (pairR.Contains(inter) || pairC.Contains(inter)) continue;
+
+                                                // require both selected link pairs to be explicit strong-links (both cells single-candidate)
+                                                bool bothExplicit = pairR.All(x => x.Candidates.Count == 1) && pairC.All(x => x.Candidates.Count == 1);
+                                                if (!bothExplicit) continue;
+                                                    UnityEngine.Debug.Log($"RightAngle: endpoints ({e1.Row},{e1.Column}) & ({e2.Row},{e2.Column}) -> remove ({inter.Row},{inter.Column}) for digit {digit}");
+                                                    var removals = new List<Cell> { inter };
+                                                    return (e1, e2, digit, removals);
+                                            }
+                                        }
+                                }
+                        }
                 }
             }
             return null;
@@ -97,32 +101,55 @@ namespace Sudoku.Solver.Rules
 
         public RuleResult Apply(Board board)
         {
-            var found = FindPlacement(board);
+            var found = FindElimination(board);
             var r = new RuleResult();
             if (found == null)
             {
                 r.Applied = false;
                 return r;
             }
-            var (target, digit) = found.Value;
+            var (e1, e2, digit, removals) = found.Value;
 
-            if (!r.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column))
-                r.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column });
+            // mark endpoints as used for deduction
+            if (!r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column });
+            if (!r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column });
 
-            int? old = target.Value;
-            target.Value = digit;
-            target.Candidates.Clear();
-
-            var change = new CellChange { Row = target.Row, Column = target.Column, OldValue = old, NewValue = digit };
-            r.Changes.Add(change);
-            r.Applied = true;
-            r.Description = $"Right angle placed {digit} at ({target.Row},{target.Column})";
+            foreach (var p in removals)
+            {
+                if (p.Candidates.Contains(digit))
+                {
+                    UnityEngine.Debug.Log($"RightAngle removing digit {digit} from ({p.Row},{p.Column})");
+                    p.Candidates.Clear();
+                    var change = new CellChange { Row = p.Row, Column = p.Column };
+                    change.RemovedCandidates.Add(digit);
+                    r.Changes.Add(change);
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                }
+            }
+            r.Applied = r.Changes.Count > 0;
+            if (r.Applied) r.Description = $"Right-angle removed {digit} from {r.Changes.Count} cell(s)";
             return r;
         }
 
         public bool UpdateCandidates(Board board)
         {
             return false;
+        }
+
+        // Helper: return all 2-element subsets of a list of cells
+        private static List<List<Cell>> GetTwoElementCellSubsets(List<Cell> items)
+        {
+            var res = new List<List<Cell>>();
+            if (items == null) return res;
+            if (items.Count == 2)
+            {
+                res.Add(new List<Cell> { items[0], items[1] });
+                return res;
+            }
+            for (int i = 0; i < items.Count; i++)
+                for (int j = i + 1; j < items.Count; j++)
+                    res.Add(new List<Cell> { items[i], items[j] });
+            return res;
         }
     }
 }
