@@ -72,51 +72,45 @@ namespace Sudoku.Solver.Rules
          * Apply the first applicable rule and return the pair (rule, result).
          * If no rule applies, (null, RuleResult{Applied=false}) is returned.
          */
-        public (ISudokuRule rule, RuleResult result) ApplyOnlyCandidates(Board board)
+        /**
+         * Apply the first applicable rule and return the pair (rule, result).
+         * If no rule applies, (null, RuleResult{Applied=false}) is returned.
+         *
+         * The optional `enactAll` flag determines whether the returned
+         * `RuleResult` will be enacted fully (value assignments + candidate
+         * removals) or only candidate removals.
+         */
+        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board, bool enactAll = true)
         {
-            // Give each rule a chance to update the candidate sets before
-            // attempting to apply any rule that may place values.
+            // Iterate rules in order and apply the first that reports changes.
             foreach (ISudokuRule r in _rules)
             {
                 try
                 {
-                    // Call the unified Apply and enact only candidate removals.
+                    if (!r.CanApply(board) && enactAll)
+                    {
+                        Debug.Log($"Rule {r.GetType().Name} cannot apply.");
+                        continue;
+                    }
+
+                    Debug.Log($"Applying rule: {r.GetType().Name}");
                     RuleResult res = r.CalculateChanges(board);
                     if (res != null && res.Apply)
                     {
-                        Debug.Log($"Rule {r.GetType().Name} updated candidates (via Apply).");
-                        res.EnactCandidates(board);
+                        if (enactAll)
+                        {
+                            res.EnactAll(board);
+                        }
+                        else
+                        {
+                            res.EnactCandidates(board);
+                        }
                         return (r, res);
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"ApplyOnlyCandidates threw for {r.GetType().Name}: {ex.Message}");
-                }
-            }
-            return (null, new RuleResult { Apply = false });
-        }
-        
-        /**
-         * Apply the first applicable rule and return the pair (rule, result).
-         * If no rule applies, (null, RuleResult{Applied=false}) is returned.
-         */
-        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
-        {
-            foreach (ISudokuRule rule in _rules)
-            {
-                if (rule.CanApply(board))
-                {
-                    Debug.Log($"Applying rule: {rule.GetType().Name}");
-                    RuleResult res = rule.CalculateChanges(board);
-                    if (res != null && res.Apply)
-                    {
-                        // Enact both value assignments and candidate removals
-                        res.EnactAll(board);
-                        return (rule, res);
-                    }
-                } else {
-                    Debug.Log($"Rule {rule.GetType().Name} cannot apply.");
+                    Debug.LogWarning($"ApplyNext threw for {r.GetType().Name}: {ex.Message}");
                 }
             }
             return (null, new RuleResult { Apply = false });
