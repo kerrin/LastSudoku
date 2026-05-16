@@ -10,11 +10,20 @@ namespace Sudoku.Solver.Rules
      */
     public class MissingSingleRule : ISudokuRule
     {
+        private enum UnitKind { Row, Column, Box }
         /** Rule display name. */
         public string Name => "Missing Single";
 
         /** Difficulty classification for this rule. */
         public Difficulty Difficulty => Difficulty.Easy;
+
+        private class MissingSingleResult
+        {
+            public Cell Cell { get; set; }
+            public int Digit { get; set; }
+            public UnitKind Unit { get; set; }
+            public int UnitIndex { get; set; }
+        }
 
         /** Return true if any unit contains a digit that has only one candidate position. */
         public bool CanApply(Board board)
@@ -26,7 +35,7 @@ namespace Sudoku.Solver.Rules
          * Find the first (cell,digit) pair where the digit is the only candidate
          * within its row, column, or box. Returns null when none found.
          */
-        private (Cell cell, int digit)? FindAny(Board board)
+        private MissingSingleResult FindAny(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
@@ -39,7 +48,7 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return new MissingSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
                 }
 
                 /** columns */
@@ -50,7 +59,7 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return new MissingSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
                 }
 
                 /** boxes */
@@ -61,7 +70,7 @@ namespace Sudoku.Solver.Rules
                     {
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit);
+                    if (candidates.Count == 1) return new MissingSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
                 }
             }
             return null;
@@ -74,13 +83,25 @@ namespace Sudoku.Solver.Rules
         public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
-            (Cell cell, int digit)? found = FindAny(board);
+            MissingSingleResult found = FindAny(board);
             if (found == null)
             {
                     result.Apply = false;
                 return result;
             }
-            (Cell cell, int digit) = found.Value;
+            Cell cell = found.Cell;
+            int digit = found.Digit;
+            UnitKind unit = found.Unit;
+            int unitIndex = found.UnitIndex;
+            // highlight all cells in the unit used for deduction
+            IEnumerable<Cell> unitCells = unit == UnitKind.Row ? board.GetRow(unitIndex)
+                                        : unit == UnitKind.Column ? board.GetColumn(unitIndex)
+                                        : board.GetBox(unitIndex);
+            foreach (var uc in unitCells)
+            {
+                if (!result.UsedCells.Exists(u => u.Row == uc.Row && u.Column == uc.Column))
+                    result.UsedCells.Add(new UsedCell { Row = uc.Row, Column = uc.Column });
+            }
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             // mark peers with values as used
             foreach (Cell peer in board.GetPeers(cell))
