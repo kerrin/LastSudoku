@@ -16,9 +16,11 @@ namespace Sudoku.Tests.Editor
 
             int d = 7;
             // Row 0: candidates at (0,0) and (0,1)
-            // Row 2: candidates at (2,1) and (2,2)
-            // Shared column is 1; endpoints are (0,0) and (2,2)
-            // Target cell (2,0) sees both endpoints (shares column 0 with (0,0) and row 2 with (2,2)).
+            // Row 8: candidates at (7,0) and (8,1)
+            // Shared columns:
+            //  (0,0) and (7,0)
+            //  (0,1) and (8,1)
+            // Target cell (8,0) is a peer of both endpoints (shares column 0 with (0,0) and row 8 with (8,1)).
 
             // Clear all other candidates for digit d to shape the pattern
             for (int r = 0; r < 9; r++)
@@ -27,11 +29,11 @@ namespace Sudoku.Tests.Editor
 
             board.Cells[0, 0].Candidates.Add(d);
             board.Cells[0, 1].Candidates.Add(d);
-            board.Cells[2, 1].Candidates.Add(d);
-            board.Cells[2, 2].Candidates.Add(d);
+            board.Cells[7, 0].Candidates.Add(d);
+            board.Cells[8, 1].Candidates.Add(d);
 
             // Candidate to be removed
-            board.Cells[2, 0].Candidates.Add(d);
+            board.Cells[8, 0].Candidates.Add(d);
 
             var registry = new RuleRegistry();
             registry.Register(new SkyscraperRule());
@@ -39,7 +41,7 @@ namespace Sudoku.Tests.Editor
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);
             Assert.IsTrue(result.Apply);
-            Assert.IsFalse(board.Cells[2, 0].Candidates.Contains(d));
+            Assert.IsFalse(board.Cells[8, 0].Candidates.Contains(d));
         }
     }
 }

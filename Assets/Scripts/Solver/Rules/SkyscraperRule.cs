@@ -12,6 +12,12 @@ namespace Sudoku.Solver.Rules
      * and the shared column be b. Then the cells at (r1,a) and (r2,c) are the
      * skyscraper endpoints; any cell that sees both endpoints cannot contain d.
      * The same logic is applied symmetrically swapping rows/columns.
+     *
+     * The steps to using a skyscraper are:
+     * 1. Find a single candidate that appears exactly twice in two columns (or rows). 
+     * 2. In the two columns, two of the candidate cells must share the same row to form the floor of the skyscraper.
+     * 3. The other two cells must appear in different rows to form a slanted roof.
+     * 4. Peers of the roof endpoints can have the candidate eliminated.
      */
     public class SkyscraperRule : ISudokuRule
     {
@@ -24,7 +30,7 @@ namespace Sudoku.Solver.Rules
             return FindElimination(board) != null;
         }
 
-        private (Cell endpoint1, Cell endpoint2, int digit, List<Cell> removals)? FindElimination(Board board)
+        private (Cell endpoint1, Cell endpoint2, int digit, List<Cell> removals, List<Cell> witnesses)? FindElimination(Board board)
         {
             int size = board.Size;
             // Row-based skyscraper
@@ -70,6 +76,9 @@ namespace Sudoku.Solver.Rules
 
                                 Cell e1 = board.Cells[r1.row, a];
                                 Cell e2 = board.Cells[r2.row, ccol];
+                                // floor cells (shared column b)
+                                Cell f1 = board.Cells[r1.row, b];
+                                Cell f2 = board.Cells[r2.row, b];
 
                                 var peers1 = new HashSet<Cell>(board.GetPeers(e1));
                                 var peers2 = new HashSet<Cell>(board.GetPeers(e2));
@@ -81,7 +90,7 @@ namespace Sudoku.Solver.Rules
                                     if (p == e1 || p == e2) continue;
                                     if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
                                 }
-                                if (removals.Count > 0) return (e1, e2, digit, removals);
+                                if (removals.Count > 0) return (e1, e2, digit, removals, new List<Cell> { e1, e2, f1, f2 });
                             }
                     }
             }
@@ -128,6 +137,9 @@ namespace Sudoku.Solver.Rules
 
                                 Cell e1 = board.Cells[a, c1.col];
                                 Cell e2 = board.Cells[r2, c2.col];
+                                // floor cells (shared row b)
+                                Cell f1 = board.Cells[b, c1.col];
+                                Cell f2 = board.Cells[b, c2.col];
 
                                 var peers1 = new HashSet<Cell>(board.GetPeers(e1));
                                 var peers2 = new HashSet<Cell>(board.GetPeers(e2));
@@ -139,7 +151,7 @@ namespace Sudoku.Solver.Rules
                                     if (p == e1 || p == e2) continue;
                                     if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
                                 }
-                                if (removals.Count > 0) return (e1, e2, digit, removals);
+                                if (removals.Count > 0) return (e1, e2, digit, removals, new List<Cell> { e1, e2, f1, f2 });
                             }
                     }
             }
@@ -156,10 +168,12 @@ namespace Sudoku.Solver.Rules
                 r.Apply = false;
                 return r;
             }
-            var (e1, e2, digit, removals) = found.Value;
-            // mark endpoints as used for deduction
-            if (!r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column });
-            if (!r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column });
+            var (e1, e2, digit, removals, witnesses) = found.Value;
+            // mark all witness cells (endpoints + floor cells) as used for deduction
+            foreach (var w in witnesses)
+            {
+                if (!r.UsedCells.Exists(u => u.Row == w.Row && u.Column == w.Column)) r.UsedCells.Add(new UsedCell { Row = w.Row, Column = w.Column });
+            }
             foreach (Cell p in removals)
             {
                 if (p.Candidates.Contains(digit))
