@@ -68,8 +68,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(missing);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == missing))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = missing });
                 }
             }
             result.Apply = true;

@@ -44,8 +44,8 @@ namespace Sudoku.Solver.Rules
                     // record used cells
                     foreach (Cell used in info.Used)
                     {
-                        if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column))
-                            result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column });
+                        if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column && u.Candidate == digit))
+                            result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column, Candidate = digit });
                     }
 
                     bool applied = false;
@@ -56,8 +56,8 @@ namespace Sudoku.Solver.Rules
                             var change = new CellChange { Row = target.Row, Column = target.Column };
                             change.RemovedCandidates.Add(digit);
                             result.Changes.Add(change);
-                            if (!result.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column))
-                                result.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column });
+                            if (!result.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column && u.Candidate == digit))
+                                result.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column, Candidate = digit });
                             applied = true;
                         }
                     }

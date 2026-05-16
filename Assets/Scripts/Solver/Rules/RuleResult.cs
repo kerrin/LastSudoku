@@ -86,5 +86,7 @@ namespace Sudoku.Solver.Rules
     {
         public int Row;
         public int Column;
+        // Optional specific candidate digit relevant to this used cell (null if not applicable)
+        public int? Candidate;
     }
 }

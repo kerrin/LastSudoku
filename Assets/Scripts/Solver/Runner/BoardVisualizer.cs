@@ -60,7 +60,8 @@ namespace Sudoku.Solver
                     Rect cellRect = new Rect(x0 + c * CellSize, y0 + r * CellSize, CellSize, CellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     bool highlighted = false;
-                        if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+                    int? usedCandidateForCell = null;
+                    if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
                     {
                         var changes = Runner.LastRuleResult.Changes;
                         if (changes != null)
@@ -94,6 +95,7 @@ namespace Sudoku.Solver
                                 if (uc.Row == r && uc.Column == c)
                                 {
                                     DrawHighlight(cellRect, new Color(0.1f, 0.6f, 1f, 0.45f));
+                                    if (uc.Candidate.HasValue) usedCandidateForCell = uc.Candidate.Value;
                                     break;
                                 }
                             }
@@ -112,8 +114,8 @@ namespace Sudoku.Solver
                     }
                     else if (ShowCandidates)
                     {
-                        // draw candidates as small grid of digits
-                        DrawCandidates(cellRect, cell);
+                        // draw candidates as small grid of digits; optionally highlight a specific candidate
+                        DrawCandidates(cellRect, cell, usedCandidateForCell);
                     }
                 }
             }
@@ -143,7 +145,7 @@ namespace Sudoku.Solver
             }
         }
 
-        private void DrawCandidates(Rect rect, Cell cell)
+        private void DrawCandidates(Rect rect, Cell cell, int? highlightDigit)
         {
             if (cell == null || cell.Candidates == null) return;
             // small 3x3 layout for candidates assuming up to 9 digits
@@ -156,7 +158,18 @@ namespace Sudoku.Solver
                 int rr = idx / size;
                 int cc = idx % size;
                 Rect r = new Rect(rect.x + cc * cs + 2, rect.y + rr * cs + 2, cs - 4, cs - 4);
-                if (cell.Candidates.Contains(d)) GUI.Label(r, d.ToString(), _candidateStyle);
+                if (!cell.Candidates.Contains(d)) continue;
+                if (highlightDigit.HasValue && highlightDigit.Value == d)
+                {
+                    Color prev = GUI.color;
+                    GUI.color = new Color(1f, 0.85f, 0.25f, 1f);
+                    GUI.Label(r, d.ToString(), _candidateStyle);
+                    GUI.color = prev;
+                }
+                else
+                {
+                    GUI.Label(r, d.ToString(), _candidateStyle);
+                }
             }
         }
 

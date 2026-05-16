@@ -99,8 +99,8 @@ namespace Sudoku.Solver.Rules
                                         : board.GetBox(unitIndex);
             foreach (var uc in unitCells)
             {
-                if (!result.UsedCells.Exists(u => u.Row == uc.Row && u.Column == uc.Column))
-                    result.UsedCells.Add(new UsedCell { Row = uc.Row, Column = uc.Column });
+                if (!result.UsedCells.Exists(u => u.Row == uc.Row && u.Column == uc.Column && u.Candidate == digit))
+                    result.UsedCells.Add(new UsedCell { Row = uc.Row, Column = uc.Column, Candidate = digit });
             }
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             // mark peers with values as used
@@ -119,8 +119,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == digit))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = digit });
                 }
             }
                 result.Apply = true;

@@ -172,7 +172,8 @@ namespace Sudoku.Solver.Rules
             // mark all witness cells (endpoints + floor cells) as used for deduction
             foreach (var w in witnesses)
             {
-                if (!r.UsedCells.Exists(u => u.Row == w.Row && u.Column == w.Column)) r.UsedCells.Add(new UsedCell { Row = w.Row, Column = w.Column });
+                if (!r.UsedCells.Exists(u => u.Row == w.Row && u.Column == w.Column && u.Candidate == digit))
+                    r.UsedCells.Add(new UsedCell { Row = w.Row, Column = w.Column, Candidate = digit });
             }
             foreach (Cell p in removals)
             {
@@ -181,7 +182,7 @@ namespace Sudoku.Solver.Rules
                     var change = new CellChange { Row = p.Row, Column = p.Column };
                     change.RemovedCandidates.Add(digit);
                     r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
                 }
             }
             r.Apply = r.Changes.Count > 0;

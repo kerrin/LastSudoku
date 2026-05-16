@@ -130,8 +130,8 @@ namespace Sudoku.Solver.Rules
 
             foreach (Cell u in unitCells)
             {
-                if (!result.UsedCells.Exists(x => x.Row == u.Row && x.Column == u.Column))
-                    result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column });
+                if (!result.UsedCells.Exists(x => x.Row == u.Row && x.Column == u.Column && x.Candidate == digit))
+                    result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column, Candidate = digit });
             }
 
             // Record the placement and peer candidate removals (do not modify board here)
@@ -143,8 +143,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == digit))
+                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = digit });
                 }
             }
             result.Apply = true;

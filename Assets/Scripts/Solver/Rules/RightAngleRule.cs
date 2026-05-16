@@ -129,9 +129,9 @@ namespace Sudoku.Solver.Rules
             }
             var (e1, e2, digit, removals) = found.Value;
 
-            // mark endpoints as used for deduction
-            if (e1 != null && !r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column });
-            if (e2 != null && !r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column });
+            // mark endpoints as used for deduction (record the specific candidate)
+            if (e1 != null && !r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column, Candidate = digit });
+            if (e2 != null && !r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column, Candidate = digit });
 
             foreach (var p in removals)
             {
@@ -143,7 +143,7 @@ namespace Sudoku.Solver.Rules
                     // record candidate clearing as removed candidates
                     for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
                     r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
                 }
             }
             r.Apply = r.Changes.Count > 0;

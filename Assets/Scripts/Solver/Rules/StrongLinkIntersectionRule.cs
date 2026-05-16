@@ -79,8 +79,8 @@ namespace Sudoku.Solver.Rules
                 return r;
             }
             var (a, b, digit, removals) = found.Value;
-            if (!r.UsedCells.Exists(u => u.Row == a.Row && u.Column == a.Column)) r.UsedCells.Add(new UsedCell { Row = a.Row, Column = a.Column });
-            if (!r.UsedCells.Exists(u => u.Row == b.Row && u.Column == b.Column)) r.UsedCells.Add(new UsedCell { Row = b.Row, Column = b.Column });
+            if (!r.UsedCells.Exists(u => u.Row == a.Row && u.Column == a.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = a.Row, Column = a.Column, Candidate = digit });
+            if (!r.UsedCells.Exists(u => u.Row == b.Row && u.Column == b.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = b.Row, Column = b.Column, Candidate = digit });
             foreach (Cell p in removals)
             {
                 if (p.Candidates.Contains(digit))
@@ -88,7 +88,7 @@ namespace Sudoku.Solver.Rules
                     var change = new CellChange { Row = p.Row, Column = p.Column };
                     change.RemovedCandidates.Add(digit);
                     r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
+                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
                 }
             }
             r.Apply = r.Changes.Count > 0;
