@@ -16,12 +16,19 @@ namespace Sudoku.Solver.Rules
 
         private enum UnitKind { Row, Column, Box }
 
+        private class HiddenSingleResult
+        {
+            public Cell Cell { get; set; }
+            public int Digit { get; set; }
+            public UnitKind Unit { get; set; }
+            public int UnitIndex { get; set; }
+        }
         public bool CanApply(Board board)
         {
             return FindAny(board) != null;
         }
 
-        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindAny(Board board)
+        private HiddenSingleResult FindAny(Board board)
         {
             var rowRes = FindInRows(board);
             if (rowRes != null) return rowRes;
@@ -32,7 +39,7 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInRows(Board board)
+        private HiddenSingleResult FindInRows(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
@@ -42,15 +49,17 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetRow(r))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1) {
+                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
+                        }
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Row, r);
+                    
                 }
             }
             return null;
         }
 
-        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInColumns(Board board)
+        private HiddenSingleResult FindInColumns(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
@@ -60,15 +69,18 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetColumn(c))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1)
+                        {
+                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
+                        }
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Column, c);
+                    
                 }
             }
             return null;
         }
 
-        private (Cell cell, int digit, UnitKind unit, int unitIndex)? FindInBoxes(Board board)
+        private HiddenSingleResult FindInBoxes(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
@@ -78,9 +90,10 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetBox(b))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1) {
+                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
+                        }
                     }
-                    if (candidates.Count == 1) return (candidates[0], digit, UnitKind.Box, b);
                 }
             }
             return null;
@@ -89,13 +102,16 @@ namespace Sudoku.Solver.Rules
         public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
-            (Cell cell, int digit, UnitKind unit, int unitIndex)? found = FindAny(board);
+            HiddenSingleResult found = FindAny(board);
             if (found == null)
             {
                 result.Apply = false;
                 return result;
             }
-            (Cell cell, int digit, UnitKind unit, int unitIndex) = found.Value;
+            var cell = found.Cell;
+            var digit = found.Digit;
+            var unit = found.Unit;
+            var unitIndex = found.UnitIndex;
             var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
             // Highlight the whole unit (row/column/box) that contained the single candidate.
             List<Cell> unitCells = new List<Cell>();

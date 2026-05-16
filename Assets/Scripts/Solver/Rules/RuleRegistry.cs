@@ -72,6 +72,11 @@ namespace Sudoku.Solver.Rules
          * Apply the first applicable rule and return the pair (rule, result).
          * If no rule applies, (null, RuleResult{Applied=false}) is returned.
          */
+        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
+        {
+            return ApplyNext(board, true);
+        }
+
         /**
          * Apply the first applicable rule and return the pair (rule, result).
          * If no rule applies, (null, RuleResult{Applied=false}) is returned.
@@ -80,11 +85,6 @@ namespace Sudoku.Solver.Rules
          * `RuleResult` will be enacted fully (value assignments + candidate
          * removals) or only candidate removals.
          */
-        public (ISudokuRule rule, RuleResult result) ApplyNext(Board board)
-        {
-            return ApplyNext(board, true);
-        }
-
         public (ISudokuRule rule, RuleResult result) ApplyNext(Board board, bool enactAll)
         {
             // Iterate rules in order and apply the first that reports changes.

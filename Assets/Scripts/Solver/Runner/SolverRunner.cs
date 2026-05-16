@@ -108,15 +108,25 @@ namespace Sudoku.Solver
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
-            (ISudokuRule rule, RuleResult result) = Registry.ApplyNext(_board, enactAll: false);
-            LastAppliedRule = rule;
-            LastRuleResult = result;
-            if (rule == null || result == null || !result.Apply)
-            {
-                Debug.Log("No applicable rule found.");
-                return;
-            }
-            Debug.Log($"Initialised candidates using '{rule.Name}': {result.Description}\n{BoardToString(_board)}");
+            // Step over each cell and initialize candidates for empty cells
+            // checking the peers for number elimination.
+            for (int r = 0; r < _board.Size; r++)
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    Cell cell = _board.Cells[r, c];
+                    if (cell.Value.HasValue) continue; // skip filled cells
+                    cell.Candidates.Clear();
+                    for (int v = 1; v <= _board.Size; v++) cell.Candidates.Add(v);
+                    // Eliminate candidates based on peers' values
+                    var peers = _board.GetPeers(cell);
+                    foreach (var peer in peers)
+                    {
+                        if (peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
         }
 
         [ContextMenu("Run Next Rule Step")]

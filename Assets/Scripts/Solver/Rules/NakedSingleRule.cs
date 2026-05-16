@@ -49,24 +49,18 @@ namespace Sudoku.Solver.Rules
                     // mark peers with values as used for deduction
                     foreach (Cell peer in board.GetPeers(cell))
                     {
-                        if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                            result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
-                    }
-
-                    // Record the value placement (do not modify the board here)
-                    result.Changes.Add(change);
-                    // record candidate removal from peers as separate changes per peer
-                    foreach (Cell peer in board.GetPeers(cell))
-                    {
+                        // Remove candidates for value from peers
                         if (peer.Candidates.Contains(value))
                         {
                             var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                             peerChange.RemovedCandidates.Add(value);
-                            result.Changes.Add(peerChange);
-                            if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                                result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
+                            result.Changes.Add(peerChange);                            
                         }
                     }
+
+                    // Record the value placement
+                    result.Changes.Add(change);
+                    
                     result.Apply = true;
                     result.Description = $"Placed {value} at ({r},{c}) via Naked Single";
                     return result;
