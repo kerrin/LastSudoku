@@ -15,7 +15,6 @@ namespace Sudoku.Tests.Editor
                     board.Cells[r, c] = new Cell(r, c);
 
             int digit = 5;
-            int box = 0; // top-left 3x3 (rows 0-2, cols 0-2)
 
             // Remove digit from all cells in the box except two in the same row (row 1, cols 0 and 1)
             for (int r = 0; r < 3; r++)

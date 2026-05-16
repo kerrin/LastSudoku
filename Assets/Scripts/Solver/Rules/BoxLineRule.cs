@@ -12,7 +12,7 @@ namespace Sudoku.Solver.Rules
      */
     public class BoxLineRule : ISudokuRule
     {
-        public string Name => "Box-Line (Empty Rectangle)";
+        public string Name => "Box-Line";
 
         public Difficulty Difficulty => Difficulty.Medium;
 
