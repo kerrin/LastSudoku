@@ -57,7 +57,7 @@ Assets/Tests/Editor/Solver/
  EdgeCaseTests.cs
  Rules/
   BoardExtensionsTests.cs
-  EmptyRectangleRuleTests.cs
+  BoxLineRuleTests.cs
   HiddenSingleRuleTests.cs
   LastCellInUnitRuleTests.cs
   MissingSingleRuleTests.cs

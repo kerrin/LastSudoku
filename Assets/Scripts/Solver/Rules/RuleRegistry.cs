@@ -55,7 +55,7 @@ namespace Sudoku.Solver.Rules
          */
         public void RegisterMedium()
         {
-            Register(new EmptyRectangleRule());
+            Register(new BoxLineRule());
             Register(new SkyscraperRule());
             Register(new RightAngleRule());
         }

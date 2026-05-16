@@ -4,10 +4,10 @@ using Sudoku.Solver.Rules;
 
 namespace Sudoku.Tests.Editor
 {
-    public class EmptyRectangleRuleTests
+    public class BoxLineRuleTests
     {
         [Test]
-        public void EmptyRectangle_RemovesCandidateOutsideBox()
+        public void BoxLine_RemovesCandidateOutsideBox()
         {
             var board = new Board(9, 3, 3);
             for (int r = 0; r < 9; r++)
@@ -33,7 +33,7 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(board.Cells[1, 3].Candidates.Contains(digit));
 
             var registry = new RuleRegistry();
-            registry.Register(new EmptyRectangleRule());
+            registry.Register(new BoxLineRule());
 
             var (rule, result) = registry.ApplyNext(board);
             Assert.IsNotNull(rule);

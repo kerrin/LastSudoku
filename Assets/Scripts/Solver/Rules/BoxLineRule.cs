@@ -4,15 +4,15 @@ using Sudoku.Models;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * A simple Empty-Rectangle / Box-Line reduction implementation.
+     * A simple Box-Line (Empty Rectangle) / Box-Line reduction implementation.
      *
      * If all candidates for a digit within a box lie in a single row (or column),
      * then that digit can be eliminated from other cells in that row (or column)
      * outside the box.
      */
-    public class EmptyRectangleRule : ISudokuRule
+    public class BoxLineRule : ISudokuRule
     {
-        public string Name => "Empty Rectangle (Box-Line)";
+        public string Name => "Box-Line (Empty Rectangle)";
 
         public Difficulty Difficulty => Difficulty.Medium;
 
@@ -104,7 +104,7 @@ namespace Sudoku.Solver.Rules
                 }
                 if (targets.Count > 0)
                 {
-                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from row {row} outside box {boxIndex} via Empty Rectangle" };
+                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from row {row} outside box {boxIndex} via Box-Line" };
                 }
             }
 
@@ -122,7 +122,7 @@ namespace Sudoku.Solver.Rules
                 }
                 if (targets.Count > 0)
                 {
-                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from column {col} outside box {boxIndex} via Empty Rectangle" };
+                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from column {col} outside box {boxIndex} via Box-Line" };
                 }
             }
 

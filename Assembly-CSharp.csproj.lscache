@@ -55,8 +55,8 @@ Assets/Scripts/Models/Structure/
  Cell.cs
 Assets/Scripts/Solver/Rules/
  BoardExtensions.cs
+ BoxLineRule.cs
  Difficulty.cs
- EmptyRectangleRule.cs
  HiddenSingleRule.cs
  ISudokuRule.cs
  LastCellInUnitRule.cs
