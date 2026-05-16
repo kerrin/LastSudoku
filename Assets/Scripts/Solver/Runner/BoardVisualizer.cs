@@ -79,13 +79,13 @@ namespace Sudoku.Solver
                                     // placed value
                                     if (ch.NewValue.HasValue)
                                     {
-                                        DrawHighlight(cellRect, new Color(0.15f, 0.65f, 0.15f, 0.35f));
+                                        DrawHighlightBorder(cellRect, new Color(0.1f, 0.8f, 0.1f, 1f));
                                         highlighted = true;
                                     }
                                     // candidate removals
                                     else if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
                                     {
-                                        DrawHighlight(cellRect, new Color(1f, 0.8f, 0.2f, 0.35f));
+                                        DrawHighlightBorder(cellRect, new Color(1f, 0.75f, 0.1f, 1f));
                                         highlighted = true;
                                     }
                                     break;
@@ -218,6 +218,28 @@ namespace Sudoku.Solver
             Color prev = GUI.color;
             GUI.color = color;
             GUI.DrawTexture(rect, _highlightTex);
+            GUI.color = prev;
+        }
+
+        private void DrawHighlightBorder(Rect rect, Color color)
+        {
+            if (_highlightTex == null)
+            {
+                _highlightTex = new Texture2D(1, 1);
+                _highlightTex.SetPixel(0, 0, Color.white);
+                _highlightTex.Apply();
+            }
+            Color prev = GUI.color;
+            GUI.color = color;
+            float thickness = Mathf.Max(4f, rect.width / 12f);
+            // top
+            GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, thickness), _highlightTex);
+            // bottom
+            GUI.DrawTexture(new Rect(rect.x, rect.y + rect.height - thickness, rect.width, thickness), _highlightTex);
+            // left
+            GUI.DrawTexture(new Rect(rect.x, rect.y, thickness, rect.height), _highlightTex);
+            // right
+            GUI.DrawTexture(new Rect(rect.x + rect.width - thickness, rect.y, thickness, rect.height), _highlightTex);
             GUI.color = prev;
         }
     }
