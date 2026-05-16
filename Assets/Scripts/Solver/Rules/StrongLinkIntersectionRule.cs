@@ -81,15 +81,14 @@ namespace Sudoku.Solver.Rules
             var (a, b, digit, removals) = found.Value;
             if (!r.UsedCells.Exists(u => u.Row == a.Row && u.Column == a.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = a.Row, Column = a.Column, Candidate = digit });
             if (!r.UsedCells.Exists(u => u.Row == b.Row && u.Column == b.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = b.Row, Column = b.Column, Candidate = digit });
-            foreach (Cell p in removals)
+            // Only remove the first candidate found (deterministic order)
+            var first = removals.OrderBy(p => p.Row).ThenBy(p => p.Column).FirstOrDefault();
+            if (first != null && first.Candidates.Contains(digit))
             {
-                if (p.Candidates.Contains(digit))
-                {
-                    var change = new CellChange { Row = p.Row, Column = p.Column };
-                    change.RemovedCandidates.Add(digit);
-                    r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
-                }
+                var change = new CellChange { Row = first.Row, Column = first.Column };
+                change.RemovedCandidates.Add(digit);
+                r.Changes.Add(change);
+                if (!r.UsedCells.Exists(u => u.Row == first.Row && u.Column == first.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = first.Row, Column = first.Column, Candidate = digit });
             }
             r.Apply = r.Changes.Count > 0;
             if (r.Apply) r.Description = $"Strong link intersection removed {digit} from {r.Changes.Count} cell(s)";

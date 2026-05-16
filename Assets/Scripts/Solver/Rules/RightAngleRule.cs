@@ -21,6 +21,23 @@ namespace Sudoku.Solver.Rules
         public Difficulty Difficulty => Difficulty.Medium;
         public bool CanApply(Board board)
         {
+            // Avoid firing on a pristine board where every empty cell still contains
+            // the full set of candidates (1..Size). Only run if some candidate
+            // pruning has already occurred.
+            int size = board.Size;
+            bool anyPruned = false;
+            for (int r = 0; r < size && !anyPruned; r++)
+                for (int c = 0; c < size; c++)
+                {
+                    var cell = board.Cells[r, c];
+                    if (!cell.Value.HasValue && cell.Candidates.Count != size)
+                    {
+                        anyPruned = true;
+                        break;
+                    }
+                }
+            if (!anyPruned) return false;
+
             return FindElimination(board) != null;
         }
 
@@ -62,6 +79,7 @@ namespace Sudoku.Solver.Rules
                 }
 
                 if (allRowPairs.Count == 0 || allColPairs.Count == 0) continue;
+                UnityEngine.Debug.Log($"RightAngle: digit={digit} rowPairs={allRowPairs.Count} colPairs={allColPairs.Count}");
 
                 // helpers
                 List<Cell> CandidatesInRow(int row)
@@ -91,22 +109,16 @@ namespace Sudoku.Solver.Rules
 
                 foreach (var rp in allRowPairs)
                 {
-                    var fullRow = CandidatesInRow(rp.a.Row);
-                    if (fullRow.Count != 2) continue;
-                    if (!(fullRow.Contains(rp.a) && fullRow.Contains(rp.b))) continue;
-
                     foreach (var cp in allColPairs)
                     {
-                        var fullCol = CandidatesInColumn(cp.a.Column);
-                        if (fullCol.Count != 2) continue;
-                        if (!(fullCol.Contains(cp.a) && fullCol.Contains(cp.b))) continue;
-
                         int interRow = rp.a.Row;
                         int interCol = cp.a.Column;
                         var inter = board.Cells[interRow, interCol];
+                        UnityEngine.Debug.Log($"RightAngle: checking intersection ({interRow},{interCol}) for digit={digit}");
                         if (inter == rp.a || inter == rp.b || inter == cp.a || inter == cp.b) continue;
                         if (!inter.Value.HasValue && inter.Candidates.Contains(digit))
                         {
+                            UnityEngine.Debug.Log($"RightAngle: found intersection ({interRow},{interCol}) for digit={digit}");
                             if (!removals.Contains(inter)) removals.Add(inter);
                             if (endpoints.e1 == null) endpoints = (rp.a, cp.a);
                         }
@@ -133,18 +145,15 @@ namespace Sudoku.Solver.Rules
             if (e1 != null && !r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column, Candidate = digit });
             if (e2 != null && !r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column, Candidate = digit });
 
-            foreach (var p in removals)
+            // Only place into the first intersection cell found (deterministic)
+            var first = removals.OrderBy(p => p.Row).ThenBy(p => p.Column).FirstOrDefault();
+            if (first != null && !first.Value.HasValue)
             {
-                // record placing the digit into the intersection cell (do not modify board here)
-                if (!p.Value.HasValue)
-                {
-                    UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({p.Row},{p.Column})");
-                    var change = new CellChange { Row = p.Row, Column = p.Column, OldValue = p.Value, NewValue = digit };
-                    // record candidate clearing as removed candidates
-                    for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
-                    r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
-                }
+                UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({first.Row},{first.Column})");
+                var change = new CellChange { Row = first.Row, Column = first.Column, OldValue = first.Value, NewValue = digit };
+                for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
+                r.Changes.Add(change);
+                if (!r.UsedCells.Exists(u => u.Row == first.Row && u.Column == first.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = first.Row, Column = first.Column, Candidate = digit });
             }
             r.Apply = r.Changes.Count > 0;
             if (r.Apply) r.Description = $"Right-angle placed {digit} into {r.Changes.Count} cell(s)";

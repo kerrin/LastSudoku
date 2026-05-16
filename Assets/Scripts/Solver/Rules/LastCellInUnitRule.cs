@@ -50,7 +50,7 @@ namespace Sudoku.Solver.Rules
             if (missing == -1) return false;
 
             var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
-            // When only enacting candidates, remove all other candidates from the empty cell
+            // When enacting a placement, record it as the single deduction for this call.
             for (int v = 1; v <= size; v++) if (v != missing) change.RemovedCandidates.Add(v);
             foreach (Cell p in unit.Where(c => c.Value.HasValue))
             {
@@ -58,8 +58,9 @@ namespace Sudoku.Solver.Rules
                     result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
             }
 
-            // Record placement and peer candidate removals (do not modify board here)
             result.Changes.Add(change);
+            if (!result.UsedCells.Exists(u => u.Row == empty.Row && u.Column == empty.Column && u.Candidate == missing))
+                result.UsedCells.Add(new UsedCell { Row = empty.Row, Column = empty.Column, Candidate = missing });
 
             foreach (Cell peer in board.GetPeers(empty))
             {
@@ -72,6 +73,7 @@ namespace Sudoku.Solver.Rules
                         result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = missing });
                 }
             }
+
             result.Apply = true;
             result.Description = $"Placed {missing} at ({empty.Row},{empty.Column}) via Last-Cell-In-Unit";
             return true;

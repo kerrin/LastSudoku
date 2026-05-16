@@ -87,5 +87,37 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(result.Apply);
             Assert.IsFalse(board.Cells[8, 2].Candidates.Contains(d));
         }
+
+        [Test]
+        public void Skyscraper_UserCase_RemovesCandidate()
+        {
+            var board = new Board(9, 3, 3);
+            for (int r = 0; r < 9; r++)
+                for (int c = 0; c < 9; c++)
+                    board.Cells[r, c] = new Cell(r, c);
+
+            int d = 1;
+            // Clear all other candidates for digit d to shape the pattern
+            for (int r = 0; r < 9; r++)
+                for (int c = 0; c < 9; c++)
+                    board.Cells[r, c].Candidates.Remove(d);
+
+            // user's skyscraper: (0,1),(0,6),(1,0),(1,6)
+            board.Cells[0, 1].Candidates.Add(d);
+            board.Cells[0, 6].Candidates.Add(d);
+            board.Cells[1, 0].Candidates.Add(d);
+            board.Cells[1, 6].Candidates.Add(d);
+
+            // target (0,2) should see both endpoints (0,1) and (1,0)
+            board.Cells[0, 2].Candidates.Add(d);
+
+            var registry = new RuleRegistry();
+            registry.Register(new SkyscraperRule());
+
+            var (rule, result) = registry.ApplyNext(board);
+            Assert.IsNotNull(rule);
+            Assert.IsTrue(result.Apply);
+            Assert.IsFalse(board.Cells[0, 2].Candidates.Contains(d));
+        }
     }
 }

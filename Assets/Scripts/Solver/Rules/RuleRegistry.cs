@@ -128,8 +128,17 @@ namespace Sudoku.Solver.Rules
         public List<(ISudokuRule rule, RuleResult result)> ApplyAll(Board board, int maxIterations = 1000)
         {
             var results = new List<(ISudokuRule, RuleResult)>();
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            // Safety: if ApplyAll runs for too long, bail out to avoid hanging the editor/tests.
+            // This protects against pathological rule configurations or extremely large iteration counts.
+            const int MaxMilliseconds = 30000; // 30s
             for (int i = 0; i < maxIterations; i++)
             {
+                if (sw.ElapsedMilliseconds > MaxMilliseconds)
+                {
+                    Debug.LogWarning($"RuleRegistry.ApplyAll: timeout after {sw.ElapsedMilliseconds}ms and {i} iterations");
+                    break;
+                }
                 (ISudokuRule rule, RuleResult result) = ApplyNext(board);
                 if (rule == null || !result.Apply) break;
                 results.Add((rule, result));

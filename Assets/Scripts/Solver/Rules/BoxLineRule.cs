@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
@@ -48,22 +49,15 @@ namespace Sudoku.Solver.Rules
                             result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column, Candidate = digit });
                     }
 
-                    bool applied = false;
-                    foreach (Cell target in info.Targets)
+                    // Only apply a single target removal per call (deterministic order)
+                    var first = info.Targets.OrderBy(t => t.Row).ThenBy(t => t.Column).FirstOrDefault(t => !t.Value.HasValue && t.Candidates.Contains(digit));
+                    if (first != null)
                     {
-                        if (!target.Value.HasValue && target.Candidates.Contains(digit))
-                        {
-                            var change = new CellChange { Row = target.Row, Column = target.Column };
-                            change.RemovedCandidates.Add(digit);
-                            result.Changes.Add(change);
-                            if (!result.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column && u.Candidate == digit))
-                                result.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column, Candidate = digit });
-                            applied = true;
-                        }
-                    }
-
-                    if (applied)
-                    {
+                        var change = new CellChange { Row = first.Row, Column = first.Column };
+                        change.RemovedCandidates.Add(digit);
+                        result.Changes.Add(change);
+                        if (!result.UsedCells.Exists(u => u.Row == first.Row && u.Column == first.Column && u.Candidate == digit))
+                            result.UsedCells.Add(new UsedCell { Row = first.Row, Column = first.Column, Candidate = digit });
                         result.Apply = true;
                         result.Description = info.Description;
                         return result;

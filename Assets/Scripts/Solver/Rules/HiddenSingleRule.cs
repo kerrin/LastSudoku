@@ -134,8 +134,11 @@ namespace Sudoku.Solver.Rules
                     result.UsedCells.Add(new UsedCell { Row = u.Row, Column = u.Column, Candidate = digit });
             }
 
-            // Record the placement and peer candidate removals (do not modify board here)
+            // Record the placement and peer candidate removals as consequences of the single deduction.
             result.Changes.Add(change);
+            if (!result.UsedCells.Exists(u => u.Row == cell.Row && u.Column == cell.Column && u.Candidate == digit))
+                result.UsedCells.Add(new UsedCell { Row = cell.Row, Column = cell.Column, Candidate = digit });
+
             foreach (Cell peer in board.GetPeers(cell))
             {
                 if (peer.Candidates.Contains(digit))
@@ -147,6 +150,7 @@ namespace Sudoku.Solver.Rules
                         result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = digit });
                 }
             }
+
             result.Apply = true;
             result.Description = $"Placed {digit} at ({cell.Row},{cell.Column}) via Hidden Single";
             return result;
