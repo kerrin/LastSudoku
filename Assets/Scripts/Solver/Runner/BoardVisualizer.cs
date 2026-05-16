@@ -31,12 +31,18 @@ namespace Sudoku.Solver
             if (_centerStyle != null) return;
             var baseLabel = GUI.skin != null ? GUI.skin.label : new GUIStyle();
             _centerStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, CellSize / 2) };
-            _candidateStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.UpperLeft, fontSize = Mathf.Max(8, CellSize / 4) };
+            _candidateStyle = new GUIStyle(baseLabel)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                fontSize = Mathf.Max(6, CellSize / 4),
+                padding = new RectOffset(0, 0, 0, 0)
+            };
         }
 
         private void OnValidate()
         {
             _centerStyle = null; // rebuild styles on inspector changes
+            _candidateStyle = null;
         }
 
         private void OnGUI()
