@@ -128,6 +128,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 239282190}
+  - component: {fileID: 239282191}
+  - component: {fileID: 239282192}
   m_Layer: 0
   m_Name: Board
   m_TagString: Untagged
@@ -150,6 +152,44 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &239282191
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 239282189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1ffc0d888b0b69847821e403721dceff, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Sudoku.Solver.SolverRunner
+  PuzzleRows:
+  - 8......56
+  - 2....6...
+  - ....23...
+  - .31......
+  - ..7.4.3..
+  - ......72.
+  - ...83....
+  - ...9....1
+  - 46......5
+--- !u!114 &239282192
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 239282189}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3fc8f68322b088848a3ef9937903cfc4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Sudoku.Solver.BoardVisualizer
+  Runner: {fileID: 239282191}
+  CellSize: 48
+  ShowCandidates: 1
+  Offset: {x: 20, y: 20}
 --- !u!1 &396512684
 GameObject:
   m_ObjectHideFlags: 0
@@ -191,7 +231,7 @@ MonoBehaviour:
   m_FallbackScreenDPI: 96
   m_DefaultSpriteDPI: 96
   m_DynamicPixelsPerUnit: 1
-  m_PresetInfoIsWorld: 0
+  m_PresetInfoIsWorld: 1
 --- !u!114 &396512686
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -352,7 +392,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 963530851}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 4f231c4fb786f3946a6b90b886c48677, type: 3}
   m_Name: 
@@ -487,6 +527,53 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1758999893
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1758999895}
+  - component: {fileID: 1758999894}
+  m_Layer: 0
+  m_Name: RuleTogglePanel
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1758999894
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1758999893}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bd2c8c825537588459abb70fbd3f907d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RuleTogglePanel
+  Runner: {fileID: 239282191}
+  PanelWidth: 260
+  MaxHeight: 400
+--- !u!4 &1758999895
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1758999893}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -497,3 +584,4 @@ SceneRoots:
   - {fileID: 239282190}
   - {fileID: 520307473}
   - {fileID: 773167338}
+  - {fileID: 1758999895}

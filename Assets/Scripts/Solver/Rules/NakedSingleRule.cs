@@ -1,6 +1,8 @@
 using System.Linq;
 using System.Collections.Generic;
 using Sudoku.Models;
+using Cell = Sudoku.Models.Cell;
+using Board = Sudoku.Models.Board;
 
 namespace Sudoku.Solver.Rules
 {

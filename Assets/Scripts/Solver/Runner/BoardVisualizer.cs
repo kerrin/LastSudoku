@@ -1,6 +1,8 @@
 using System.Text;
 using UnityEngine;
 using Sudoku.Models;
+using Cell = Sudoku.Models.Cell;
+using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver

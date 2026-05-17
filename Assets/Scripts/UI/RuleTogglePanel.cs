@@ -23,7 +23,7 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void Start()
     {
-        if (Runner == null) Runner = FindObjectOfType<SolverRunner>();
+        if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
         if (Runner == null)
         {
             Debug.LogWarning("RuleTogglePanel: No SolverRunner found in scene.");
@@ -43,7 +43,7 @@ public class RuleTogglePanel : MonoBehaviour
             }
         }
 
-        Canvas canvas = FindObjectOfType<Canvas>();
+        Canvas canvas = Object.FindAnyObjectByType<Canvas>();
         if (canvas == null) canvas = CreateDefaultCanvas();
 
         // Create panel
@@ -71,7 +71,7 @@ public class RuleTogglePanel : MonoBehaviour
         headerGO.transform.SetParent(panelGO.transform, false);
         var headerText = headerGO.AddComponent<Text>();
         headerText.text = "Rules";
-        headerText.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        headerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         headerText.fontSize = 18;
         headerText.color = Color.white;
 
@@ -111,7 +111,7 @@ public class RuleTogglePanel : MonoBehaviour
         labelGO.transform.SetParent(go.transform, false);
         var label = labelGO.AddComponent<Text>();
         label.text = rule.Name;
-        label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.color = Color.white;
 
         // Setup toggle initial state and callback
@@ -130,10 +130,26 @@ public class RuleTogglePanel : MonoBehaviour
         var canvas = canvasGO.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
-        // Ensure an EventSystem exists
-        if (FindObjectOfType<UnityEngine.EventSystems.EventSystem>() == null)
+        // Ensure an EventSystem exists; prefer the new Input System UI module when available.
+        if (Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
         {
-            var es = new GameObject("EventSystem", typeof(UnityEngine.EventSystems.EventSystem), typeof(UnityEngine.EventSystems.StandaloneInputModule));
+            var es = new GameObject("EventSystem");
+            es.AddComponent<UnityEngine.EventSystems.EventSystem>();
+            // Prefer the Input System UI module if it's available in any loaded assembly.
+            System.Type inputModuleType = null;
+            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                inputModuleType = asm.GetType("UnityEngine.InputSystem.UI.InputSystemUIInputModule");
+                if (inputModuleType != null) break;
+            }
+            if (inputModuleType != null)
+            {
+                es.AddComponent(inputModuleType);
+            }
+            else
+            {
+                Debug.LogWarning("InputSystemUIInputModule not found in loaded assemblies. Not adding StandaloneInputModule to avoid Input System mismatch. Install the Input System package or change Player Settings.");
+            }
         }
 
         return canvas;

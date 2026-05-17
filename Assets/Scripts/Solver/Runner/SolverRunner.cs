@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
+using Cell = Sudoku.Models.Cell;
+using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
@@ -67,7 +69,7 @@ namespace Sudoku.Solver
             }
 
             // Clear other SolverRunner instances in the scene to avoid conflicting models
-            var runners = FindObjectsOfType<SolverRunner>();
+            var runners = Object.FindObjectsByType<SolverRunner>(FindObjectsSortMode.None);
             foreach (var r in runners)
             {
                 if (r == this) continue;

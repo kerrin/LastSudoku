@@ -10,13 +10,13 @@ public class SceneWiring : MonoBehaviour
 {
     void Awake()
     {
-        var runner = FindAnyObjectByType<SolverRunner>();
+        var runner = Object.FindAnyObjectByType<SolverRunner>();
         if (runner == null) return;
 
-        var visu = FindAnyObjectByType<BoardVisualizer>();
+        var visu = Object.FindAnyObjectByType<BoardVisualizer>();
         if (visu != null && visu.Runner == null) visu.Runner = runner;
 
-        var panel = FindAnyObjectByType<RuleTogglePanel>();
+        var panel = Object.FindAnyObjectByType<RuleTogglePanel>();
         if (panel != null && panel.Runner == null) panel.Runner = runner;
     }
 }
