@@ -243,17 +243,21 @@ SELECT:
                 if (!r.UsedCells.Exists(u => u.Row == w.Row && u.Column == w.Column && u.Candidate == digit))
                     r.UsedCells.Add(new UsedCell { Row = w.Row, Column = w.Column, Candidate = digit });
             }
-            // Only action a single deduction per call: pick a deterministic first removal (row,col order)
+            // Apply all deductions that follow from the same four witness cells
             if (removals != null && removals.Count > 0)
             {
                 var ordered = removals.OrderBy(p => p.Row).ThenBy(p => p.Column).ToList();
-                var p = ordered[0];
-                if (p.Candidates.Contains(digit))
+                foreach (var p in ordered)
                 {
-                    var change = new CellChange { Row = p.Row, Column = p.Column };
-                    change.RemovedCandidates.Add(digit);
-                    r.Changes.Add(change);
-                    if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
+                    if (!p.Value.HasValue && p.Candidates.Contains(digit))
+                    {
+                        var change = new CellChange { Row = p.Row, Column = p.Column };
+                        change.RemovedCandidates.Add(digit);
+                        r.Changes.Add(change);
+
+                        if (!r.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column && u.Candidate == digit))
+                            r.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column, Candidate = digit });
+                    }
                 }
             }
 
