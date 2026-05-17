@@ -13,6 +13,12 @@ namespace Sudoku.Solver.Rules
      * have a single digit that is not in the courner box, 
      * then that digit must be placed in the
      * fourth corner of the 2x2 and can be assigned.
+     *
+     * Another way of describing it:
+     *    The 3 digits in a right angle in the same box
+     *    And the row and column not in the right angle cells for a digit that is:
+     *       Not in 3 the right angle digits
+     *       Appears in both the row and column
      */
     public class RightAngleRule : ISudokuRule
     {
@@ -47,85 +53,100 @@ namespace Sudoku.Solver.Rules
             int boxesPerRow = size / board.BoxWidth;
             int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
 
-            for (int digit = 1; digit <= size; digit++)
+            // For each box, scan every 2x2 corner inside the box. If exactly three
+            // of the four corner cells are set (have values) and one is empty,
+            // then for any digit not among those three values, if that digit
+            // appears as a candidate somewhere in the other row (outside the box)
+            // and somewhere in the other column (outside the box), we can place
+            // that digit into the empty corner.
+            // Where other row/column means the row/column of the cells not in the 2x2 corner.
+            for (int box = 0; box < boxCount; box++)
             {
-                var allRowPairs = new List<(Cell a, Cell b)>();
-                var allColPairs = new List<(Cell a, Cell b)>();
+                int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
+                int startBoxCol = (box % boxesPerRow) * board.BoxWidth;
 
-                // gather all row-pairs and col-pairs across every box
-                for (int box = 0; box < boxCount; box++)
+                // iterate top-left cell of each 2x2 sub-block inside the box
+                for (int r0 = startBoxRow; r0 <= startBoxRow + board.BoxHeight - 2; r0++)
                 {
-                    int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
-                    int startBoxCol = (box % boxesPerRow) * board.BoxWidth;
+                    for (int c0 = startBoxCol; c0 <= startBoxCol + board.BoxWidth - 2; c0++)
+                    {
+                        var a = board.Cells[r0, c0];
+                        var b = board.Cells[r0, c0 + 1];
+                        var c = board.Cells[r0 + 1, c0];
+                        var d = board.Cells[r0 + 1, c0 + 1];
+                        var quad = new[] { a, b, c, d };
 
-                    var boxCells = new List<Cell>();
-                    // Get the cells in the current box that contain the digit as a candidate
-                    for (int r = startBoxRow; r < startBoxRow + board.BoxHeight; r++)
-                        for (int c = startBoxCol; c < startBoxCol + board.BoxWidth; c++)
+                        // count placed values and identify the empty cell
+                        int placedCount = 0;
+                        var placedValues = new HashSet<int>();
+                        Cell empty = null;
+                        foreach (var cell in quad)
                         {
-                            var cell = board.Cells[r, c];
-                            if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) boxCells.Add(cell);
+                            if (cell.Value.HasValue)
+                            {
+                                placedCount++;
+                                placedValues.Add(cell.Value.Value);
+                            }
+                            else
+                            {
+                                empty = cell;
+                            }
                         }
 
-                    if (boxCells.Count < 2) continue;
-                    for (int i = 0; i < boxCells.Count; i++)
-                        for (int j = i + 1; j < boxCells.Count; j++)
+                        if (placedCount != 3 || empty == null) continue;
+                        // Calculate the row and the column of the box that doesn't contain the right angle (the "other" row and column)
+                        var boxObj = board.GetBox(box);
+                        var quadRows = quad.Select(cell => cell.Row).ToHashSet();
+                        var rowInBox = boxObj.Where(cell => !quadRows.Contains(cell.Row)).Select(cell => cell.Row).First();
+                        var quadCols = quad.Select(cell => cell.Column).ToHashSet();
+                        var colInBox = boxObj.Where(cell => !quadCols.Contains(cell.Column)).Select(cell => cell.Column).First();
+
+                        // Consider digits not among the three placed values
+                        for (int digit = 1; digit <= size; digit++)
                         {
-                            var a = boxCells[i];
-                            var b = boxCells[j];
-                            if (a.Row == b.Row) allRowPairs.Add((a, b));
-                            if (a.Column == b.Column) allColPairs.Add((a, b));
-                        }
-                }
+                            if (placedValues.Contains(digit)) continue;
 
-                if (allRowPairs.Count == 0 || allColPairs.Count == 0) continue;
-                UnityEngine.Debug.Log($"RightAngle: digit={digit} rowPairs={allRowPairs.Count} colPairs={allColPairs.Count}");
+                            // check row for candidate digit
+                            // Per comment: require set values (not candidates) in the
+                            // row/column outside the right-angle to support deduction.
+                            bool rowHas = false;
+                            for (int cc = 0; cc < size; cc++)
+                            {
+                                var cell = board.Cells[rowInBox, cc];
+                                if (cell.Value.HasValue && cell.Value == digit) { rowHas = true; break; }
+                            }
 
-                // helpers
-                List<Cell> CandidatesInRow(int row)
-                {
-                    var list = new List<Cell>();
-                    for (int cc = 0; cc < size; cc++)
-                    {
-                        var c = board.Cells[row, cc];
-                        if (!c.Value.HasValue && c.Candidates.Contains(digit)) list.Add(c);
-                    }
-                    return list;
-                }
+                            if (!rowHas) continue;
 
-                List<Cell> CandidatesInColumn(int col)
-                {
-                    var list = new List<Cell>();
-                    for (int rr = 0; rr < size; rr++)
-                    {
-                        var c = board.Cells[rr, col];
-                        if (!c.Value.HasValue && c.Candidates.Contains(digit)) list.Add(c);
-                    }
-                    return list;
-                }
+                            // check column for a set value of the digit
+                            bool colHas = false;
+                            for (int rr = 0; rr < size; rr++)
+                            {
+                                if (rr >= startBoxRow && rr < startBoxRow + board.BoxHeight) continue;
+                                var cell = board.Cells[rr, colInBox];
+                                if (cell.Value.HasValue && cell.Value == digit) { colHas = true; break; }
+                            }
 
-                var removals = new List<Cell>();
-                (Cell e1, Cell e2) endpoints = (null, null);
+                            if (!colHas) continue;
 
-                foreach (var rp in allRowPairs)
-                {
-                    foreach (var cp in allColPairs)
-                    {
-                        int interRow = rp.a.Row;
-                        int interCol = cp.a.Column;
-                        var inter = board.Cells[interRow, interCol];
-                        UnityEngine.Debug.Log($"RightAngle: checking intersection ({interRow},{interCol}) for digit={digit}");
-                        if (inter == rp.a || inter == rp.b || inter == cp.a || inter == cp.b) continue;
-                        if (!inter.Value.HasValue && inter.Candidates.Contains(digit))
-                        {
-                            UnityEngine.Debug.Log($"RightAngle: found intersection ({interRow},{interCol}) for digit={digit}");
-                            if (!removals.Contains(inter)) removals.Add(inter);
-                            if (endpoints.e1 == null) endpoints = (rp.a, cp.a);
+                            // We've found a valid deduction: place 'digit' into 'empty'
+                            var removals = new List<Cell> { empty };
+
+                            // Endpoint cells: the placed cell in the empty's row within
+                            // the box, and the placed cell in the empty's column within
+                            // the box. Find them and return as endpoints.
+                            Cell rowEndpoint = null;
+                            Cell colEndpoint = null;
+                            foreach (var cell in quad)
+                            {
+                                if (cell.Row == empty.Row && cell.Value.HasValue) rowEndpoint = cell;
+                                if (cell.Column == empty.Column && cell.Value.HasValue) colEndpoint = cell;
+                            }
+
+                            return (rowEndpoint, colEndpoint, digit, removals);
                         }
                     }
                 }
-
-                if (removals.Count > 0) return (endpoints.e1, endpoints.e2, digit, removals);
             }
             return null;
         }
