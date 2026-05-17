@@ -12,6 +12,10 @@ namespace Sudoku.Solver.Rules
     public class RuleRegistry
     {
         private readonly List<ISudokuRule> _rules = new List<ISudokuRule>();
+        // Names of rules that are disabled (by type name). Using names keeps
+        // the registry lightweight and avoids requiring rule implementations
+        // to change.
+        private readonly HashSet<string> _disabledRuleNames = new HashSet<string>();
 
         /**
          * Read-only view of registered rules in insertion order.
@@ -25,6 +29,29 @@ namespace Sudoku.Solver.Rules
         {
             if (rule == null) throw new ArgumentNullException(nameof(rule));
             _rules.Add(rule);
+        }
+
+        /** Return whether the given rule is enabled (not disabled). */
+        public bool IsEnabled(ISudokuRule rule)
+        {
+            if (rule == null) return false;
+            return !_disabledRuleNames.Contains(rule.GetType().Name);
+        }
+
+        /** Enable or disable a rule by its type name. */
+        public void SetEnabled(string ruleTypeName, bool enabled)
+        {
+            if (string.IsNullOrEmpty(ruleTypeName)) return;
+            if (enabled) _disabledRuleNames.Remove(ruleTypeName);
+            else _disabledRuleNames.Add(ruleTypeName);
+        }
+
+        /** Get a snapshot of rules with their enabled state. */
+        public List<(ISudokuRule rule, bool enabled)> GetRulesWithStatus()
+        {
+            var list = new List<(ISudokuRule, bool)>();
+            foreach (var r in _rules) list.Add((r, IsEnabled(r)));
+            return list;
         }
 
         /**
@@ -90,6 +117,12 @@ namespace Sudoku.Solver.Rules
             // Iterate rules in order and apply the first that reports changes.
             foreach (ISudokuRule r in _rules)
             {
+                // Skip disabled rules
+                if (!IsEnabled(r))
+                {
+                    Debug.Log($"Skipping disabled rule: {r.GetType().Name}");
+                    continue;
+                }
                 try
                 {
                     if (!r.CanApply(board) && enactAll)

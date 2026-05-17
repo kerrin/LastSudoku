@@ -40,7 +40,9 @@ namespace Sudoku.Solver
             EnsureEngine();
         }
 
-        private void EnsureEngine()
+        // Made public so external UI components can ensure the runner has
+        // initialized its RuleRegistry and SolverEngine.
+        public void EnsureEngine()
         {
             if (Registry == null)
             {
