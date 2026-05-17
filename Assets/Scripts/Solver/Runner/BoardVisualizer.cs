@@ -19,6 +19,12 @@ namespace Sudoku.Solver
         [Tooltip("Pixel size of each cell")]
         public int CellSize = 48;
 
+        [Tooltip("If true, scale cell size so the board fills the screen height")]
+        public bool FitToScreenHeight = true;
+
+        [Tooltip("Minimum pixel size for each cell when fitting to screen height")]
+        public int MinCellSize = 16;
+
         [Tooltip("Show candidate digits inside empty cells")]
         public bool ShowCandidates = true;
 
@@ -27,16 +33,18 @@ namespace Sudoku.Solver
 
         private GUIStyle _centerStyle;
         private GUIStyle _candidateStyle;
+        private int _lastComputedCellSize = -1;
 
-        private void EnsureStyles()
+        private void EnsureStyles(int cellSize)
         {
-            if (_centerStyle != null) return;
+            if (_centerStyle != null && _lastComputedCellSize == cellSize) return;
+            _lastComputedCellSize = cellSize;
             var baseLabel = GUI.skin != null ? GUI.skin.label : new GUIStyle();
-            _centerStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, CellSize / 2) };
+            _centerStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, cellSize / 2) };
             _candidateStyle = new GUIStyle(baseLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
-                fontSize = Mathf.Max(6, CellSize / 4),
+                fontSize = Mathf.Max(6, cellSize / 4),
                 padding = new RectOffset(0, 0, 0, 0)
             };
         }
@@ -45,6 +53,7 @@ namespace Sudoku.Solver
         {
             _centerStyle = null; // rebuild styles on inspector changes
             _candidateStyle = null;
+            _lastComputedCellSize = -1;
         }
 
         private void OnGUI()
@@ -52,11 +61,19 @@ namespace Sudoku.Solver
             try
             {
                 if (Runner == null || Runner.CurrentBoard == null) return;
-                EnsureStyles();
-
                 Board board = Runner.CurrentBoard;
                 if (board.Cells == null) return;
                 int size = board.Size;
+
+                int cellSize = CellSize;
+                if (FitToScreenHeight && size > 0)
+                {
+                    float availableHeight = Mathf.Max(32f, Screen.height - Offset.y - 20f);
+                    cellSize = Mathf.Max(MinCellSize, Mathf.FloorToInt(availableHeight / size));
+                }
+
+                EnsureStyles(cellSize);
+
             float x0 = Offset.x;
             float y0 = Offset.y;
 
@@ -65,7 +82,7 @@ namespace Sudoku.Solver
             {
                 for (int c = 0; c < size; c++)
                 {
-                    Rect cellRect = new Rect(x0 + c * CellSize, y0 + r * CellSize, CellSize, CellSize);
+                    Rect cellRect = new Rect(x0 + c * cellSize, y0 + r * cellSize, cellSize, cellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     bool highlighted = false;
                     int? usedCandidateForCell = null;
@@ -130,19 +147,19 @@ namespace Sudoku.Solver
 
             // draw heavier box lines for box boundaries (guard against zero box sizes)
             HandlesBeginGUI();
-            float lineWidth = Mathf.Max(2f, CellSize / 8f);
+            float lineWidth = Mathf.Max(2f, cellSize / 8f);
             int boxW = board.BoxWidth;
             int boxH = board.BoxHeight;
             for (int i = 0; i <= size; i++)
             {
-                float px = x0 + i * CellSize;
-                float py = y0 + i * CellSize;
+                float px = x0 + i * cellSize;
+                float py = y0 + i * cellSize;
                 // vertical
                 bool thickV = boxW > 0 && (i % boxW == 0);
-                DrawLine(new Vector2(px, y0), new Vector2(px, y0 + size * CellSize), thickV ? lineWidth : 1f);
+                DrawLine(new Vector2(px, y0), new Vector2(px, y0 + size * cellSize), thickV ? lineWidth : 1f);
                 // horizontal
                 bool thickH = boxH > 0 && (i % boxH == 0);
-                DrawLine(new Vector2(x0, py), new Vector2(x0 + size * CellSize, py), thickH ? lineWidth : 1f);
+                DrawLine(new Vector2(x0, py), new Vector2(x0 + size * cellSize, py), thickH ? lineWidth : 1f);
             }
             HandlesEndGUI();
             }

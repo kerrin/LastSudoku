@@ -59,7 +59,11 @@ public class RuleTogglePanel : MonoBehaviour
         panelRect.anchorMax = new Vector2(1f, 1f);
         panelRect.pivot = new Vector2(1f, 1f);
         panelRect.anchoredPosition = new Vector2(-10f, -10f);
-        panelRect.sizeDelta = new Vector2(PanelWidth, Mathf.Min(MaxHeight, 200f));
+        // Make panel size responsive to screen resolution so it doesn't dominate
+        // the view on small screens or become tiny on large/high-DPI displays.
+        float width = Mathf.Min(PanelWidth, Screen.width * 0.28f);
+        float height = Mathf.Min(MaxHeight, Screen.height * 0.5f);
+        panelRect.sizeDelta = new Vector2(width, height);
         var img = panelGO.GetComponent<Image>();
         img.color = new Color(0f, 0f, 0f, 0.6f);
 
@@ -96,6 +100,10 @@ public class RuleTogglePanel : MonoBehaviour
         var go = new GameObject(rule.GetType().Name + "_Toggle", typeof(RectTransform));
         go.transform.SetParent(parent, false);
 
+        // Give each toggle a preferred height so the VerticalLayoutGroup can size them
+        var le = go.AddComponent<UnityEngine.UI.LayoutElement>();
+        le.preferredHeight = 28f;
+
         var toggle = go.AddComponent<Toggle>();
 
         // Background
@@ -118,6 +126,8 @@ public class RuleTogglePanel : MonoBehaviour
         label.text = rule.Name;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.color = Color.white;
+        label.fontSize = 14;
+        label.alignment = TextAnchor.MiddleLeft;
 
         // Setup toggle initial state and callback
         toggle.isOn = enabled;
@@ -134,6 +144,15 @@ public class RuleTogglePanel : MonoBehaviour
         var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
         var canvas = canvasGO.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+        // Configure CanvasScaler so UI scales with screen resolution instead
+        // of remaining tiny on high-DPI / large displays.
+        var scaler = canvasGO.GetComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+        scaler.referencePixelsPerUnit = 100f;
 
         // Ensure an EventSystem exists; prefer the new Input System UI module when available.
         if (Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
