@@ -49,15 +49,20 @@ namespace Sudoku.Solver.Rules
                             result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column, Candidate = digit });
                     }
 
-                    // Only apply a single target removal per call (deterministic order)
-                    var first = info.Targets.OrderBy(t => t.Row).ThenBy(t => t.Column).FirstOrDefault(t => !t.Value.HasValue && t.Candidates.Contains(digit));
-                    if (first != null)
+                    // Apply removals to all eligible target cells in the same row/column
+                    var targets = info.Targets.OrderBy(t => t.Row).ThenBy(t => t.Column).Where(t => !t.Value.HasValue && t.Candidates.Contains(digit)).ToList();
+                    if (targets.Count > 0)
                     {
-                        var change = new CellChange { Row = first.Row, Column = first.Column };
-                        change.RemovedCandidates.Add(digit);
-                        result.Changes.Add(change);
-                        if (!result.UsedCells.Exists(u => u.Row == first.Row && u.Column == first.Column && u.Candidate == digit))
-                            result.UsedCells.Add(new UsedCell { Row = first.Row, Column = first.Column, Candidate = digit });
+                        foreach (var trg in targets)
+                        {
+                            var change = new CellChange { Row = trg.Row, Column = trg.Column };
+                            change.RemovedCandidates.Add(digit);
+                            result.Changes.Add(change);
+
+                            if (!result.UsedCells.Exists(u => u.Row == trg.Row && u.Column == trg.Column && u.Candidate == digit))
+                                result.UsedCells.Add(new UsedCell { Row = trg.Row, Column = trg.Column, Candidate = digit });
+                        }
+
                         result.Apply = true;
                         result.Description = info.Description;
                         return result;
