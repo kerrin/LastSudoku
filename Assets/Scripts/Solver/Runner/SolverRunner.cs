@@ -40,6 +40,10 @@ namespace Sudoku.Solver
         private void Awake()
         {
             EnsureEngine();
+            // Auto-load the puzzle rows when the scene starts so UI visualizers
+            // that depend on `CurrentBoard` (e.g. `BoardVisualizer`) will render
+            // without requiring manual context-menu actions in the Editor.
+            LoadBoardFromRows();
         }
 
         // Made public so external UI components can ensure the runner has

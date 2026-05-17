@@ -44,7 +44,12 @@ public class RuleTogglePanel : MonoBehaviour
         }
 
         Canvas canvas = Object.FindAnyObjectByType<Canvas>();
-        if (canvas == null) canvas = CreateDefaultCanvas();
+        // If an existing Canvas is present but not ScreenSpaceOverlay (e.g. World Space),
+        // create a default overlay canvas so the runtime UI is visible in the Game view.
+        if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+        {
+            canvas = CreateDefaultCanvas();
+        }
 
         // Create panel
         GameObject panelGO = new GameObject("RuleTogglePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
