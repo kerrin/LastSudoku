@@ -51,33 +51,56 @@ public class RuleTogglePanel : MonoBehaviour
             canvas = CreateDefaultCanvas();
         }
 
-        // Create panel
-        GameObject panelGO = new GameObject("RuleTogglePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        panelGO.transform.SetParent(canvas.transform, false);
-        var panelRect = panelGO.GetComponent<RectTransform>();
-        panelRect.anchorMin = new Vector2(1f, 1f);
-        panelRect.anchorMax = new Vector2(1f, 1f);
-        panelRect.pivot = new Vector2(1f, 1f);
-        panelRect.anchoredPosition = new Vector2(-10f, -10f);
-        // Make panel size responsive to screen resolution so it doesn't dominate
-        // the view on small screens or become tiny on large/high-DPI displays.
-        float width = Mathf.Min(PanelWidth, Screen.width * 0.28f);
-        float height = Mathf.Min(MaxHeight, Screen.height * 0.5f);
-        panelRect.sizeDelta = new Vector2(width, height);
-        var img = panelGO.GetComponent<Image>();
-        img.color = new Color(0f, 0f, 0f, 0.6f);
+        // Determine parent container: prefer BoardSidePanel.RulesArea when available
+        Transform parentContainer = null;
+        var side = Object.FindAnyObjectByType<BoardSidePanel>();
+        if (side != null && side.RulesArea != null)
+        {
+            parentContainer = side.RulesArea.transform;
+            // Ensure a VerticalLayoutGroup exists on the container
+            var existingLayout = parentContainer.GetComponent<VerticalLayoutGroup>();
+            if (existingLayout == null)
+            {
+                var layout = parentContainer.gameObject.AddComponent<VerticalLayoutGroup>();
+                layout.childForceExpandHeight = false;
+                layout.childControlHeight = true;
+                layout.childControlWidth = true;
+                layout.padding = new RectOffset(6, 6, 6, 6);
+                layout.spacing = 4f;
+            }
+        }
+        else
+        {
+            // Create standalone panel
+            GameObject panelGO = new GameObject("RuleTogglePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            panelGO.transform.SetParent(canvas.transform, false);
+            var panelRect = panelGO.GetComponent<RectTransform>();
+            panelRect.anchorMin = new Vector2(1f, 1f);
+            panelRect.anchorMax = new Vector2(1f, 1f);
+            panelRect.pivot = new Vector2(1f, 1f);
+            panelRect.anchoredPosition = new Vector2(-10f, -10f);
+            // Make panel size responsive to screen resolution so it doesn't dominate
+            // the view on small screens or become tiny on large/high-DPI displays.
+            float width = Mathf.Min(PanelWidth, Screen.width * 0.28f);
+            float height = Mathf.Min(MaxHeight, Screen.height * 0.5f);
+            panelRect.sizeDelta = new Vector2(width, height);
+            var img = panelGO.GetComponent<Image>();
+            img.color = new Color(0f, 0f, 0f, 0.6f);
 
-        // Add layout
-        var layout = panelGO.AddComponent<VerticalLayoutGroup>();
-        layout.childForceExpandHeight = false;
-        layout.childControlHeight = true;
-        layout.childControlWidth = true;
-        layout.padding = new RectOffset(6, 6, 6, 6);
-        layout.spacing = 4f;
+            // Add layout
+            var layout = panelGO.AddComponent<VerticalLayoutGroup>();
+            layout.childForceExpandHeight = false;
+            layout.childControlHeight = true;
+            layout.childControlWidth = true;
+            layout.padding = new RectOffset(6, 6, 6, 6);
+            layout.spacing = 4f;
+
+            parentContainer = panelGO.transform;
+        }
 
         // Create header
         var headerGO = new GameObject("Header", typeof(RectTransform));
-        headerGO.transform.SetParent(panelGO.transform, false);
+        headerGO.transform.SetParent(parentContainer, false);
         var headerText = headerGO.AddComponent<Text>();
         headerText.text = "Rules";
         headerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -86,7 +109,15 @@ public class RuleTogglePanel : MonoBehaviour
 
         // Create content container (scrollable if many rules)
         GameObject contentGO = new GameObject("Content", typeof(RectTransform));
-        contentGO.transform.SetParent(panelGO.transform, false);
+        contentGO.transform.SetParent(parentContainer, false);
+        var contentLayout = contentGO.AddComponent<VerticalLayoutGroup>();
+        contentLayout.childForceExpandHeight = false;
+        contentLayout.childControlHeight = true;
+        contentLayout.childControlWidth = true;
+        contentLayout.spacing = 2f;
+        contentLayout.padding = new RectOffset(0,0,0,0);
+        var csf = contentGO.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         var rules = _registry.GetRulesWithStatus();
         foreach (var entry in rules)

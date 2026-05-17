@@ -49,6 +49,21 @@ namespace Sudoku.Solver
             };
         }
 
+        /**
+         * Return the computed cell size used at runtime (matches logic in OnGUI).
+         */
+        public int GetComputedCellSize()
+        {
+            int size = Runner != null && Runner.CurrentBoard != null ? Runner.CurrentBoard.Size : 9;
+            int cellSize = CellSize;
+            if (FitToScreenHeight && size > 0)
+            {
+                float availableHeight = Mathf.Max(32f, Screen.height - Offset.y - 20f);
+                cellSize = Mathf.Max(MinCellSize, Mathf.FloorToInt(availableHeight / size));
+            }
+            return cellSize;
+        }
+
         private void OnValidate()
         {
             _centerStyle = null; // rebuild styles on inspector changes
