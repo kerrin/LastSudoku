@@ -64,5 +64,64 @@ namespace Sudoku.Solver.Rules
             cell.Value = value;
             cell.Candidates.Clear();
         }
+
+        /**
+         * Validate the current board state.
+         * Each unit (row, column, box) must not contain the same solved digit more than once.
+         */
+        public static bool IsValid(this Board board)
+        {
+            int size = board.Size;
+
+            // Check rows
+            for (int r = 0; r < size; r++)
+            {
+                var seen = new bool[size + 1];
+                foreach (Cell cell in board.GetRow(r))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (v < 1 || v > size) return false;
+                        if (seen[v]) return false;
+                        seen[v] = true;
+                    }
+                }
+            }
+
+            // Check columns
+            for (int c = 0; c < size; c++)
+            {
+                var seen = new bool[size + 1];
+                foreach (Cell cell in board.GetColumn(c))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (v < 1 || v > size) return false;
+                        if (seen[v]) return false;
+                        seen[v] = true;
+                    }
+                }
+            }
+
+            // Check boxes
+            for (int b = 0; b < size; b++)
+            {
+                var seen = new bool[size + 1];
+                foreach (Cell cell in board.GetBox(b))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (v < 1 || v > size) return false;
+                        if (seen[v]) return false;
+                        seen[v] = true;
+                    }
+                }
+            }
+
+            return true;
+        }
     }
 }

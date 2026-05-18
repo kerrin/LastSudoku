@@ -60,6 +60,14 @@ public class SolverRunnerEditor : Editor
             MarkSceneDirtyIfNeeded(runner);
         }
 
+        if (GUILayout.Button("Validate Board"))
+        {
+            Undo.RecordObject(runner, "Validate Board");
+            runner.ValidateBoard();
+            EditorUtility.SetDirty(runner);
+            MarkSceneDirtyIfNeeded(runner);
+        }
+
         if (GUILayout.Button("Select Runner GameObject"))
         {
             Selection.activeGameObject = runner.gameObject;
@@ -98,6 +106,13 @@ public class SolverRunnerEditor : Editor
         EditorGUILayout.LabelField("Last Rule", EditorStyles.boldLabel);
         EditorGUILayout.LabelField("Rule:", runner.LastAppliedRule != null ? runner.LastAppliedRule.Name : "(none)");
         EditorGUILayout.LabelField("Result:", runner.LastRuleResult != null ? runner.LastRuleResult.Description : "(none)");
+
+        // If the last rule result indicates an invalid board, show an explicit error box.
+        if (runner.LastRuleResult != null && !string.IsNullOrEmpty(runner.LastRuleResult.Description)
+            && runner.LastRuleResult.Description.IndexOf("INVALID", System.StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            EditorGUILayout.HelpBox("The board is invalid after the last applied rule. See console for details.", MessageType.Error);
+        }
     }
 
     private void MarkSceneDirtyIfNeeded(SolverRunner runner)

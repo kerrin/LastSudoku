@@ -198,6 +198,27 @@ namespace Sudoku.Solver
             Debug.Log("Candidates reset.");
         }
 
+        [ContextMenu("Validate Board")]
+        public bool ValidateBoard()
+        {
+            if (_board == null) LoadBoardFromRows();
+            if (_board == null)
+            {
+                Debug.LogError("No board loaded to validate.");
+                return false;
+            }
+
+            bool valid = _board.IsValid();
+            var msg = valid ? "Board is valid." : "Board is INVALID: duplicate found in a unit.";
+            Debug.Log(msg + "\n" + BoardToString(_board));
+
+            // Store a simple RuleResult-like message for UI inspection
+            LastAppliedRule = null;
+            LastRuleResult = new RuleResult { Apply = false, Description = msg };
+
+            return valid;
+        }
+
         private string BoardToString(Board board)
         {
             var lines = new List<string>();

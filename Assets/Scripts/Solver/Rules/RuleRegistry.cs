@@ -143,6 +143,25 @@ namespace Sudoku.Solver.Rules
                         {
                             res.EnactCandidates(board);
                         }
+                        // After enacting changes, validate board consistency. If invalid,
+                        // log an error and annotate the returned RuleResult so callers
+                        // (e.g. SolverRunner) can display the failure in the UI.
+                        try
+                        {
+                            bool valid = board.IsValid();
+                            if (!valid)
+                            {
+                                string boardStr = FormatBoard(board);
+                                string err = $"Board became INVALID after applying {r.GetType().Name}.";
+                                Debug.LogWarning(err + "\n" + boardStr);
+                                if (string.IsNullOrEmpty(res.Description)) res.Description = err;
+                                else res.Description = res.Description + " -- " + err;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"Board validation threw: {ex.Message}");
+                        }
                         return (r, res);
                     }
                 }
@@ -152,6 +171,22 @@ namespace Sudoku.Solver.Rules
                 }
             }
             return (null, new RuleResult { Apply = false });
+        }
+
+        // Helper to produce a compact string representation of the board for logging.
+        private static string FormatBoard(Board board)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int r = 0; r < board.Size; r++)
+            {
+                for (int c = 0; c < board.Size; c++)
+                {
+                    var v = board.Cells[r, c].Value;
+                    sb.Append(v.HasValue ? (char)('0' + v.Value) : '.');
+                }
+                if (r < board.Size - 1) sb.AppendLine();
+            }
+            return sb.ToString();
         }
 
         /**
