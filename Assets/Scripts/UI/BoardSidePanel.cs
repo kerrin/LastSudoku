@@ -1,12 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-/// <summary>
-/// Creates and maintains a UI panel that fills the canvas space to the right
-/// of the rendered board (IMGUI board rendered by `BoardVisualizer`). The panel
-/// will stretch full canvas height, start at the board's right edge plus a
-/// padding, and respect a minimum width.
-/// </summary>
+/**
+ * Creates and maintains a UI panel that fills the canvas space to the right
+ * of the rendered board (IMGUI board rendered by `BoardVisualizer`). The panel
+ * will stretch full canvas height, start at the board's right edge plus a
+ * padding, and respect a minimum width.
+ */
 [ExecuteAlways]
 public class BoardSidePanel : MonoBehaviour
 {
@@ -25,6 +25,12 @@ public class BoardSidePanel : MonoBehaviour
     private RectTransform _panelRect;
     private Image _panelImage;
     public RectTransform RulesArea;
+    // Cache of recent layout-affecting values to avoid unnecessary per-frame layout work
+    private int _lastScreenWidth = -1;
+    private int _lastScreenHeight = -1;
+    private Vector2 _lastBoardOffset = new Vector2(float.MinValue, float.MinValue);
+    private int _lastComputedCellSize = -1;
+    private int _lastBoardSize = -1;
 
     private void Awake()
     {
@@ -76,8 +82,33 @@ public class BoardSidePanel : MonoBehaviour
     private void Update()
     {
         if (!Application.isPlaying) return;
-        // Update geometry each frame so the panel follows screen / board changes.
-        UpdatePanelGeometry();
+        // Only update geometry when something that affects placement changes
+        bool shouldUpdate = false;
+
+        int sw = Screen.width;
+        int sh = Screen.height;
+        if (sw != _lastScreenWidth || sh != _lastScreenHeight)
+        {
+            shouldUpdate = true;
+            _lastScreenWidth = sw;
+            _lastScreenHeight = sh;
+        }
+
+        if (BoardVisualizer != null)
+        {
+            var bv = BoardVisualizer;
+            int computedCell = bv.GetComputedCellSize();
+            int boardSize = (bv.Runner != null && bv.Runner.CurrentBoard != null) ? bv.Runner.CurrentBoard.Size : -1;
+            if (computedCell != _lastComputedCellSize || boardSize != _lastBoardSize || bv.Offset != _lastBoardOffset)
+            {
+                shouldUpdate = true;
+                _lastComputedCellSize = computedCell;
+                _lastBoardSize = boardSize;
+                _lastBoardOffset = bv.Offset;
+            }
+        }
+
+        if (shouldUpdate) UpdatePanelGeometry();
     }
 
     private void EnsurePanel()

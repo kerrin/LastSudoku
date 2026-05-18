@@ -5,11 +5,11 @@ using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
-/// <summary>
-/// Runtime UI panel that creates a toggle for each registered rule so the
-/// user can enable/disable rules without modifying code. Attach this to a
-/// GameObject in the scene; it will create a Canvas if none exists.
-/// </summary>
+/** 
+ * Runtime UI panel that creates a toggle for each registered rule so the
+ * user can enable/disable rules without modifying code. Attach this to a
+ * GameObject in the scene; it will create a Canvas if none exists.
+ */
 public class RuleTogglePanel : MonoBehaviour
 {
     public SolverRunner Runner;
@@ -181,6 +181,11 @@ public class RuleTogglePanel : MonoBehaviour
         h.childForceExpandHeight = false;
         h.childForceExpandWidth = false;
         h.spacing = 6f;
+        // Make the whole row clickable: add an invisible background Image and Button
+        var rowBg = go.AddComponent<Image>();
+        rowBg.color = new Color(0f, 0f, 0f, 0f);
+        var rowButton = go.AddComponent<Button>();
+        rowButton.targetGraphic = rowBg;
 
         var toggleGO = new GameObject("Toggle", typeof(RectTransform));
         toggleGO.transform.SetParent(go.transform, false);
@@ -191,6 +196,9 @@ public class RuleTogglePanel : MonoBehaviour
         toggleRect.sizeDelta = new Vector2(26f, 26f);
         bgImg.color = new Color(1f, 1f, 1f, 0.06f);
         toggle.targetGraphic = bgImg;
+        // Toggle should not be directly clickable; the row Button handles clicks.
+        toggle.interactable = false;
+        bgImg.raycastTarget = false;
 
         var ck = new GameObject("Checkmark", typeof(RectTransform));
         ck.transform.SetParent(toggleGO.transform, false);
@@ -200,6 +208,8 @@ public class RuleTogglePanel : MonoBehaviour
         ckText.fontSize = 14;
         ckText.color = Color.white;
         ckText.alignment = TextAnchor.MiddleCenter;
+        // Don't let the checkmark or label block pointer events
+        ckText.raycastTarget = false;
         var ckRect = ck.GetComponent<RectTransform>();
         ckRect.sizeDelta = new Vector2(18f, 18f);
         // Use the Text as the toggle's graphic so the checkmark shows/hides with isOn
@@ -213,6 +223,7 @@ public class RuleTogglePanel : MonoBehaviour
         label.fontSize = 14;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
+        label.raycastTarget = false;
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
@@ -221,12 +232,13 @@ public class RuleTogglePanel : MonoBehaviour
         toggle.onValueChanged.AddListener((val) =>
         {
             _registry.SetEnabled(ruleTypeName, val);
-            // Ensure the text graphic visibility matches state (Toggle may not auto-disable Text)
-            if (toggle.graphic != null) toggle.graphic.enabled = val;
+            if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
             Debug.Log($"Rule '{ruleTypeName}' enabled={val}");
         });
+        // Row click flips the toggle state; onValueChanged handles registry update and visuals.
+        rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
         // Initialize graphic visibility
-        if (toggle.graphic != null) toggle.graphic.enabled = enabled;
+        if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(enabled);
         Debug.Log($"RuleTogglePanel: Added toggle for '{ruleTypeName}' (initially {(enabled?"ON":"OFF")}).");
     }
 
