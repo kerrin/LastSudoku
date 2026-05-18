@@ -28,6 +28,7 @@ public class BoardSidePanel : MonoBehaviour
 
     private void Awake()
     {
+        if (!Application.isPlaying) return;
         if (TargetCanvas == null) TargetCanvas = Object.FindAnyObjectByType<Canvas>();
         if (BoardVisualizer == null) BoardVisualizer = Object.FindAnyObjectByType<Sudoku.Solver.BoardVisualizer>();
         EnsurePanel();
@@ -36,12 +37,14 @@ public class BoardSidePanel : MonoBehaviour
 
     private void OnEnable()
     {
+        if (!Application.isPlaying) return;
         EnsurePanel();
         UpdatePanelGeometry();
     }
 
     private void Update()
     {
+        if (!Application.isPlaying) return;
         // Update geometry each frame so the panel follows screen / board changes.
         UpdatePanelGeometry();
     }
@@ -49,16 +52,53 @@ public class BoardSidePanel : MonoBehaviour
     private void EnsurePanel()
     {
         if (_panelRect != null) return;
-        if (TargetCanvas == null)
+        // Prefer an existing ScreenSpaceOverlay canvas. If TargetCanvas is unset
+        // or set to a non-overlay mode (WorldSpace), try to find an overlay canvas
+        // in the scene. Otherwise create a default overlay canvas.
+        if (TargetCanvas == null || TargetCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
         {
-            // Create a simple default canvas if none exists (screen-space overlay)
-            var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            TargetCanvas = canvasGO.GetComponent<Canvas>();
-            TargetCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                    // Reuse an existing SidePanel child if present to avoid creating duplicates
+                    if (TargetCanvas != null)
+                    {
+                        var existing = TargetCanvas.transform.Find("SidePanel");
+                        if (existing != null)
+                        {
+                            _panelRect = existing.GetComponent<RectTransform>();
+                            _panelImage = existing.GetComponent<Image>();
+                            // try to locate RulesArea if present
+                            var ra = existing.Find("RulesArea");
+                            if (ra != null) RulesArea = ra.GetComponent<RectTransform>();
+                            return;
+                        }
+                    }
+            Canvas found = null;
+            foreach (var c in Object.FindObjectsOfType<Canvas>())
+            {
+                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    found = c;
+                    break;
+                }
+            }
+            if (found != null)
+            {
+                TargetCanvas = found;
+            }
+            else
+            {
+                // Create a simple default canvas if none exists (screen-space overlay)
+                var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+                TargetCanvas = canvasGO.GetComponent<Canvas>();
+                TargetCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                // Mark generated canvas so it can be identified/cleaned later
+                canvasGO.AddComponent<GeneratedRuntimeUI>();
+            }
         }
 
         var panelGO = new GameObject("SidePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         panelGO.transform.SetParent(TargetCanvas.transform, false);
+        // Mark generated panel for cleanup/identification
+        panelGO.AddComponent<GeneratedRuntimeUI>();
         _panelRect = panelGO.GetComponent<RectTransform>();
         _panelImage = panelGO.GetComponent<Image>();
         _panelImage.color = Background;
