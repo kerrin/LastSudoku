@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
@@ -23,107 +24,149 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void Start()
     {
+        // Initialize asynchronously so host scripts (like BoardSidePanel)
+        // have a chance to reparent or attach first. This avoids creating a
+        // duplicate floating panel that would immediately be removed.
+        StartCoroutine(InitializeCoroutine());
+    }
+
+    private System.Collections.IEnumerator InitializeCoroutine()
+    {
+        // If multiple RuleTogglePanel instances exist, prefer the one inside a SidePanel.
+        var allPanels = Object.FindObjectsByType<RuleTogglePanel>();
+        if (allPanels.Length > 1)
+        {
+            bool IsUnderSidePanel(Transform t)
+            {
+                var cur = t;
+                while (cur != null)
+                {
+                    if (cur.name == "SidePanel") return true;
+                    cur = cur.parent;
+                }
+                return false;
+            }
+
+            bool thisUnder = IsUnderSidePanel(transform);
+            foreach (var p in allPanels)
+            {
+                if (p == this) continue;
+                bool otherUnder = IsUnderSidePanel(p.transform);
+                if (otherUnder && !thisUnder)
+                {
+                    Debug.Log("RuleTogglePanel: Found existing SidePanel-hosted panel; removing duplicate.");
+                    Destroy(gameObject);
+                    yield break;
+                }
+                if (thisUnder && !otherUnder)
+                {
+                    Debug.Log("RuleTogglePanel: Found duplicate panel outside SidePanel; removing the other instance.");
+                    Destroy(p.gameObject);
+                }
+            }
+        }
+
         if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
+        Debug.Log($"RuleTogglePanel.Start: Runner assigned={(Runner!=null)}");
         if (Runner == null)
         {
             Debug.LogWarning("RuleTogglePanel: No SolverRunner found in scene.");
-            return;
+            yield break;
         }
 
+        Runner.EnsureEngine();
         _registry = Runner.Registry;
+        Debug.Log($"RuleTogglePanel.Start: Registry assigned={( _registry != null)}");
         if (_registry == null)
         {
-            // Ensure the runner initializes a registry
-            Runner.EnsureEngine();
-            _registry = Runner.Registry;
-            if (_registry == null)
-            {
-                Debug.LogWarning("RuleTogglePanel: Runner did not provide a RuleRegistry.");
-                return;
-            }
+            Debug.LogWarning("RuleTogglePanel: Runner did not provide a RuleRegistry.");
+            yield break;
         }
 
         Canvas canvas = Object.FindAnyObjectByType<Canvas>();
-        // If an existing Canvas is present but not ScreenSpaceOverlay (e.g. World Space),
-        // create a default overlay canvas so the runtime UI is visible in the Game view.
         if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceOverlay)
-        {
             canvas = CreateDefaultCanvas();
-        }
 
-        // Determine parent container: prefer BoardSidePanel.RulesArea when available
+        // Give one frame for other components (BoardSidePanel) to reparent us
+        // into a proper RulesArea host before we decide to create a floating panel.
+        yield return null;
+
+        // If this component is already placed under a RulesArea-like container (parented),
+        // populate the UI inside that parent. Otherwise create a standalone floating panel.
         Transform parentContainer = null;
-        var side = Object.FindAnyObjectByType<BoardSidePanel>();
-        if (side != null && side.RulesArea != null)
+        if (transform.parent != null && transform.parent.GetComponentInParent<Canvas>() != null && transform.parent != canvas.transform)
         {
-            parentContainer = side.RulesArea.transform;
-            // Ensure a VerticalLayoutGroup exists on the container
-            var existingLayout = parentContainer.GetComponent<VerticalLayoutGroup>();
-            if (existingLayout == null)
-            {
-                var layout = parentContainer.gameObject.AddComponent<VerticalLayoutGroup>();
-                layout.childForceExpandHeight = false;
-                layout.childControlHeight = true;
-                layout.childControlWidth = true;
-                layout.padding = new RectOffset(6, 6, 6, 6);
-                layout.spacing = 4f;
-            }
+            parentContainer = transform.parent;
+            Debug.Log($"RuleTogglePanel: Using parent container '{parentContainer.name}' for UI placement.");
         }
         else
         {
-            // Create standalone panel
-            GameObject panelGO = new GameObject("RuleTogglePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-            panelGO.transform.SetParent(canvas.transform, false);
-            var panelRect = panelGO.GetComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(1f, 1f);
-            panelRect.anchorMax = new Vector2(1f, 1f);
-            panelRect.pivot = new Vector2(1f, 1f);
-            panelRect.anchoredPosition = new Vector2(-10f, -10f);
-            // Make panel size responsive to screen resolution so it doesn't dominate
-            // the view on small screens or become tiny on large/high-DPI displays.
-            float width = Mathf.Min(PanelWidth, Screen.width * 0.28f);
-            float height = Mathf.Min(MaxHeight, Screen.height * 0.5f);
-            panelRect.sizeDelta = new Vector2(width, height);
-            var img = panelGO.GetComponent<Image>();
-            img.color = new Color(0f, 0f, 0f, 0.6f);
-
-            // Add layout
-            var layout = panelGO.AddComponent<VerticalLayoutGroup>();
-            layout.childForceExpandHeight = false;
-            layout.childControlHeight = true;
-            layout.childControlWidth = true;
-            layout.padding = new RectOffset(6, 6, 6, 6);
-            layout.spacing = 4f;
-
-            parentContainer = panelGO.transform;
+            // Don't create a floating panel here — defer to BoardSidePanel which
+            // will create a hosted RuleTogglePanel when appropriate. This avoids
+            // transient creation+destruction of floating UI.
+            Debug.Log("RuleTogglePanel: No host found after delay; deferring floating panel creation.");
+            yield break;
         }
+        // Create an inner root under the provided parent so we can control layout
+        var panelRoot = new GameObject("PanelRoot", typeof(RectTransform));
+        panelRoot.transform.SetParent(parentContainer, false);
+        var panelRootRT = panelRoot.GetComponent<RectTransform>();
+        panelRootRT.anchorMin = Vector2.zero;
+        panelRootRT.anchorMax = Vector2.one;
+        panelRootRT.offsetMin = Vector2.zero;
+        panelRootRT.offsetMax = Vector2.zero;
+        var rootLayout = panelRoot.AddComponent<VerticalLayoutGroup>();
+        rootLayout.childControlHeight = true;
+        rootLayout.childControlWidth = true;
+        rootLayout.childForceExpandHeight = false;
+        rootLayout.childForceExpandWidth = true;
+        rootLayout.spacing = 4;
+        rootLayout.padding = new RectOffset(4, 4, 4, 4);
 
-        // Create header
+        // Header
         var headerGO = new GameObject("Header", typeof(RectTransform));
-        headerGO.transform.SetParent(parentContainer, false);
+        headerGO.transform.SetParent(panelRoot.transform, false);
         var headerText = headerGO.AddComponent<Text>();
         headerText.text = "Rules";
         headerText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        headerText.fontSize = 18;
+        headerText.fontSize = 16;
         headerText.color = Color.white;
+        headerText.alignment = TextAnchor.MiddleCenter;
+        var headerLayout = headerGO.AddComponent<LayoutElement>();
+        headerLayout.preferredHeight = 26f;
 
-        // Create content container (scrollable if many rules)
+        // Content
         GameObject contentGO = new GameObject("Content", typeof(RectTransform));
-        contentGO.transform.SetParent(parentContainer, false);
+        contentGO.transform.SetParent(panelRoot.transform, false);
         var contentLayout = contentGO.AddComponent<VerticalLayoutGroup>();
         contentLayout.childForceExpandHeight = false;
         contentLayout.childControlHeight = true;
         contentLayout.childControlWidth = true;
         contentLayout.spacing = 2f;
-        contentLayout.padding = new RectOffset(0,0,0,0);
+        contentLayout.padding = new RectOffset(0, 0, 0, 0);
         var csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        // Let the content expand to take remaining space inside the panel root
+        var contentLE = contentGO.AddComponent<LayoutElement>();
+        contentLE.flexibleHeight = 1f;
 
-        var rules = _registry.GetRulesWithStatus();
+        var rules = new List<(ISudokuRule rule, bool enabled)>();
+        try
+        {
+            rules = _registry.GetRulesWithStatus();
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogError($"RuleTogglePanel: GetRulesWithStatus threw: {ex.Message}");
+        }
+        Debug.Log($"RuleTogglePanel: Found {rules.Count} registered rules.");
+        int created = 0;
         foreach (var entry in rules)
         {
             CreateRuleToggle(contentGO.transform, entry.rule, entry.enabled);
+            created++;
         }
+        Debug.Log($"RuleTogglePanel: Created {created} toggle(s).");
     }
 
     private void CreateRuleToggle(Transform parent, ISudokuRule rule, bool enabled)
@@ -131,43 +174,60 @@ public class RuleTogglePanel : MonoBehaviour
         var go = new GameObject(rule.GetType().Name + "_Toggle", typeof(RectTransform));
         go.transform.SetParent(parent, false);
 
-        // Give each toggle a preferred height so the VerticalLayoutGroup can size them
-        var le = go.AddComponent<UnityEngine.UI.LayoutElement>();
+        var le = go.AddComponent<LayoutElement>();
         le.preferredHeight = 28f;
 
-        var toggle = go.AddComponent<Toggle>();
+        var h = go.AddComponent<HorizontalLayoutGroup>();
+        h.childForceExpandHeight = false;
+        h.childForceExpandWidth = false;
+        h.spacing = 6f;
 
-        // Background
-        var bg = new GameObject("Background", typeof(RectTransform), typeof(Image));
-        bg.transform.SetParent(go.transform, false);
-        var bgImg = bg.GetComponent<Image>();
+        var toggleGO = new GameObject("Toggle", typeof(RectTransform));
+        toggleGO.transform.SetParent(go.transform, false);
+        var toggle = toggleGO.AddComponent<Toggle>();
+        var bgImg = toggleGO.AddComponent<Image>();
+        // Prefer a small fixed size so layout doesn't stretch this element vertically
+        var toggleRect = toggleGO.GetComponent<RectTransform>();
+        toggleRect.sizeDelta = new Vector2(26f, 26f);
         bgImg.color = new Color(1f, 1f, 1f, 0.06f);
+        toggle.targetGraphic = bgImg;
 
-        // Checkmark
-        var ck = new GameObject("Checkmark", typeof(RectTransform), typeof(Image));
-        ck.transform.SetParent(bg.transform, false);
-        var ckImg = ck.GetComponent<Image>();
-        ckImg.color = Color.white;
-        toggle.graphic = ckImg;
+        var ck = new GameObject("Checkmark", typeof(RectTransform));
+        ck.transform.SetParent(toggleGO.transform, false);
+        var ckText = ck.AddComponent<Text>();
+        ckText.text = "✓";
+        ckText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        ckText.fontSize = 14;
+        ckText.color = Color.white;
+        ckText.alignment = TextAnchor.MiddleCenter;
+        var ckRect = ck.GetComponent<RectTransform>();
+        ckRect.sizeDelta = new Vector2(18f, 18f);
+        // Use the Text as the toggle's graphic so the checkmark shows/hides with isOn
+        toggle.graphic = ckText;
 
-        // Label
         var labelGO = new GameObject("Label", typeof(RectTransform));
         labelGO.transform.SetParent(go.transform, false);
         var label = labelGO.AddComponent<Text>();
         label.text = rule.Name;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.color = Color.white;
         label.fontSize = 14;
+        label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
+        var labelLE = labelGO.AddComponent<LayoutElement>();
+        labelLE.flexibleWidth = 1f;
 
-        // Setup toggle initial state and callback
         toggle.isOn = enabled;
         string ruleTypeName = rule.GetType().Name;
         toggle.onValueChanged.AddListener((val) =>
         {
             _registry.SetEnabled(ruleTypeName, val);
+            // Ensure the text graphic visibility matches state (Toggle may not auto-disable Text)
+            if (toggle.graphic != null) toggle.graphic.enabled = val;
             Debug.Log($"Rule '{ruleTypeName}' enabled={val}");
         });
+        // Initialize graphic visibility
+        if (toggle.graphic != null) toggle.graphic.enabled = enabled;
+        Debug.Log($"RuleTogglePanel: Added toggle for '{ruleTypeName}' (initially {(enabled?"ON":"OFF")}).");
     }
 
     private Canvas CreateDefaultCanvas()
@@ -176,35 +236,9 @@ public class RuleTogglePanel : MonoBehaviour
         var canvas = canvasGO.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
-        // Configure CanvasScaler so UI scales with screen resolution instead
-        // of remaining tiny on high-DPI / large displays.
-        var scaler = canvasGO.GetComponent<CanvasScaler>();
-        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-        scaler.referenceResolution = new Vector2(1920f, 1080f);
-        scaler.screenMatchMode = CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
-        scaler.matchWidthOrHeight = 0.5f;
-        scaler.referencePixelsPerUnit = 100f;
-
-        // Ensure an EventSystem exists; prefer the new Input System UI module when available.
-        if (Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
+        if (Object.FindAnyObjectByType<EventSystem>() == null)
         {
-            var es = new GameObject("EventSystem");
-            es.AddComponent<UnityEngine.EventSystems.EventSystem>();
-            // Prefer the Input System UI module if it's available in any loaded assembly.
-            System.Type inputModuleType = null;
-            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
-            {
-                inputModuleType = asm.GetType("UnityEngine.InputSystem.UI.InputSystemUIInputModule");
-                if (inputModuleType != null) break;
-            }
-            if (inputModuleType != null)
-            {
-                es.AddComponent(inputModuleType);
-            }
-            else
-            {
-                Debug.LogWarning("InputSystemUIInputModule not found in loaded assemblies. Not adding StandaloneInputModule to avoid Input System mismatch. Install the Input System package or change Player Settings.");
-            }
+            var es = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
         }
 
         return canvas;
