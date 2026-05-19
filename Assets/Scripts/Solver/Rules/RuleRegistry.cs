@@ -92,7 +92,7 @@ namespace Sudoku.Solver.Rules
          */
         public void RegisterAdvanced()
         {
-            // Intentionally empty for now
+            Register(new XWingRule());
         }
 
         /**
