@@ -7,7 +7,7 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * A simple Box-Line (Empty Rectangle) / Box-Line reduction implementation.
+     * A simple Box-Line /Empty Rectangle / Intersection Removal implementation.
      *
      * If all candidates for a digit within a box lie in a single row (or column),
      * then that digit can be eliminated from other cells in that row (or column)
@@ -15,7 +15,7 @@ namespace Sudoku.Solver.Rules
      */
     public class BoxLineRule : ISudokuRule
     {
-        public string Name => "Box-Line";
+        public string Name => "Box-Line / Empty Rectangle / Intersection Removal";
 
         public Difficulty Difficulty => Difficulty.Medium;
 
