@@ -93,6 +93,7 @@ namespace Sudoku.Solver.Rules
         public void RegisterAdvanced()
         {
             Register(new XWingRule());
+            Register(new YWingRule());
         }
 
         /**

@@ -17,6 +17,26 @@ namespace Sudoku.Solver.Rules
      */
     public class YWingRule : ISudokuRule
     {
+        private class Placement
+        {
+            public List<Cell> Bivals;
+            public Cell RowNeighbor;
+            public Cell ColNeighbor;
+            public Cell Target;
+            public int Digit;
+            public HashSet<int> Union;
+
+            public Placement(List<Cell> bivals, Cell rowNeighbor, Cell colNeighbor, Cell target, int digit, HashSet<int> union)
+            {
+                Bivals = bivals;
+                RowNeighbor = rowNeighbor;
+                ColNeighbor = colNeighbor;
+                Target = target;
+                Digit = digit;
+                Union = union;
+            }
+        }
+
         public string Name => "Y-Wing Rectangle";
 
         public Difficulty Difficulty => Difficulty.Medium;
@@ -29,7 +49,7 @@ namespace Sudoku.Solver.Rules
             return FindPlacement(board) != null;
         }
 
-        private (Cell rowNeighbor, Cell colNeighbor, Cell target, int digit)? FindPlacement(Board board)
+        private Placement FindPlacement(Board board)
         {
             int size = board.Size;
 
@@ -87,16 +107,15 @@ namespace Sudoku.Solver.Rules
                                                 {
                                                     var candidateSet = new HashSet<int> { all[a], all[b], all[cidx] };
                                                     // each corner's intersection with candidateSet must be exactly two digits
-                                                    bool localOk = true;
-                                                    foreach (var cell in trip)
-                                                    {
-                                                        var interCount = cell.Candidates.Intersect(candidateSet).Count();
-                                                        if (interCount != 2) { localOk = false; break; }
-                                                    }
-                                                    if (!localOk) continue;
+                                                    var intersections = trip.Select(cell => cell.Candidates.Intersect(candidateSet).ToList()).ToList();
+                                                    if (intersections.Any(inter => inter.Count != 2)) continue;
+
+                                                    // the three pairs must be distinct (i.e. {a,b},{a,c},{b,c})
+                                                    var distinctPairs = new HashSet<string>(intersections.Select(i => string.Join(",", i.OrderBy(x => x))));
+                                                    if (distinctPairs.Count != 3) continue;
 
                                                     // union of those intersections must equal candidateSet
-                                                    var unionInter = new HashSet<int>(trip.SelectMany(cell => cell.Candidates.Intersect(candidateSet)));
+                                                    var unionInter = new HashSet<int>(intersections.SelectMany(i => i));
                                                     if (unionInter.SetEquals(candidateSet))
                                                     {
                                                         ok = true;
@@ -165,7 +184,7 @@ namespace Sudoku.Solver.Rules
 
                             // Even if the target does not currently list the digit as a candidate
                             // we still consider the deduction valid per the Y-wing rectangle rule.
-                            return (rowNeighbor, colNeighbor, target, digit);
+                            return new Placement(bivals, rowNeighbor, colNeighbor, target, digit, union);
                         }
                     }
                 }
@@ -184,16 +203,35 @@ namespace Sudoku.Solver.Rules
                 return r;
             }
 
-            var (rowNeigh, colNeigh, target, digit) = found.Value;
+            var bivals = found.Bivals;
+            var rowNeigh = found.RowNeighbor;
+            var colNeigh = found.ColNeighbor;
+            var target = found.Target;
+            var digit = found.Digit;
+            var union = found.Union;
 
             // remember whether the target previously listed the digit as a candidate
             bool hadCandidate = target.Candidates.Contains(digit);
 
-            // Mark neighbor cells used for deduction
+            // Mark neighbor cells used for deduction (the intersection digit)
             if (rowNeigh != null && !r.UsedCells.Exists(u => u.Row == rowNeigh.Row && u.Column == rowNeigh.Column && u.Candidate == digit))
                 r.UsedCells.Add(new UsedCell { Row = rowNeigh.Row, Column = rowNeigh.Column, Candidate = digit });
             if (colNeigh != null && !r.UsedCells.Exists(u => u.Row == colNeigh.Row && u.Column == colNeigh.Column && u.Candidate == digit))
                 r.UsedCells.Add(new UsedCell { Row = colNeigh.Row, Column = colNeigh.Column, Candidate = digit });
+
+            // Also mark the three bival corner cells and the specific candidates from the union
+            foreach (var bv in bivals)
+            {
+                var relevant = bv.Candidates.Intersect(union).ToList();
+                foreach (var c in relevant)
+                {
+                    if (!r.UsedCells.Exists(u => u.Row == bv.Row && u.Column == bv.Column && u.Candidate == c))
+                        r.UsedCells.Add(new UsedCell { Row = bv.Row, Column = bv.Column, Candidate = c });
+                }
+                // If there were no specific intersecting candidates (defensive), still mark the cell
+                if (relevant.Count == 0 && !r.UsedCells.Exists(u => u.Row == bv.Row && u.Column == bv.Column && u.Candidate == null))
+                    r.UsedCells.Add(new UsedCell { Row = bv.Row, Column = bv.Column, Candidate = null });
+            }
 
             // Place the digit into the target cell (clear candidates)
             var change = new CellChange { Row = target.Row, Column = target.Column, OldValue = target.Value, NewValue = digit };
@@ -212,6 +250,16 @@ namespace Sudoku.Solver.Rules
                 {
                     UnityEngine.Debug.LogWarning($"YWing placed {digit} into ({target.Row},{target.Column}) even though it was not a candidate");
                     r.Description += " (digit was not present in target candidates)";
+                }
+                // Debug: dump used cells and bival info to help UI highlighting troubleshooting
+                try
+                {
+                    UnityEngine.Debug.Log($"YWing Debug: union={{ {string.Join(',', union)} }} bivals={{ {string.Join(';', bivals.Select(b=>$"({b.Row},{b.Column}):[{string.Join(',', b.Candidates)}]"))} }}");
+                    UnityEngine.Debug.Log($"YWing Debug: UsedCells={{ {string.Join(';', r.UsedCells.Select(u=>$"({u.Row},{u.Column}:{(u.Candidate.HasValue?u.Candidate.Value.ToString():"-")})"))} }}");
+                }
+                catch (System.Exception ex)
+                {
+                    UnityEngine.Debug.LogException(ex);
                 }
             }
             return r;

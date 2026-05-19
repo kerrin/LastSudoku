@@ -100,7 +100,7 @@ namespace Sudoku.Solver
                     Rect cellRect = new Rect(x0 + c * cellSize, y0 + r * cellSize, cellSize, cellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     bool highlighted = false;
-                    int? usedCandidateForCell = null;
+                    System.Collections.Generic.HashSet<int> usedCandidatesForCell = null;
                     if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
                     {
                         var changes = Runner.LastRuleResult.Changes;
@@ -134,9 +134,21 @@ namespace Sudoku.Solver
                             {
                                 if (uc.Row == r && uc.Column == c)
                                 {
+                                    if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
                                     DrawHighlight(cellRect, new Color(0.1f, 0.6f, 1f, 0.45f));
-                                    if (uc.Candidate.HasValue) usedCandidateForCell = uc.Candidate.Value;
-                                    break;
+                                    if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
+                                    // continue looping to collect multiple candidate entries for the same cell
+                                }
+                            }
+                            if (usedCandidatesForCell != null)
+                            {
+                                try
+                                {
+                                    Debug.Log($"BoardVisualizer Debug: cell=({r},{c}) usedCandidates={{ {string.Join(',', usedCandidatesForCell)} }}");
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    Debug.LogException(ex);
                                 }
                             }
                         }
@@ -154,8 +166,8 @@ namespace Sudoku.Solver
                     }
                     else if (ShowCandidates)
                     {
-                        // draw candidates as small grid of digits; optionally highlight a specific candidate
-                        DrawCandidates(cellRect, cell, usedCandidateForCell);
+                        // draw candidates as small grid of digits; optionally highlight specific candidates
+                        DrawCandidates(cellRect, cell, usedCandidatesForCell);
                     }
                 }
             }
@@ -185,7 +197,7 @@ namespace Sudoku.Solver
             }
         }
 
-        private void DrawCandidates(Rect rect, Cell cell, int? highlightDigit)
+        private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.HashSet<int> highlightDigits)
         {
             if (cell == null || cell.Candidates == null) return;
             // small 3x3 layout for candidates assuming up to 9 digits
@@ -199,7 +211,8 @@ namespace Sudoku.Solver
                 int cc = idx % size;
                 Rect r = new Rect(rect.x + cc * cs + 2, rect.y + rr * cs + 2, cs - 4, cs - 4);
                 if (!cell.Candidates.Contains(d)) continue;
-                if (highlightDigit.HasValue && highlightDigit.Value == d)
+                bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
+                if (isHighlighted)
                 {
                     Color prev = GUI.color;
                     GUI.color = new Color(1f, 0.85f, 0.25f, 1f);
