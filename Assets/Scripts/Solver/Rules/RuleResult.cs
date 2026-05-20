@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Sudoku.Models;
+using UnityEngine;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 
@@ -72,8 +73,28 @@ namespace Sudoku.Solver.Rules
                 var cell = board.Cells[change.Row, change.Column];
                 if (change.NewValue.HasValue)
                 {
-                    // set the value and clear the cell's own candidates
-                    board.SetValue(cell, change.NewValue.Value);
+                    // Safety check: avoid applying a new value that would immediately
+                    // create a duplicate in the cell's peers. If such a conflict is
+                    // detected, skip applying the value and log a warning so the
+                    // rule engine can continue without corrupting the board.
+                    bool conflict = false;
+                    foreach (var peer in board.GetPeers(cell))
+                    {
+                        if (peer.Value.HasValue && peer.Value.Value == change.NewValue.Value)
+                        {
+                            conflict = true;
+                            break;
+                        }
+                    }
+                    if (conflict)
+                    {
+                        Debug.LogWarning($"Skipped applying {change.NewValue.Value} at ({change.Row},{change.Column}) due to conflict with peers.");
+                    }
+                    else
+                    {
+                        // set the value and clear the cell's own candidates
+                        board.SetValue(cell, change.NewValue.Value);
+                    }
                 }
                 if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
                 {

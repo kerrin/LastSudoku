@@ -92,12 +92,20 @@ namespace Sudoku.Solver
 
                 EnsureStyles(cellSize);
 
-                // Detect a new LastRuleResult and store it; we will keep showing
-                // removed candidates based on this stored result until it changes.
-                if (Runner != null && Runner.LastRuleResult != _lastSeenRuleResult)
+                // Detect a new LastRuleResult and store it only when a rule actually
+                // applied. This prevents non-applying status messages from clearing
+                // the stored result and therefore preserves removed-candidate
+                // highlights until the next real rule run.
+                if (Runner != null && Runner.LastRuleResult != null && Runner.LastRuleResult.Apply && Runner.LastRuleResult != _lastSeenRuleResult)
                 {
                     _lastSeenRuleResult = Runner.LastRuleResult;
                 }
+
+                // Choose which RuleResult to use for display: prefer the stored
+                // `_lastSeenRuleResult` (most recent applied rule) so UI remains
+                // stable even if `Runner.LastRuleResult` gets updated to non-applying
+                // informational messages.
+                var resultToShow = _lastSeenRuleResult ?? Runner.LastRuleResult;
 
             float x0 = Offset.x;
             float y0 = Offset.y;
@@ -111,9 +119,9 @@ namespace Sudoku.Solver
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     bool highlighted = false;
                     System.Collections.Generic.HashSet<int> usedCandidatesForCell = null;
-                    if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+                    if (resultToShow != null && resultToShow.Apply)
                     {
-                        var changes = Runner.LastRuleResult.Changes;
+                        var changes = resultToShow.Changes;
                         if (changes != null)
                         {
                             foreach (CellChange ch in changes)
@@ -138,9 +146,9 @@ namespace Sudoku.Solver
                         }
 
                         // mark cells that were used to deduce the rule result (draw highlight and collect candidate digits)
-                        if (Runner.LastRuleResult.UsedCells != null)
+                        if (resultToShow.UsedCells != null)
                         {
-                            foreach (var uc in Runner.LastRuleResult.UsedCells)
+                            foreach (var uc in resultToShow.UsedCells)
                             {
                                 if (uc.Row == r && uc.Column == c)
                                 {
@@ -216,16 +224,42 @@ namespace Sudoku.Solver
                 {
                     foreach (var ch in _lastSeenRuleResult.Changes)
                     {
+                        // explicit removal recorded for this cell
                         if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
                         {
                             removedRecently = true;
                             break;
                         }
+
+                        // implied removals: if the rule placed `d` in another cell, that
+                        // placement removes `d` from all its peers. Treat peers as recently
+                        // removed even if the rule didn't emit explicit RemovedCandidates.
+                        if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                        {
+                            // ensure we have a board reference
+                            var board = Runner != null ? Runner.CurrentBoard : null;
+                            if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
+                            {
+                                var originBox = board.Cells[ch.Row, ch.Column].Box;
+                                if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
+                                {
+                                    removedRecently = true;
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
 
                 bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
-                if (isHighlighted)
+                if (removedRecently)
+                {
+                    Color prev = GUI.color;
+                    GUI.color = Color.red;
+                    GUI.Label(r, d.ToString(), _candidateStyle);
+                    GUI.color = prev;
+                }
+                else if (isHighlighted)
                 {
                     Color prev = GUI.color;
                     GUI.color = new Color(1f, 0.85f, 0.25f, 1f);
@@ -235,13 +269,6 @@ namespace Sudoku.Solver
                 else if (hasCandidate)
                 {
                     GUI.Label(r, d.ToString(), _candidateStyle);
-                }
-                else if (removedRecently)
-                {
-                    Color prev = GUI.color;
-                    GUI.color = Color.red;
-                    GUI.Label(r, d.ToString(), _candidateStyle);
-                    GUI.color = prev;
                 }
             }
         }
