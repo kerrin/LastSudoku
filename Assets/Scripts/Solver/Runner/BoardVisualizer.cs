@@ -127,8 +127,8 @@ namespace Sudoku.Solver
                             }
                         }
 
-                        // if this cell wasn't changed but was used to deduce the result, draw the used-cell highlight
-                        if (!highlighted && Runner.LastRuleResult.UsedCells != null)
+                        // mark cells that were used to deduce the rule result (draw highlight and collect candidate digits)
+                        if (Runner.LastRuleResult.UsedCells != null)
                         {
                             foreach (var uc in Runner.LastRuleResult.UsedCells)
                             {
@@ -137,18 +137,6 @@ namespace Sudoku.Solver
                                     if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
                                     DrawHighlight(cellRect, new Color(0.1f, 0.6f, 1f, 0.45f));
                                     if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
-                                    // continue looping to collect multiple candidate entries for the same cell
-                                }
-                            }
-                            if (usedCandidatesForCell != null)
-                            {
-                                try
-                                {
-                                    Debug.Log($"BoardVisualizer Debug: cell=({r},{c}) usedCandidates={{ {string.Join(',', usedCandidatesForCell)} }}");
-                                }
-                                catch (System.Exception ex)
-                                {
-                                    Debug.LogException(ex);
                                 }
                             }
                         }

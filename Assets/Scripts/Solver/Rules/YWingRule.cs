@@ -238,6 +238,22 @@ namespace Sudoku.Solver.Rules
             for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
             r.Changes.Add(change);
 
+            // Also remove the placed digit from all peers' candidates (recorded as separate changes)
+            foreach (var peer in board.GetPeers(target))
+            {
+                if (peer.Value.HasValue) continue;
+                if (peer.Candidates.Contains(digit))
+                {
+                    // avoid adding duplicate peer change entries
+                    if (!r.Changes.Exists(ch => ch.Row == peer.Row && ch.Column == peer.Column && ch.RemovedCandidates.Contains(digit)))
+                    {
+                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
+                        peerChange.RemovedCandidates.Add(digit);
+                        r.Changes.Add(peerChange);
+                    }
+                }
+            }
+
             // also record the target as used
             if (!r.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column && u.Candidate == digit))
                 r.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column, Candidate = digit });
