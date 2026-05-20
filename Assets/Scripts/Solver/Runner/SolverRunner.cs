@@ -1,8 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
-using Cell = Sudoku.Models.Cell;
-using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver
@@ -30,12 +28,18 @@ namespace Sudoku.Solver
         /**
          * Last rule that was applied via the runner (null when none).
          */
-        public Sudoku.Solver.Rules.ISudokuRule LastAppliedRule { get; private set; }
+        public ISudokuRule LastAppliedRule { get; private set; }
 
         /**
          * Result of the last rule application (null when none or not applied).
          */
-        public Sudoku.Solver.Rules.RuleResult LastRuleResult { get; private set; }
+        public RuleResult LastRuleResult { get; private set; }
+
+        /**
+            * Result of a hovered/previewed rule. This is not enacted on the board;
+            * it is used by UI visualizers to show what a rule would change.
+            */
+        public RuleResult PreviewRuleResult { get; private set; }
 
         private void Awake()
         {
@@ -152,6 +156,71 @@ namespace Sudoku.Solver
                 return;
             }
             Debug.Log($"Applied '{rule.Name}': {result.Description}\n{BoardToString(_board)}");
+        }
+
+        /**
+         * Prepare a preview of what the given rule would change on the current board.
+         * The preview is non-destructive and stored in `PreviewRuleResult` for UI use.
+         */
+        public void PreviewRule(ISudokuRule rule)
+        {
+            if (_board == null) LoadBoardFromRows();
+            if (_board == null) { PreviewRuleResult = null; return; }
+            EnsureEngine();
+            if (rule == null) { PreviewRuleResult = null; return; }
+            try
+            {
+                var res = rule.CalculateChanges(_board);
+                PreviewRuleResult = (res != null && res.Apply) ? res : new RuleResult { Apply = false };
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"PreviewRule threw for {rule.GetType().Name}: {ex.Message}");
+                PreviewRuleResult = new RuleResult { Apply = false, Description = "Preview error" };
+            }
+        }
+
+        /** Clear any previewed rule result. */
+        public void ClearPreview()
+        {
+            PreviewRuleResult = null;
+        }
+
+        /**
+         * Execute a specific rule against the current board (if applicable and enabled).
+         */
+        public void RunRule(ISudokuRule rule)
+        {
+            if (_board == null) LoadBoardFromRows();
+            if (_board == null) return;
+            EnsureEngine();
+            if (rule == null) return;
+            if (!Registry.IsEnabled(rule))
+            {
+                Debug.LogWarning($"RunRule: rule {rule.GetType().Name} is disabled.");
+                return;
+            }
+            RuleResult res = null;
+            try
+            {
+                res = rule.CalculateChanges(_board);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"RunRule: CalculateChanges threw for {rule.GetType().Name}: {ex.Message}");
+                return;
+            }
+            if (res == null || !res.Apply)
+            {
+                Debug.Log("RunRule: rule had no effect.");
+                return;
+            }
+            // Enact all recorded changes
+            res.EnactAll(_board);
+            LastAppliedRule = rule;
+            LastRuleResult = res;
+            PreviewRuleResult = null;
+            Debug.Log($"Applied '{rule.Name}': {res.Description}\n{BoardToString(_board)}");
         }
 
         [ContextMenu("Run Solve")]

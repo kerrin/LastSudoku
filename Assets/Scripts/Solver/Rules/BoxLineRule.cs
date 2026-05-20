@@ -15,7 +15,7 @@ namespace Sudoku.Solver.Rules
      */
     public class BoxLineRule : ISudokuRule
     {
-        public string Name => "Box-Line / Empty Rectangle / Intersection Removal";
+        public string Name => "Intersection";
 
         public Difficulty Difficulty => Difficulty.Medium;
 

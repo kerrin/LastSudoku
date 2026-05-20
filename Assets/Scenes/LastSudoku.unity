@@ -130,6 +130,7 @@ GameObject:
   - component: {fileID: 13295779}
   - component: {fileID: 13295778}
   - component: {fileID: 13295780}
+  - component: {fileID: 13295781}
   m_Layer: 0
   m_Name: UI
   m_TagString: Untagged
@@ -185,6 +186,21 @@ MonoBehaviour:
   Runner: {fileID: 239282191}
   PanelWidth: 260
   MaxHeight: 400
+--- !u!114 &13295781
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 13295777}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5f4fc4d5e33851448bed1475066f0b5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RuleListPanel
+  Runner: {fileID: 239282191}
+  PanelWidth: 300
+  MaxHeight: 420
 --- !u!1 &239282189
 GameObject:
   m_ObjectHideFlags: 0

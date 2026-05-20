@@ -1,0 +1,208 @@
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.EventSystems;
+using Sudoku.Solver;
+using Sudoku.Solver.Rules;
+using Sudoku.Models;
+
+/**
+ * UI panel that lists all currently enabled rules that can be applied to
+ * the current board. Hovering a row previews the rule; clicking runs it.
+ */
+public class RuleListPanel : MonoBehaviour
+{
+    public SolverRunner Runner;
+
+    [Tooltip("Optional: width of the panel in pixels")]
+    public float PanelWidth = 300f;
+
+    [Tooltip("Optional: maximum height before the panel becomes scrollable")]
+    public float MaxHeight = 420f;
+
+    private RuleRegistry _registry;
+    private Transform _contentRoot;
+    private Board _lastBoard;
+
+    private System.Collections.IEnumerator Start()
+    {
+        if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
+        if (Runner == null)
+        {
+            Debug.LogWarning("RuleListPanel: No SolverRunner found in scene.");
+            yield break;
+        }
+        Runner.EnsureEngine();
+        _registry = Runner.Registry;
+        if (_registry == null)
+        {
+            Debug.LogWarning("RuleListPanel: Runner has no RuleRegistry.");
+            yield break;
+        }
+
+        // Create a simple vertical panel under this GameObject to host rule rows
+        var panelRoot = new GameObject("RuleListRoot", typeof(RectTransform));
+        panelRoot.transform.SetParent(transform, false);
+        var rt = panelRoot.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0, 1);
+        rt.anchorMax = new Vector2(0, 1);
+        rt.pivot = new Vector2(0, 1);
+        rt.sizeDelta = new Vector2(PanelWidth, MaxHeight);
+
+        var bg = panelRoot.AddComponent<Image>();
+        bg.color = new Color(0f, 0f, 0f, 0.45f);
+
+        var scrollGO = new GameObject("Scroll", typeof(RectTransform));
+        scrollGO.transform.SetParent(panelRoot.transform, false);
+        var scroll = scrollGO.AddComponent<ScrollRect>();
+        var scrollRT = scrollGO.GetComponent<RectTransform>();
+        scrollRT.anchorMin = Vector2.zero;
+        scrollRT.anchorMax = Vector2.one;
+        scrollRT.offsetMin = new Vector2(6, 6);
+        scrollRT.offsetMax = new Vector2(-6, -6);
+
+        var viewport = new GameObject("Viewport", typeof(RectTransform));
+        viewport.transform.SetParent(scrollGO.transform, false);
+        var vpRT = viewport.GetComponent<RectTransform>();
+        vpRT.anchorMin = Vector2.zero;
+        vpRT.anchorMax = Vector2.one;
+        vpRT.offsetMin = Vector2.zero;
+        vpRT.offsetMax = Vector2.zero;
+        var vpImg = viewport.AddComponent<Image>();
+        vpImg.color = new Color(0f, 0f, 0f, 0f);
+        vpImg.raycastTarget = true;
+
+        var content = new GameObject("Content", typeof(RectTransform));
+        content.transform.SetParent(viewport.transform, false);
+        var contentRT = content.GetComponent<RectTransform>();
+        contentRT.anchorMin = new Vector2(0, 1);
+        contentRT.anchorMax = new Vector2(1, 1);
+        contentRT.pivot = new Vector2(0.5f, 1);
+        contentRT.anchoredPosition = Vector2.zero;
+        var vlg = content.AddComponent<VerticalLayoutGroup>();
+        vlg.childControlHeight = true;
+        vlg.childControlWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.spacing = 4;
+
+        var csf = content.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scroll.content = contentRT;
+        scroll.viewport = vpRT;
+
+        _contentRoot = content.transform;
+
+        // initial build
+        BuildList();
+
+        // watch for board changes
+        _lastBoard = Runner.CurrentBoard;
+
+        yield break;
+    }
+
+    private void Update()
+    {
+        if (Runner == null) return;
+        if (Runner.CurrentBoard != _lastBoard)
+        {
+            BuildList();
+            _lastBoard = Runner.CurrentBoard;
+        }
+    }
+
+    private void BuildList()
+    {
+        if (_contentRoot == null || _registry == null || Runner == null) return;
+        // clear
+        for (int i = _contentRoot.childCount - 1; i >= 0; i--) DestroyImmediate(_contentRoot.GetChild(i).gameObject);
+
+        var rules = _registry.GetRulesWithStatus();
+        int created = 0;
+        foreach (var e in rules)
+        {
+            var rule = e.rule;
+            bool enabled = e.enabled;
+            // skip disabled rules
+            if (!enabled) continue;
+            // quick applicability check
+            bool can = false;
+            try { can = rule.CanApply(Runner.CurrentBoard); } catch { can = false; }
+            // calculate a preview as well to detect finer-grained applicability
+            RuleResult preview = null;
+            try { preview = rule.CalculateChanges(Runner.CurrentBoard); } catch { preview = null; }
+            bool applies = (preview != null && preview.Apply) || can;
+            if (!applies) continue;
+
+            CreateRuleRow(_contentRoot, rule, preview);
+            created++;
+        }
+        // Optionally add a header summary
+        Debug.Log($"RuleListPanel: built list with {created} applicable rule(s)");
+    }
+
+    private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview)
+    {
+        var go = new GameObject(rule.GetType().Name + "_Row", typeof(RectTransform));
+        go.transform.SetParent(parent, false);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        // Let the VerticalLayoutGroup control horizontal sizing; provide a preferred height
+        var le = go.AddComponent<LayoutElement>();
+        le.preferredHeight = 28f;
+
+        var btnImg = go.AddComponent<Image>();
+        btnImg.color = new Color(1f, 1f, 1f, 0.02f);
+        var button = go.AddComponent<Button>();
+
+        // Label
+        var labelGO = new GameObject("Label", typeof(RectTransform));
+        labelGO.transform.SetParent(go.transform, false);
+        var label = labelGO.AddComponent<Text>();
+        label.text = rule.Name + " (" + rule.GetType().Name + ")";
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = 14;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+        var lblRT = labelGO.GetComponent<RectTransform>();
+        lblRT.anchorMin = new Vector2(0f, 0f);
+        lblRT.anchorMax = new Vector2(1f, 1f);
+        lblRT.offsetMin = new Vector2(8f, 2f);
+        lblRT.offsetMax = new Vector2(-8f, -2f);
+        var labelLE = labelGO.AddComponent<LayoutElement>();
+        labelLE.flexibleWidth = 1f;
+
+        // click runs the rule
+        button.onClick.AddListener(() => { Runner.RunRule(rule); BuildList(); });
+
+        // add hover preview via EventTrigger
+        var trigger = go.AddComponent<EventTrigger>();
+        var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+        entryEnter.callback.AddListener((data) => { Runner.PreviewRule(rule); });
+        trigger.triggers.Add(entryEnter);
+        var entryExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+        entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
+        trigger.triggers.Add(entryExit);
+
+        // optionally show a tooltip/description when available
+        if (preview != null && !string.IsNullOrEmpty(preview.Description))
+        {
+            var descGO = new GameObject("Desc", typeof(RectTransform));
+            descGO.transform.SetParent(go.transform, false);
+            var desc = descGO.AddComponent<Text>();
+            desc.text = preview.Description;
+            desc.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            desc.fontSize = 10;
+            desc.color = new Color(0.9f, 0.9f, 0.9f, 0.8f);
+            desc.alignment = TextAnchor.UpperLeft;
+            var dRT = descGO.GetComponent<RectTransform>();
+            dRT.anchorMin = new Vector2(0, 0);
+            dRT.anchorMax = new Vector2(1, 1);
+            dRT.offsetMin = new Vector2(8, -18);
+            dRT.offsetMax = new Vector2(-8, -2);
+        }
+    }
+}

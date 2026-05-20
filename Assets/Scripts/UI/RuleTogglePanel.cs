@@ -14,11 +14,11 @@ public class RuleTogglePanel : MonoBehaviour
 {
     public SolverRunner Runner;
 
-    [Tooltip("Optional: width of the panel in pixels")]
-    public float PanelWidth = 260f;
-
     [Tooltip("Optional: maximum height before the panel becomes scrollable")]
     public float MaxHeight = 400f;
+
+    [Tooltip("Optional: maximum width before the panel becomes scrollable")]
+    public float MaxWidth = 400f;
 
     private RuleRegistry _registry;
 
@@ -111,10 +111,17 @@ public class RuleTogglePanel : MonoBehaviour
         var panelRoot = new GameObject("PanelRoot", typeof(RectTransform));
         panelRoot.transform.SetParent(parentContainer, false);
         var panelRootRT = panelRoot.GetComponent<RectTransform>();
-        panelRootRT.anchorMin = Vector2.zero;
-        panelRootRT.anchorMax = Vector2.one;
-        panelRootRT.offsetMin = Vector2.zero;
-        panelRootRT.offsetMax = Vector2.zero;
+        panelRootRT.anchorMin = new Vector2(0f, 1f);
+        panelRootRT.anchorMax = new Vector2(1f, 1f);
+        panelRootRT.pivot = new Vector2(0.5f, 1f);
+        panelRootRT.anchoredPosition = Vector2.zero;
+        float rectHeight = Mathf.Min(MaxHeight, 300f);
+        float rectWidth = Mathf.Min(MaxWidth, 400f);
+        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
+        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
+        // Make this root a fixed-height block inside the RulesArea so other panels can share space
+        var rootLE = panelRoot.AddComponent<LayoutElement>();
+        rootLE.preferredHeight = Mathf.Min(MaxHeight, 220f);
         var rootLayout = panelRoot.AddComponent<VerticalLayoutGroup>();
         rootLayout.childControlHeight = true;
         rootLayout.childControlWidth = true;
@@ -148,7 +155,8 @@ public class RuleTogglePanel : MonoBehaviour
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         // Let the content expand to take remaining space inside the panel root
         var contentLE = contentGO.AddComponent<LayoutElement>();
-        contentLE.flexibleHeight = 1f;
+        // Do not force content to expand to fill the parent; let it size to its children
+        contentLE.flexibleHeight = 0f;
 
         var rules = new List<(ISudokuRule rule, bool enabled)>();
         try

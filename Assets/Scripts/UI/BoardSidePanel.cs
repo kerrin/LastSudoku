@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using Sudoku.Solver;
 
 /**
  * Creates and maintains a UI panel that fills the canvas space to the right
@@ -184,7 +185,9 @@ public class BoardSidePanel : MonoBehaviour
         // Stretch full canvas and use offsets to place it to the right of the board
         _panelRect.anchorMin = Vector2.zero;
         _panelRect.anchorMax = Vector2.one;
-        _panelRect.pivot = new Vector2(0f, 1f);
+        // Use a centered pivot so offsets apply symmetrically and anchoredPosition behaves predictably
+        _panelRect.pivot = new Vector2(0.5f, 0.5f);
+        _panelRect.anchoredPosition = Vector2.zero;
 
         // Create a dedicated area for rules and other UI inside the panel.
         var rulesGO = new GameObject("RulesArea", typeof(RectTransform));
@@ -196,6 +199,14 @@ public class BoardSidePanel : MonoBehaviour
         // Apply padding via offsets so children won't sit flush against edges
         RulesArea.offsetMin = new Vector2(Padding, Padding);
         RulesArea.offsetMax = new Vector2(-Padding, -Padding);
+        // Use a VerticalLayoutGroup so child panels stack: toggle block on top, list fills remaining space
+        var rulesLayout = rulesGO.AddComponent<VerticalLayoutGroup>();
+        rulesLayout.childControlHeight = false;
+        rulesLayout.childControlWidth = true;
+        rulesLayout.childForceExpandHeight = false;
+        rulesLayout.childForceExpandWidth = true;
+        rulesLayout.spacing = 6f;
+        rulesLayout.padding = new RectOffset(0,0,0,0);
 
         // Ensure a RuleTogglePanel is attached inside the RulesArea so runtime
         // toggles appear in the side panel automatically.
@@ -213,13 +224,16 @@ public class BoardSidePanel : MonoBehaviour
 
     private void EnsureRuleTogglePanelAttached()
     {
+        if (_panelRect == null) return;
         if (RulesArea == null) return;
+
+        LayoutElement toggleLE = null;
+
         // If a RuleTogglePanel already exists anywhere in the scene, reparent
-        // the first instance into our RulesArea so we don't create duplicates.
+        // the first instance under the SidePanel so we don't create duplicates.
         var all = Object.FindObjectsByType<RuleTogglePanel>();
         if (all != null && all.Length > 0)
         {
-            // Prefer any instance already under a SidePanel, otherwise use first.
             RuleTogglePanel chosen = null;
             foreach (var p in all)
             {
@@ -237,22 +251,25 @@ public class BoardSidePanel : MonoBehaviour
             }
             if (chosen == null) chosen = all[0];
 
-            // Reparent chosen instance under our RulesArea if not already.
-            if (chosen.transform.parent != RulesArea)
+            if (chosen.transform.parent != _panelRect)
             {
-                chosen.transform.SetParent(RulesArea, false);
+                chosen.transform.SetParent(_panelRect, false);
                 var crt = chosen.GetComponent<RectTransform>();
                 if (crt != null)
                 {
-                    crt.anchorMin = Vector2.zero;
-                    crt.anchorMax = Vector2.one;
-                    crt.offsetMin = Vector2.zero;
-                    crt.offsetMax = Vector2.zero;
+                    crt.anchorMin = new Vector2(0f, 1f);
+                    crt.anchorMax = new Vector2(1f, 1f);
+                    crt.pivot = new Vector2(0f, 1f);
+                    crt.anchoredPosition = new Vector2(Padding, -Padding);
+                    var le = chosen.GetComponent<LayoutElement>();
+                    if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
+                    le.preferredHeight = Mathf.Min(220f,  Mathf.Max(80f,  (float)Screen.height * 0.25f));
+                    le.flexibleHeight = 0f;
+                    toggleLE = le;
                 }
-                Debug.Log($"BoardSidePanel: Reparented existing RuleTogglePanel '{chosen.gameObject.name}' into RulesArea.");
+                Debug.Log($"BoardSidePanel: Reparented existing RuleTogglePanel '{chosen.gameObject.name}' into SidePanel top.");
             }
 
-            // Wire Runner on chosen instance
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
                 chosen.Runner = BoardVisualizer.Runner;
@@ -264,7 +281,6 @@ public class BoardSidePanel : MonoBehaviour
                 Debug.Log($"BoardSidePanel: Wired RuleTogglePanel.Runner fallback={(chosen.Runner!=null)}");
             }
 
-            // Destroy any additional instances beyond the chosen one
             for (int i = 0; i < all.Length; i++)
             {
                 if (all[i] == chosen) continue;
@@ -272,23 +288,32 @@ public class BoardSidePanel : MonoBehaviour
                 Destroy(all[i].gameObject);
             }
 
+            // Ensure the list is present and then adjust its top inset below the toggle
+            EnsureRuleListPanelAttached();
+            if (toggleLE != null)
+            {
+                float topInset = Padding + toggleLE.preferredHeight + 6f;
+                RulesArea.offsetMax = new Vector2(RulesArea.offsetMax.x, -topInset);
+            }
             return;
         }
 
-        // No existing instance found: create a host object to contain the toggle UI
-        // and stretch it to the RulesArea.
+        // No existing instance found: create a host object as a direct child of the SidePanel
         var host = new GameObject("RuleTogglePanelHost", typeof(RectTransform));
-        host.transform.SetParent(RulesArea, false);
+        host.transform.SetParent(_panelRect, false);
         var rt = host.GetComponent<RectTransform>();
-        rt.anchorMin = Vector2.zero;
-        rt.anchorMax = Vector2.one;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(Padding, -Padding);
+        var hostLE = host.AddComponent<LayoutElement>();
+        hostLE.preferredHeight = Mathf.Min(220f,  Mathf.Max(80f,  (float)Screen.height * 0.25f));
+        hostLE.flexibleHeight = 0f;
+        toggleLE = hostLE;
 
         var panel = host.AddComponent<RuleTogglePanel>();
-        Debug.Log($"BoardSidePanel: Created RuleTogglePanel host '{host.name}' and attached RuleTogglePanel component.");
+        Debug.Log($"BoardSidePanel: Created RuleTogglePanel host '{host.name}' and attached RuleTogglePanel component at SidePanel top.");
 
-        // Try to wire the Runner: prefer the BoardVisualizer's runner if available.
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
             panel.Runner = BoardVisualizer.Runner;
@@ -296,9 +321,108 @@ public class BoardSidePanel : MonoBehaviour
         }
         else
         {
-            // Fallback to any SolverRunner in scene
             panel.Runner = Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
             Debug.Log($"BoardSidePanel: Wired RuleTogglePanel.Runner fallback={(panel.Runner!=null)}");
+        }
+
+        // Also ensure a RuleListPanel is present in the RulesArea to list/apply rules
+        EnsureRuleListPanelAttached();
+
+        if (toggleLE != null)
+        {
+            float topInset = Padding + toggleLE.preferredHeight + 6f;
+            RulesArea.offsetMax = new Vector2(RulesArea.offsetMax.x, -topInset);
+        }
+    }
+
+    private void EnsureRuleListPanelAttached()
+    {
+        if (RulesArea == null) return;
+
+        var all = Object.FindObjectsByType<RuleListPanel>();
+        if (all != null && all.Length > 0)
+        {
+            RuleListPanel chosen = null;
+            foreach (var p in all)
+            {
+                var cur = p.transform;
+                while (cur != null)
+                {
+                    if (cur.name == "SidePanel")
+                    {
+                        chosen = p;
+                        break;
+                    }
+                    cur = cur.parent;
+                }
+                if (chosen != null) break;
+            }
+            if (chosen == null) chosen = all[0];
+
+                if (chosen.transform.parent != RulesArea)
+                {
+                    chosen.transform.SetParent(RulesArea, false);
+                    var crt = chosen.GetComponent<RectTransform>();
+                    if (crt != null)
+                    {
+                        // Stretch horizontally and allow VerticalLayoutGroup to size this child
+                        crt.anchorMin = new Vector2(0f, 0f);
+                        crt.anchorMax = new Vector2(1f, 1f);
+                        crt.pivot = new Vector2(0.5f, 0.5f);
+                        crt.anchoredPosition = Vector2.zero;
+                        // ensure LayoutElement to make it flexible height
+                        var le = chosen.GetComponent<LayoutElement>();
+                        if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
+                        le.flexibleHeight = 1f;
+                    }
+                    Debug.Log($"BoardSidePanel: Reparented existing RuleListPanel '{chosen.gameObject.name}' into RulesArea.");
+                }
+
+            // Wire Runner on chosen instance
+            if (BoardVisualizer != null && BoardVisualizer.Runner != null)
+            {
+                chosen.Runner = BoardVisualizer.Runner;
+                Debug.Log("BoardSidePanel: Wired RuleListPanel.Runner from BoardVisualizer.Runner");
+            }
+            else
+            {
+                chosen.Runner = Object.FindAnyObjectByType<SolverRunner>();
+                Debug.Log($"BoardSidePanel: Wired RuleListPanel.Runner fallback={(chosen.Runner!=null)}");
+            }
+
+            // Destroy duplicates
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] == chosen) continue;
+                Debug.Log($"BoardSidePanel: Removing extra RuleListPanel instance '{all[i].gameObject.name}'");
+                Destroy(all[i].gameObject);
+            }
+            return;
+        }
+
+        // No existing RuleListPanel: create host and attach
+        var host = new GameObject("RuleListPanelHost", typeof(RectTransform));
+        host.transform.SetParent(RulesArea, false);
+        var rt = host.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 0f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.anchoredPosition = Vector2.zero;
+        var hostLE = host.AddComponent<LayoutElement>();
+        hostLE.flexibleHeight = 1f;
+
+        var panel = host.AddComponent<RuleListPanel>();
+        Debug.Log($"BoardSidePanel: Created RuleListPanel host '{host.name}' and attached RuleListPanel component.");
+
+        if (BoardVisualizer != null && BoardVisualizer.Runner != null)
+        {
+            panel.Runner = BoardVisualizer.Runner;
+            Debug.Log("BoardSidePanel: Wired RuleListPanel.Runner from BoardVisualizer.Runner");
+        }
+        else
+        {
+            panel.Runner = Object.FindAnyObjectByType<SolverRunner>();
+            Debug.Log($"BoardSidePanel: Wired RuleListPanel.Runner fallback={(panel.Runner!=null)}");
         }
     }
 
@@ -316,8 +440,9 @@ public class BoardSidePanel : MonoBehaviour
 
         // Use screen dimensions for geometry because the board is drawn with IMGUI
         // coordinates (Screen space). This keeps both systems aligned.
-        float canvasWidth = Screen.width;
-        float canvasHeight = Screen.height;
+        // Prefer canvas pixel rect when available (handles CanvasScaler)
+        float canvasWidth = TargetCanvas != null ? TargetCanvas.pixelRect.width : Screen.width;
+        float canvasHeight = TargetCanvas != null ? TargetCanvas.pixelRect.height : Screen.height;
 
         // Determine board rectangle in screen space
         if (BoardVisualizer != null && BoardVisualizer.Runner != null && BoardVisualizer.Runner.CurrentBoard != null)
@@ -363,12 +488,51 @@ public class BoardSidePanel : MonoBehaviour
         // Prefer setting horizontal anchors using normalized canvas coordinates
         // so the panel reliably occupies the remaining right-side space even
         // when UI scaling or CanvasScaler is active.
-        float leftNormalized = canvasWidth > 0f ? Mathf.Clamp01(left / canvasWidth) : 0f;
-        _panelRect.anchorMin = new Vector2(leftNormalized, 0f);
-        _panelRect.anchorMax = new Vector2(1f, 1f);
-        // Keep vertical offsets for top/bottom padding, and use offsetMax.x to
-        // preserve the right padding in pixels.
-        _panelRect.offsetMin = new Vector2(0f, bottom);
-        _panelRect.offsetMax = new Vector2(-right, -top);
+        // Compute pixel rectangle for the panel: left offset and width in pixels
+        float leftPixel = left;
+        float widthPixels = Mathf.Max(MinWidth, canvasWidth - leftPixel - right);
+        float heightPixels = Mathf.Max(0f, canvasHeight - top - bottom);
+        // Anchor to top-left and set explicit size; position by anchoredPosition so we can align with IMGUI board top
+        _panelRect.anchorMin = new Vector2(0f, 1f);
+        _panelRect.anchorMax = new Vector2(0f, 1f);
+        _panelRect.pivot = new Vector2(0f, 1f);
+        _panelRect.sizeDelta = new Vector2(widthPixels, heightPixels);
+
+        // If we have a BoardVisualizer, align the panel top with the board's top (IMGUI uses top-left screen origin).
+        if (BoardVisualizer != null)
+        {
+            // BoardVisualizer.Offset is in IMGUI coordinates (top-left origin). Convert to screen point (bottom-left origin) expected by ScreenPointToLocalPointInRectangle.
+            Vector2 boardGuiOffset = BoardVisualizer.Offset; // x,y in IMGUI (top-left)
+            // Position horizontally at the computed panel left (right edge of the board),
+            // but vertically align with the board's top (boardGuiOffset.y).
+            Vector2 screenPoint = new Vector2(leftPixel, Screen.height - boardGuiOffset.y);
+
+            RectTransform canvasRect = TargetCanvas.transform as RectTransform;
+            Camera cam = TargetCanvas.renderMode == RenderMode.ScreenSpaceCamera ? TargetCanvas.worldCamera : null;
+            Vector3 worldPoint;
+            bool wp = RectTransformUtility.ScreenPointToWorldPointInRectangle(canvasRect, screenPoint, cam, out worldPoint);
+
+            _panelRect.anchorMin = new Vector2(0f, 1f);
+            _panelRect.anchorMax = new Vector2(0f, 1f);
+            _panelRect.pivot = new Vector2(0f, 1f);
+            _panelRect.sizeDelta = new Vector2(widthPixels, heightPixels);
+            if (wp)
+            {
+                // Position the panel's top-left pivot at the computed world point
+                _panelRect.position = worldPoint;
+            }
+
+            // Debug info
+            Vector3[] corners = new Vector3[4];
+            _panelRect.GetWorldCorners(corners);
+            float topWorldY = corners[1].y; // top-left corner
+            Debug.Log($"BoardSidePanel: panel pixels: canvas=({canvasWidth}x{canvasHeight}) left={leftPixel} width={widthPixels} top(screen)={screenPoint.y} worldOk={wp} world={worldPoint} height={heightPixels} worldPos={_panelRect.position} topWorldY={topWorldY}");
+        }
+        else
+        {
+            // Fallback: simple anchored position using top inset
+            float panelTopOffset = top;
+            _panelRect.anchoredPosition = new Vector2(leftPixel, -panelTopOffset);
+        }
     }
 }

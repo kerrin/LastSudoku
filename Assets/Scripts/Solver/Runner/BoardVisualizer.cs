@@ -101,11 +101,11 @@ namespace Sudoku.Solver
                     _lastSeenRuleResult = Runner.LastRuleResult;
                 }
 
-                // Choose which RuleResult to use for display: prefer the stored
-                // `_lastSeenRuleResult` (most recent applied rule) so UI remains
-                // stable even if `Runner.LastRuleResult` gets updated to non-applying
-                // informational messages.
-                var resultToShow = _lastSeenRuleResult ?? Runner.LastRuleResult;
+                // Choose which RuleResult to use for display: prefer a hovered
+                // preview (so mouseover highlights show instantly), then the last
+                // applied rule (stored in `_lastSeenRuleResult`), then the
+                // Runner.LastRuleResult fallback.
+                var resultToShow = Runner.PreviewRuleResult ?? _lastSeenRuleResult ?? Runner.LastRuleResult;
 
             float x0 = Offset.x;
             float y0 = Offset.y;
@@ -214,31 +214,66 @@ namespace Sudoku.Solver
                 bool hasCandidate = cell.Candidates.Contains(d);
                 // Determine if this digit was removed by the last seen rule result for this cell.
                 bool removedRecently = false;
-                if (!hasCandidate && _lastSeenRuleResult != null && _lastSeenRuleResult.Changes != null)
+                // When deciding whether a candidate was recently removed, consider
+                // both previewed changes (hover) and the last actually applied
+                // rule so the UI highlights either case appropriately.
+                var previewRes = Runner != null ? Runner.PreviewRuleResult : null;
+                var appliedRes = _lastSeenRuleResult;
+                if (!hasCandidate)
                 {
-                    foreach (var ch in _lastSeenRuleResult.Changes)
+                    // check preview removals first
+                    if (previewRes != null && previewRes.Changes != null)
                     {
-                        // explicit removal recorded for this cell
-                        if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
+                        foreach (var ch in previewRes.Changes)
                         {
-                            removedRecently = true;
-                            break;
-                        }
-
-                        // implied removals: if the rule placed `d` in another cell, that
-                        // placement removes `d` from all its peers. Treat peers as recently
-                        // removed even if the rule didn't emit explicit RemovedCandidates.
-                        if (ch.NewValue.HasValue && ch.NewValue.Value == d)
-                        {
-                            // ensure we have a board reference
-                            var board = Runner != null ? Runner.CurrentBoard : null;
-                            if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
+                            // explicit removal recorded for this cell
+                                if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
                             {
-                                var originBox = board.Cells[ch.Row, ch.Column].Box;
-                                if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
+                                removedRecently = true;
+                                break;
+                            }
+
+                            // implied removals: if the rule placed `d` in another cell, that
+                            // placement removes `d` from all its peers. Treat peers as recently
+                            // removed even if the rule didn't emit explicit RemovedCandidates.
+                            if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                            {
+                                // ensure we have a board reference
+                                var board = Runner != null ? Runner.CurrentBoard : null;
+                                if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
                                 {
-                                    removedRecently = true;
-                                    break;
+                                    var originBox = board.Cells[ch.Row, ch.Column].Box;
+                                    if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
+                                    {
+                                        removedRecently = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // if not removed by preview, check applied changes
+                    if (!removedRecently && appliedRes != null && appliedRes.Changes != null)
+                    {
+                        foreach (var ch in appliedRes.Changes)
+                        {
+                            if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
+                            {
+                                removedRecently = true;
+                                break;
+                            }
+                            if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                            {
+                                var board = Runner != null ? Runner.CurrentBoard : null;
+                                if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
+                                {
+                                    var originBox = board.Cells[ch.Row, ch.Column].Box;
+                                    if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
+                                    {
+                                        removedRecently = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
