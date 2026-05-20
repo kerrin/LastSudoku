@@ -154,7 +154,7 @@ namespace Sudoku.Solver.Rules
                             {
                                 string boardStr = FormatBoard(board);
                                 string err = $"Board became INVALID after applying {r.GetType().Name}.";
-                                Debug.LogWarning(err + "\n" + boardStr);
+                                Debug.LogError(err + "\n" + boardStr);
                                 if (string.IsNullOrEmpty(res.Description)) res.Description = err;
                                 else res.Description = res.Description + " -- " + err;
                             }
