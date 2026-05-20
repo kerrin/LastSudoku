@@ -202,9 +202,11 @@ public class BoardSidePanel : MonoBehaviour
         // Use a VerticalLayoutGroup so child panels stack: toggle block on top, list fills remaining space
         var rulesLayout = rulesGO.AddComponent<VerticalLayoutGroup>();
         rulesLayout.childControlHeight = false;
-        rulesLayout.childControlWidth = true;
+        // Allow children to keep their own widths (preferredWidth) instead of being resized
+        rulesLayout.childControlWidth = false;
         rulesLayout.childForceExpandHeight = false;
-        rulesLayout.childForceExpandWidth = true;
+        // Do not force child width so hosted panels can use their preferred widths
+        rulesLayout.childForceExpandWidth = false;
         rulesLayout.spacing = 6f;
         rulesLayout.padding = new RectOffset(0,0,0,0);
 
@@ -251,24 +253,32 @@ public class BoardSidePanel : MonoBehaviour
             }
             if (chosen == null) chosen = all[0];
 
-            if (chosen.transform.parent != _panelRect)
-            {
-                chosen.transform.SetParent(_panelRect, false);
-                var crt = chosen.GetComponent<RectTransform>();
-                if (crt != null)
+                if (chosen.transform.parent != RulesArea)
                 {
-                    crt.anchorMin = new Vector2(0f, 1f);
-                    crt.anchorMax = new Vector2(1f, 1f);
-                    crt.pivot = new Vector2(0f, 1f);
-                    crt.anchoredPosition = new Vector2(Padding, -Padding);
-                    var le = chosen.GetComponent<LayoutElement>();
-                    if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
-                    le.preferredHeight = Mathf.Min(220f,  Mathf.Max(80f,  (float)Screen.height * 0.25f));
-                    le.flexibleHeight = 0f;
-                    toggleLE = le;
+                    chosen.transform.SetParent(RulesArea, false);
+                    var crt = chosen.GetComponent<RectTransform>();
+                    if (crt != null)
+                    {
+                        // Do not stretch horizontally; give the toggle panel a fixed preferred width
+                        crt.anchorMin = new Vector2(0f, 1f);
+                        crt.anchorMax = new Vector2(0f, 1f);
+                        crt.pivot = new Vector2(0f, 1f);
+                        crt.anchoredPosition = new Vector2(Padding, -Padding);
+                        var le = chosen.GetComponent<LayoutElement>();
+                        if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
+                        le.preferredHeight = Mathf.Min(220f,  Mathf.Max(80f,  (float)Screen.height * 0.25f));
+                        le.flexibleHeight = 0f;
+                        // Use RuleTogglePanel.MaxWidth when available to drive preferred width
+                        var rtp = chosen.GetComponent<RuleTogglePanel>();
+                        float prefW = (rtp != null) ? Mathf.Min(rtp.MaxWidth, 160f) : 160f;
+                        le.preferredWidth = prefW;
+                        // Also explicitly set rect width so layout updates immediately
+                        var chosenRT = chosen.GetComponent<RectTransform>();
+                        if (chosenRT != null) chosenRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, prefW);
+                        toggleLE = le;
+                    }
+                    Debug.Log($"BoardSidePanel: Reparented existing RuleTogglePanel '{chosen.gameObject.name}' into SidePanel top.");
                 }
-                Debug.Log($"BoardSidePanel: Reparented existing RuleTogglePanel '{chosen.gameObject.name}' into SidePanel top.");
-            }
 
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
@@ -300,10 +310,11 @@ public class BoardSidePanel : MonoBehaviour
 
         // No existing instance found: create a host object as a direct child of the SidePanel
         var host = new GameObject("RuleTogglePanelHost", typeof(RectTransform));
-        host.transform.SetParent(_panelRect, false);
+        host.transform.SetParent(RulesArea, false);
         var rt = host.GetComponent<RectTransform>();
+        // Host should not stretch horizontally; the toggle panel will have a preferred width
         rt.anchorMin = new Vector2(0f, 1f);
-        rt.anchorMax = new Vector2(1f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(Padding, -Padding);
         var hostLE = host.AddComponent<LayoutElement>();
@@ -327,9 +338,16 @@ public class BoardSidePanel : MonoBehaviour
 
         // Also ensure a RuleListPanel is present in the RulesArea to list/apply rules
         EnsureRuleListPanelAttached();
-
-        if (toggleLE != null)
+        // After attaching the RuleTogglePanel component we can set the preferred width
+        if (panel != null && toggleLE != null)
         {
+            // Use the panel's MaxWidth when available; prefer 160px maximum for toggles
+            float prefW = Mathf.Min(panel.MaxWidth, 160f);
+            toggleLE.preferredWidth = prefW;
+            Debug.Log($"BoardSidePanel: Set RuleTogglePanel host preferredWidth={prefW} (panel.MaxWidth={panel.MaxWidth})");
+            // Also set the host RectTransform width immediately so layout reflects it
+            var hostRT = host.GetComponent<RectTransform>();
+            if (hostRT != null) hostRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, prefW);
             float topInset = Padding + toggleLE.preferredHeight + 6f;
             RulesArea.offsetMax = new Vector2(RulesArea.offsetMax.x, -topInset);
         }

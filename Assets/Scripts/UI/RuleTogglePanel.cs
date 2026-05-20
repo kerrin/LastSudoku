@@ -18,7 +18,10 @@ public class RuleTogglePanel : MonoBehaviour
     public float MaxHeight = 400f;
 
     [Tooltip("Optional: maximum width before the panel becomes scrollable")]
-    public float MaxWidth = 400f;
+    public float MaxWidth = 160f;
+
+    [Tooltip("Padding in pixels to inset the panel when hosted inside the SidePanel")]
+    public float Padding = 8f;
 
     private RuleRegistry _registry;
 
@@ -112,21 +115,36 @@ public class RuleTogglePanel : MonoBehaviour
         panelRoot.transform.SetParent(parentContainer, false);
         var panelRootRT = panelRoot.GetComponent<RectTransform>();
         panelRootRT.anchorMin = new Vector2(0f, 1f);
-        panelRootRT.anchorMax = new Vector2(1f, 1f);
-        panelRootRT.pivot = new Vector2(0.5f, 1f);
-        panelRootRT.anchoredPosition = Vector2.zero;
+        // Keep the root from stretching horizontally so preferred widths are respected
+        panelRootRT.anchorMax = new Vector2(0f, 1f);
+        panelRootRT.pivot = new Vector2(0f, 1f);
+        panelRootRT.anchoredPosition = new Vector2(Padding, -Padding);
         float rectHeight = Mathf.Min(MaxHeight, 300f);
-        float rectWidth = Mathf.Min(MaxWidth, 400f);
+        float rectWidth = Mathf.Min(MaxWidth, 200f);
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
-        // Make this root a fixed-height block inside the RulesArea so other panels can share space
+        Debug.Log($"RuleTogglePanel: PanelRoot created. parent={parentContainer.name} rectWidth={rectWidth} rectSize=({panelRootRT.rect.width}x{panelRootRT.rect.height}) MaxWidth={MaxWidth}");
+        // Add a semi-transparent background and a subtle border so the toggle panel
+        // visually separates from the side panel contents.
+        var panelImg = panelRoot.AddComponent<UnityEngine.UI.Image>();
+        panelImg.color = new Color(0f, 0f, 0f, 0.5f);
+        panelImg.raycastTarget = false;
+        var outline = panelRoot.AddComponent<UnityEngine.UI.Outline>();
+        outline.effectColor = new Color(1f, 1f, 1f, 0.06f);
+        outline.effectDistance = new Vector2(1f, -1f);
+        // Make this root a fixed-size block inside the RulesArea so other panels can share space
         var rootLE = panelRoot.AddComponent<LayoutElement>();
         rootLE.preferredHeight = Mathf.Min(MaxHeight, 220f);
+        // Respect the computed width as the preferred width so parent layout honors it
+        rootLE.preferredWidth = rectWidth;
+        rootLE.flexibleWidth = 0f;
         var rootLayout = panelRoot.AddComponent<VerticalLayoutGroup>();
         rootLayout.childControlHeight = true;
-        rootLayout.childControlWidth = true;
+        // Do NOT let the VerticalLayoutGroup control or force-expand child widths;
+        // we want this panel to keep a fixed width inside the RulesArea.
+        rootLayout.childControlWidth = false;
         rootLayout.childForceExpandHeight = false;
-        rootLayout.childForceExpandWidth = true;
+        rootLayout.childForceExpandWidth = false;
         rootLayout.spacing = 4;
         rootLayout.padding = new RectOffset(4, 4, 4, 4);
 
@@ -175,6 +193,14 @@ public class RuleTogglePanel : MonoBehaviour
             created++;
         }
         Debug.Log($"RuleTogglePanel: Created {created} toggle(s).");
+        Debug.Log($"RuleTogglePanel: Final PanelRoot size=({panelRootRT.rect.width}x{panelRootRT.rect.height}), parent='{panelRoot.transform.parent?.name}'");
+
+        // Another frame to allow parent layout groups to run, then re-assert our fixed width
+        yield return null;
+        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
+        rootLE.preferredWidth = rectWidth;
+        rootLE.minWidth = rectWidth;
+        Debug.Log($"RuleTogglePanel: Reapplied fixed width={rectWidth}, final size=({panelRootRT.rect.width}x{panelRootRT.rect.height})");
     }
 
     private void CreateRuleToggle(Transform parent, ISudokuRule rule, bool enabled)
