@@ -184,8 +184,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RuleTogglePanel
   Runner: {fileID: 239282191}
-  PanelWidth: 260
   MaxHeight: 400
+  MaxWidth: 200
+  Padding: 8
 --- !u!114 &13295781
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -652,8 +653,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RuleTogglePanel
   Runner: {fileID: 239282191}
-  PanelWidth: 260
   MaxHeight: 400
+  MaxWidth: 400
+  Padding: 8
 --- !u!4 &1758999895
 Transform:
   m_ObjectHideFlags: 0

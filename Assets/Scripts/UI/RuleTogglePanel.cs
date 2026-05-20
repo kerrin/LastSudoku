@@ -18,7 +18,7 @@ public class RuleTogglePanel : MonoBehaviour
     public float MaxHeight = 400f;
 
     [Tooltip("Optional: maximum width before the panel becomes scrollable")]
-    public float MaxWidth = 160f;
+    public float MaxWidth = 200f;
 
     [Tooltip("Padding in pixels to inset the panel when hosted inside the SidePanel")]
     public float Padding = 8f;
@@ -119,8 +119,9 @@ public class RuleTogglePanel : MonoBehaviour
         panelRootRT.anchorMax = new Vector2(0f, 1f);
         panelRootRT.pivot = new Vector2(0f, 1f);
         panelRootRT.anchoredPosition = new Vector2(Padding, -Padding);
-        float rectHeight = Mathf.Min(MaxHeight, 300f);
-        float rectWidth = Mathf.Min(MaxWidth, 200f);
+        float CalculatedHeight = 26f + 4f + (28f + 2f) * _registry.GetRulesWithStatus().Count + 4f; // header + spacing + (row height + spacing) * num rules + padding
+        float rectHeight = Mathf.Min(MaxHeight, CalculatedHeight);
+        float rectWidth = MaxWidth;
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
         Debug.Log($"RuleTogglePanel: PanelRoot created. parent={parentContainer.name} rectWidth={rectWidth} rectSize=({panelRootRT.rect.width}x{panelRootRT.rect.height}) MaxWidth={MaxWidth}");
