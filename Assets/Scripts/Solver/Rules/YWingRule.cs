@@ -14,6 +14,10 @@ namespace Sudoku.Solver.Rules
      * digit not in the opposite corner pair (e.g. c in this example)
      * (ab),(bc)
      * (ac),(*c*)
+     *
+     * The 3 cells used for deduction cannot contain any other candidates beyond the three-digit union, 
+     * but the cell we set the value in can contain other candidates (which will be cleared when we set the value). 
+     * This is a valid Y-wing pattern even if the target cell does not currently list the digit as a candidate.
      */
     public class YWingRule : ISudokuRule
     {
@@ -110,6 +114,11 @@ namespace Sudoku.Solver.Rules
                                                     var intersections = trip.Select(cell => cell.Candidates.Intersect(candidateSet).ToList()).ToList();
                                                     if (intersections.Any(inter => inter.Count != 2)) continue;
 
+                                                    // The three pivot cells must not contain candidates outside the
+                                                    // chosen 3-digit union (they should be restricted to the union)
+                                                    bool anyOutside = trip.Any(cell => cell.Candidates.Except(candidateSet).Any());
+                                                    if (anyOutside) continue;
+
                                                     // the three pairs must be distinct (i.e. {a,b},{a,c},{b,c})
                                                     var distinctPairs = new HashSet<string>(intersections.Select(i => string.Join(",", i.OrderBy(x => x))));
                                                     if (distinctPairs.Count != 3) continue;
@@ -182,9 +191,15 @@ namespace Sudoku.Solver.Rules
                             // sanity: digit should belong to the union of the three bivals
                             if (!union.Contains(digit)) continue;
 
-                            // Even if the target does not currently list the digit as a candidate
-                            // we still consider the deduction valid per the Y-wing rectangle rule.
-                            return new Placement(bivals, rowNeighbor, colNeighbor, target, digit, union);
+                            // Only accept the placement if the target currently lists the
+                            // deduced digit as a candidate. The UI/preview path (which may
+                            // only enact candidate removals) relies on this so we don't
+                            // produce placements that would clear the cell's candidates
+                            // without the digit actually being a candidate.
+                            if (target.Candidates.Contains(digit))
+                            {
+                                return new Placement(bivals, rowNeighbor, colNeighbor, target, digit, union);
+                            }
                         }
                     }
                 }
@@ -233,9 +248,12 @@ namespace Sudoku.Solver.Rules
                     r.UsedCells.Add(new UsedCell { Row = bv.Row, Column = bv.Column, Candidate = null });
             }
 
-            // Place the digit into the target cell (clear candidates)
+            // Place the digit into the target cell. Do NOT record blanket candidate
+            // removals for the target here — if callers choose to only enact
+            // candidates (preview mode) we must not clear the target's candidates
+            // without actually assigning the value. Leave candidate clearing to
+            // `EnactAll` which sets the value and clears candidates atomically.
             var change = new CellChange { Row = target.Row, Column = target.Column, OldValue = target.Value, NewValue = digit };
-            for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
             r.Changes.Add(change);
 
             // Also remove the placed digit from all peers' candidates (recorded as separate changes)
