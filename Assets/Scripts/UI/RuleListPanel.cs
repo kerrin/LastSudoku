@@ -44,10 +44,19 @@ public class RuleListPanel : MonoBehaviour
         var panelRoot = new GameObject("RuleListRoot", typeof(RectTransform));
         panelRoot.transform.SetParent(transform, false);
         var rt = panelRoot.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0, 1);
-        rt.anchorMax = new Vector2(0, 1);
-        rt.pivot = new Vector2(0, 1);
-        rt.sizeDelta = new Vector2(PanelWidth, MaxHeight);
+        // Stretch the panel root to match the parent so it can take the
+        // available width of the SidePanel. Constrain height via the
+        // optional LayoutElement below rather than a fixed sizeDelta.
+        rt.anchorMin = new Vector2(0f, 0f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+        // Add a LayoutElement so callers can limit height if desired
+        var panelLE = panelRoot.AddComponent<LayoutElement>();
+        panelLE.preferredHeight = MaxHeight;
+        panelLE.flexibleHeight = 1f;
 
         var bg = panelRoot.AddComponent<Image>();
         bg.color = new Color(0f, 0f, 0f, 0.45f);
@@ -150,9 +159,12 @@ public class RuleListPanel : MonoBehaviour
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 1f);
-        // Let the VerticalLayoutGroup control horizontal sizing; provide a preferred height
+        // Let the VerticalLayoutGroup control horizontal sizing; provide a preferred height.
+        // If we have a description preview, increase the preferred height so the
+        // description fits inside the same row instead of spilling underneath.
         var le = go.AddComponent<LayoutElement>();
-        le.preferredHeight = 28f;
+        bool hasDesc = (preview != null && !string.IsNullOrEmpty(preview.Description));
+        le.preferredHeight = hasDesc ? 48f : 28f;
 
         var btnImg = go.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
@@ -168,10 +180,22 @@ public class RuleListPanel : MonoBehaviour
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();
-        lblRT.anchorMin = new Vector2(0f, 0f);
-        lblRT.anchorMax = new Vector2(1f, 1f);
-        lblRT.offsetMin = new Vector2(8f, 2f);
-        lblRT.offsetMax = new Vector2(-8f, -2f);
+        // Place the label in the top half of the row when a description exists,
+        // otherwise fill the row vertically.
+        if (hasDesc)
+        {
+            lblRT.anchorMin = new Vector2(0f, 0.5f);
+            lblRT.anchorMax = new Vector2(1f, 1f);
+            lblRT.offsetMin = new Vector2(8f, 6f);
+            lblRT.offsetMax = new Vector2(-8f, -6f);
+        }
+        else
+        {
+            lblRT.anchorMin = new Vector2(0f, 0f);
+            lblRT.anchorMax = new Vector2(1f, 1f);
+            lblRT.offsetMin = new Vector2(8f, 2f);
+            lblRT.offsetMax = new Vector2(-8f, -2f);
+        }
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
@@ -188,7 +212,7 @@ public class RuleListPanel : MonoBehaviour
         trigger.triggers.Add(entryExit);
 
         // optionally show a tooltip/description when available
-        if (preview != null && !string.IsNullOrEmpty(preview.Description))
+        if (hasDesc)
         {
             var descGO = new GameObject("Desc", typeof(RectTransform));
             descGO.transform.SetParent(go.transform, false);
@@ -199,10 +223,12 @@ public class RuleListPanel : MonoBehaviour
             desc.color = new Color(0.9f, 0.9f, 0.9f, 0.8f);
             desc.alignment = TextAnchor.UpperLeft;
             var dRT = descGO.GetComponent<RectTransform>();
-            dRT.anchorMin = new Vector2(0, 0);
-            dRT.anchorMax = new Vector2(1, 1);
-            dRT.offsetMin = new Vector2(8, -18);
-            dRT.offsetMax = new Vector2(-8, -2);
+            // Place description in the bottom half of the row so it remains
+            // visually attached to its rule and does not flow outside the list.
+            dRT.anchorMin = new Vector2(0f, 0f);
+            dRT.anchorMax = new Vector2(1f, 0.5f);
+            dRT.offsetMin = new Vector2(8f, 4f);
+            dRT.offsetMax = new Vector2(-8f, -4f);
         }
     }
 }
