@@ -117,7 +117,6 @@ namespace Sudoku.Solver
                 {
                     Rect cellRect = new Rect(x0 + c * cellSize, y0 + r * cellSize, cellSize, cellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
-                    bool highlighted = false;
                     System.Collections.Generic.HashSet<int> usedCandidatesForCell = null;
                     if (resultToShow != null && resultToShow.Apply)
                     {
@@ -132,14 +131,9 @@ namespace Sudoku.Solver
                                     if (ch.NewValue.HasValue)
                                     {
                                         DrawHighlightBorder(cellRect, new Color(0.1f, 0.8f, 0.1f, 1f));
-                                        highlighted = true;
                                     }
-                                    // candidate removals
-                                    else if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
-                                    {
-                                        DrawHighlightBorder(cellRect, new Color(1f, 0.75f, 0.1f, 1f));
-                                        highlighted = true;
-                                    }
+                                    // candidate removals: no longer draw a yellow cell-level border here.
+                                    // per-candidate highlights are rendered inside DrawCandidates instead.
                                     break;
                                 }
                             }
@@ -252,17 +246,18 @@ namespace Sudoku.Solver
                 }
 
                 bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
+                // Draw a small yellow border around candidates used in deductions so
+                // the highlight remains visible even when the candidate digit itself
+                // is drawn in red for recent removals.
+                if (isHighlighted)
+                {
+                    DrawCandidateBorder(r, new Color(1f, 0.85f, 0.25f, 1f));
+                }
+
                 if (removedRecently)
                 {
                     Color prev = GUI.color;
                     GUI.color = Color.red;
-                    GUI.Label(r, d.ToString(), _candidateStyle);
-                    GUI.color = prev;
-                }
-                else if (isHighlighted)
-                {
-                    Color prev = GUI.color;
-                    GUI.color = new Color(1f, 0.85f, 0.25f, 1f);
                     GUI.Label(r, d.ToString(), _candidateStyle);
                     GUI.color = prev;
                 }
@@ -326,6 +321,28 @@ namespace Sudoku.Solver
             Color prev = GUI.color;
             GUI.color = color;
             float thickness = Mathf.Max(4f, rect.width / 12f);
+            // top
+            GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, thickness), _highlightTex);
+            // bottom
+            GUI.DrawTexture(new Rect(rect.x, rect.y + rect.height - thickness, rect.width, thickness), _highlightTex);
+            // left
+            GUI.DrawTexture(new Rect(rect.x, rect.y, thickness, rect.height), _highlightTex);
+            // right
+            GUI.DrawTexture(new Rect(rect.x + rect.width - thickness, rect.y, thickness, rect.height), _highlightTex);
+            GUI.color = prev;
+        }
+
+        private void DrawCandidateBorder(Rect rect, Color color)
+        {
+            if (_highlightTex == null)
+            {
+                _highlightTex = new Texture2D(1, 1);
+                _highlightTex.SetPixel(0, 0, Color.white);
+                _highlightTex.Apply();
+            }
+            Color prev = GUI.color;
+            GUI.color = color;
+            float thickness = Mathf.Max(1f, rect.width / 8f);
             // top
             GUI.DrawTexture(new Rect(rect.x, rect.y, rect.width, thickness), _highlightTex);
             // bottom
