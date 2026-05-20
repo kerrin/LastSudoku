@@ -188,14 +188,18 @@ namespace Sudoku.Solver.Rules
             }
             var (digit, witnesses, removals) = found.Value;
 
-            // mark witness cells
-            foreach (var w in witnesses)
+            // mark the four witness cells (deduplicated) and only them as used
+            var uniqueWitnesses = witnesses.Distinct().ToList();
+            if (uniqueWitnesses.Count == 4)
             {
-                if (!r.UsedCells.Exists(u => u.Row == w.r && u.Column == w.c && u.Candidate == digit))
-                    r.UsedCells.Add(new UsedCell { Row = w.r, Column = w.c, Candidate = digit });
+                foreach (var w in uniqueWitnesses)
+                {
+                    if (!r.UsedCells.Exists(u => u.Row == w.r && u.Column == w.c && u.Candidate == digit))
+                        r.UsedCells.Add(new UsedCell { Row = w.r, Column = w.c, Candidate = digit });
+                }
             }
 
-            // Record removals
+            // Record removals (do NOT mark removed cells as used; only witnesses are used/highlighted)
             foreach (var rem in removals.OrderBy(x => x.r).ThenBy(x => x.c))
             {
                 var cell = board.Cells[rem.r, rem.c];
@@ -204,9 +208,6 @@ namespace Sudoku.Solver.Rules
                     var change = new CellChange { Row = rem.r, Column = rem.c };
                     change.RemovedCandidates.Add(digit);
                     r.Changes.Add(change);
-
-                    if (!r.UsedCells.Exists(u => u.Row == rem.r && u.Column == rem.c && u.Candidate == digit))
-                        r.UsedCells.Add(new UsedCell { Row = rem.r, Column = rem.c, Candidate = digit });
                 }
             }
 
