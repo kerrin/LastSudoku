@@ -31,6 +31,7 @@ public class RuleListPanel : MonoBehaviour
             Debug.LogWarning("RuleListPanel: No SolverRunner found in scene.");
             yield break;
         }
+        
         Runner.EnsureEngine();
         _registry = Runner.Registry;
         if (_registry == null)

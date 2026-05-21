@@ -28,52 +28,12 @@ public class RuleTogglePanel : MonoBehaviour
 
     private RuleRegistry _registry;
 
-    private void Start()
-    {
-        // Initialize asynchronously so host scripts (like BoardSidePanel)
-        // have a chance to reparent or attach first. This avoids creating a
-        // duplicate floating panel that would immediately be removed.
-        StartCoroutine(InitializeCoroutine());
-    }
-
-    private System.Collections.IEnumerator InitializeCoroutine()
+   private System.Collections.IEnumerator Start()
     {
         // If multiple RuleTogglePanel instances exist, prefer the one inside a SidePanel.
         var allPanels = FindObjectsByType<RuleTogglePanel>();
-        if (allPanels.Length > 1)
-        {
-            bool IsUnderRuleTogglePanel(Transform t)
-            {
-                var cur = t;
-                while (cur != null)
-                {
-                    if (cur.name == "RuleTogglePanel") return true;
-                    cur = cur.parent;
-                }
-                return false;
-            }
-
-            bool thisUnder = IsUnderRuleTogglePanel(transform);
-            foreach (var p in allPanels)
-            {
-                if (p == this) continue;
-                bool otherUnder = IsUnderRuleTogglePanel(p.transform);
-                if (otherUnder && !thisUnder)
-                {
-                    Debug.Log("RuleTogglePanel: Found existing RuleTogglePanel-hosted panel; removing duplicate.");
-                    Destroy(gameObject);
-                    yield break;
-                }
-                if (thisUnder && !otherUnder)
-                {
-                    Debug.Log("RuleTogglePanel: Found duplicate panel outside RuleTogglePanel; removing the other instance.");
-                    Destroy(p.gameObject);
-                }
-            }
-        }
 
         if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
-        Debug.Log($"RuleTogglePanel.Start: Runner assigned={(Runner!=null)}");
         if (Runner == null)
         {
             Debug.LogWarning("RuleTogglePanel: No SolverRunner found in scene.");
@@ -82,109 +42,16 @@ public class RuleTogglePanel : MonoBehaviour
 
         Runner.EnsureEngine();
         _registry = Runner.Registry;
-        Debug.Log($"RuleTogglePanel.Start: Registry assigned={( _registry != null)}");
         if (_registry == null)
         {
             Debug.LogWarning("RuleTogglePanel: Runner did not provide a RuleRegistry.");
             yield break;
         }
 
-        Canvas canvas = FindAnyObjectByType<Canvas>();
-        if (canvas == null || canvas.renderMode != RenderMode.ScreenSpaceOverlay)
-            canvas = CreateDefaultCanvas();
-
-        // Give one frame for other components (BoardSidePanel) to reparent us
-        // into a proper RulesArea host before we decide to create a floating panel.
-        yield return null;
-
-        // If this component is already placed under a RulesArea-like container (parented),
-        // populate the UI inside that parent. Otherwise create a standalone floating panel.
-        Transform parentContainer = null;
-        if (transform.parent != null && transform.parent.GetComponentInParent<Canvas>() != null && transform.parent != canvas.transform)
-        {
-            parentContainer = transform.parent;
-            Debug.Log($"RuleTogglePanel: Using parent container '{parentContainer.name}' for UI placement.");
-        }
-        else
-        {
-            // Don't create a floating panel here — defer to BoardSidePanel which
-            // will create a hosted RuleTogglePanel when appropriate. This avoids
-            // transient creation+destruction of floating UI.
-            Debug.Log("RuleTogglePanel: No host found after delay; deferring floating panel creation.");
-            yield break;
-        }
-        // Use an existing permanent root if present in the scene (created in editor),
-        // otherwise create a new one dynamically. This keeps the root GameObject
-        // permanent like other panels while preserving runtime population behavior.
-        GameObject panelRootGO = null;
-        RectTransform panelRootRT = null;
-        // Prefer a scene-placed permanent root if present (created in editor).
-        var existingSceneGO = GameObject.Find("RuleTogglePanelRoot");
-        if (existingSceneGO != null)
-        {
-            panelRootGO = existingSceneGO;
-            panelRootRT = panelRootGO.GetComponent<RectTransform>();
-            if (panelRootRT == null) panelRootRT = panelRootGO.AddComponent<RectTransform>();
-            // Ensure the permanent root becomes a child of this RuleTogglePanel
-            if (panelRootGO.transform.parent != this.transform)
-            {
-                panelRootGO.transform.SetParent(this.transform, false);
-                Debug.Log("RuleTogglePanel: Moved existing RuleTogglePanelRoot to be child of RuleTogglePanel.");
-            }
-            // Clear any runtime children to ensure a consistent rebuild
-            for (int i = panelRootGO.transform.childCount - 1; i >= 0; i--)
-            {
-                Destroy(panelRootGO.transform.GetChild(i).gameObject);
-            }
-            // Remove any other RuleTogglePanelRoot instances in the scene to avoid duplicates
-            foreach (var t in Object.FindObjectsByType<Transform>())
-            {
-                if (t.name == "RuleTogglePanelRoot" && t.gameObject != panelRootGO)
-                {
-                    Debug.Log($"RuleTogglePanel: Removing duplicate RuleTogglePanelRoot found at '{t.gameObject.transform.parent?.name}'");
-                    Destroy(t.gameObject);
-                }
-            }
-        }
-        else
-        {
-            // Fallback: look for a root under the parent container (legacy)
-            var existingUnderParent = parentContainer.Find("RuleTogglePanelRoot");
-            if (existingUnderParent != null)
-            {
-                panelRootGO = existingUnderParent.gameObject;
-                panelRootRT = panelRootGO.GetComponent<RectTransform>();
-                if (panelRootRT == null) panelRootRT = panelRootGO.AddComponent<RectTransform>();
-                Debug.Log("RuleTogglePanel: Found existing RuleTogglePanelRoot under parent; using it.");
-                // Move the existing root to be a child of this RuleTogglePanel so
-                // it is not a sibling under the side panel.
-                if (panelRootGO.transform.parent != this.transform)
-                {
-                    panelRootGO.transform.SetParent(this.transform, false);
-                    Debug.Log("RuleTogglePanel: Moved existing RuleTogglePanelRoot to be child of RuleTogglePanel.");
-                }
-                for (int i = panelRootGO.transform.childCount - 1; i >= 0; i--)
-                {
-                    Destroy(panelRootGO.transform.GetChild(i).gameObject);
-                }
-                    // Also remove any other duplicates to prevent another one from staying under SidePanel
-                    foreach (var t in Object.FindObjectsByType<Transform>())
-                    {
-                        if (t.name == "RuleTogglePanelRoot" && t.gameObject != panelRootGO)
-                        {
-                            Debug.Log($"RuleTogglePanel: Removing duplicate RuleTogglePanelRoot found at '{t.gameObject.transform.parent?.name}'");
-                            Destroy(t.gameObject);
-                        }
-                    }
-            }
-            else
-            {
-                // Create an inner root under the provided parent so we can control layout
-                panelRootGO = new GameObject("RuleTogglePanelRoot", typeof(RectTransform));
-                panelRootGO.transform.SetParent(parentContainer, false);
-                panelRootRT = panelRootGO.GetComponent<RectTransform>();
-            }
-        }
+        // Create an inner root under the provided parent so we can control layout
+        GameObject panelRootGO = new GameObject("RuleTogglePanelRoot", typeof(RectTransform));
+        panelRootGO.transform.SetParent(this.transform, false);
+        RectTransform panelRootRT = panelRootGO.GetComponent<RectTransform>();
         panelRootRT.anchorMin = new Vector2(0f, 1f);
         // Keep the root from stretching horizontally so preferred widths are respected
         panelRootRT.anchorMax = new Vector2(0f, 1f);
@@ -195,15 +62,14 @@ public class RuleTogglePanel : MonoBehaviour
         float rectWidth = MaxWidth;
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
-        Debug.Log($"RuleTogglePanelRoot: RuleTogglePanelRoot created. parent={parentContainer.name} rectWidth={rectWidth} rectSize=({panelRootRT.rect.width}x{panelRootRT.rect.height}) MaxWidth={MaxWidth}");
         // Add a semi-transparent background and a subtle border so the toggle panel
         // visually separates from the side panel contents.
-        var panelImg = panelRootGO.GetComponent<UnityEngine.UI.Image>();
-        if (panelImg == null) panelImg = panelRootGO.AddComponent<UnityEngine.UI.Image>();
+        var panelImg = panelRootGO.GetComponent<Image>();
+        if (panelImg == null) panelImg = panelRootGO.AddComponent<Image>();
         panelImg.color = new Color(0f, 0f, 0f, 0.5f);
         panelImg.raycastTarget = false;
-        var outline = panelRootGO.GetComponent<UnityEngine.UI.Outline>();
-        if (outline == null) outline = panelRootGO.AddComponent<UnityEngine.UI.Outline>();
+        var outline = panelRootGO.GetComponent<Outline>();
+        if (outline == null) outline = panelRootGO.AddComponent<Outline>();
         outline.effectColor = new Color(1f, 1f, 1f, 0.06f);
         outline.effectDistance = new Vector2(1f, -1f);
         // Make this root a fixed-size block inside the RulesArea so other panels can share space
@@ -261,28 +127,18 @@ public class RuleTogglePanel : MonoBehaviour
         {
             Debug.LogError($"RuleTogglePanel: GetRulesWithStatus threw: {ex.Message}");
         }
-        Debug.Log($"RuleTogglePanel: Found {rules.Count} registered rules.");
         int created = 0;
         foreach (var entry in rules)
         {
             CreateRuleToggle(RuleTogglesGO.transform, entry.rule, entry.enabled);
             created++;
         }
-        Debug.Log($"RuleTogglePanel: Created {created} toggle(s).");
-        Debug.Log($"RuleTogglePanel: Final RuleTogglePanelRoot size=({panelRootRT.rect.width}x{panelRootRT.rect.height}), parent='{panelRootGO.transform.parent?.name}'");
 
         // Another frame to allow parent layout groups to run, then re-assert our fixed width
         yield return null;
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
         rootLE.preferredWidth = rectWidth;
         rootLE.minWidth = rectWidth;
-        // Ensure the RuleTogglePanelRoot is parented under this RuleTogglePanel GameObject
-        if (panelRootGO.transform.parent != this.transform)
-        {
-            panelRootGO.transform.SetParent(this.transform, false);
-            panelRootGO.transform.SetAsFirstSibling();
-            Debug.Log("RuleTogglePanel: Reparented RuleTogglePanelRoot to RuleTogglePanel at end of init.");
-        }
 
         // If we're hosted somewhere under SidePanel, let the SidePanel top-left be (0,0)
         if (SidePanelOffset != Vector2.zero)
@@ -311,12 +167,9 @@ public class RuleTogglePanel : MonoBehaviour
                     // SidePanelOffset: x = right positive, y = down positive
                     Vector2 desired = topLeftLocal + new Vector2(SidePanelOffset.x, -SidePanelOffset.y);
                     panelRootRT.anchoredPosition = desired;
-                    Debug.Log($"RuleTogglePanel: Positioned root relative to SidePanel top-left at {SidePanelOffset} -> anchored={desired}");
                 }
             }
         }
-
-        Debug.Log($"RuleTogglePanel: Reapplied fixed width={rectWidth}, final size=({panelRootRT.rect.width}x{panelRootRT.rect.height}), parent='{panelRootGO.transform.parent?.name}'");
     }
 
     private void CreateRuleToggle(Transform parent, ISudokuRule rule, bool enabled)
