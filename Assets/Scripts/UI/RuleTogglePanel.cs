@@ -23,6 +23,9 @@ public class RuleTogglePanel : MonoBehaviour
     [Tooltip("Padding in pixels to inset the panel when hosted inside the SidePanel")]
     public float Padding = 8f;
 
+    [Tooltip("When hosted in the SidePanel, an offset (x right, y down) from the SidePanel top-left to place the panel root.\nUse this to treat SidePanel top-left as origin (0,0).")]
+    public Vector2 SidePanelOffset = Vector2.zero;
+
     private RuleRegistry _registry;
 
     private void Start()
@@ -115,26 +118,72 @@ public class RuleTogglePanel : MonoBehaviour
         // permanent like other panels while preserving runtime population behavior.
         GameObject panelRootGO = null;
         RectTransform panelRootRT = null;
-        var existing = parentContainer.Find("RuleTogglePanelRoot");
-        if (existing != null)
+        // Prefer a scene-placed permanent root if present (created in editor).
+        var existingSceneGO = GameObject.Find("RuleTogglePanelRoot");
+        if (existingSceneGO != null)
         {
-            panelRootGO = existing.gameObject;
+            panelRootGO = existingSceneGO;
             panelRootRT = panelRootGO.GetComponent<RectTransform>();
             if (panelRootRT == null) panelRootRT = panelRootGO.AddComponent<RectTransform>();
-            panelRootGO.transform.SetParent(parentContainer, false);
-            Debug.Log("RuleTogglePanel: Found existing RuleTogglePanelRoot in scene; using it.");
+            // Ensure the permanent root becomes a child of this RuleTogglePanel
+            if (panelRootGO.transform.parent != this.transform)
+            {
+                panelRootGO.transform.SetParent(this.transform, false);
+                Debug.Log("RuleTogglePanel: Moved existing RuleTogglePanelRoot to be child of RuleTogglePanel.");
+            }
             // Clear any runtime children to ensure a consistent rebuild
             for (int i = panelRootGO.transform.childCount - 1; i >= 0; i--)
             {
                 Destroy(panelRootGO.transform.GetChild(i).gameObject);
             }
+            // Remove any other RuleTogglePanelRoot instances in the scene to avoid duplicates
+            foreach (var t in Object.FindObjectsByType<Transform>())
+            {
+                if (t.name == "RuleTogglePanelRoot" && t.gameObject != panelRootGO)
+                {
+                    Debug.Log($"RuleTogglePanel: Removing duplicate RuleTogglePanelRoot found at '{t.gameObject.transform.parent?.name}'");
+                    Destroy(t.gameObject);
+                }
+            }
         }
         else
         {
-            // Create an inner root under the provided parent so we can control layout
-            panelRootGO = new GameObject("RuleTogglePanelRoot", typeof(RectTransform));
-            panelRootGO.transform.SetParent(parentContainer, false);
-            panelRootRT = panelRootGO.GetComponent<RectTransform>();
+            // Fallback: look for a root under the parent container (legacy)
+            var existingUnderParent = parentContainer.Find("RuleTogglePanelRoot");
+            if (existingUnderParent != null)
+            {
+                panelRootGO = existingUnderParent.gameObject;
+                panelRootRT = panelRootGO.GetComponent<RectTransform>();
+                if (panelRootRT == null) panelRootRT = panelRootGO.AddComponent<RectTransform>();
+                Debug.Log("RuleTogglePanel: Found existing RuleTogglePanelRoot under parent; using it.");
+                // Move the existing root to be a child of this RuleTogglePanel so
+                // it is not a sibling under the side panel.
+                if (panelRootGO.transform.parent != this.transform)
+                {
+                    panelRootGO.transform.SetParent(this.transform, false);
+                    Debug.Log("RuleTogglePanel: Moved existing RuleTogglePanelRoot to be child of RuleTogglePanel.");
+                }
+                for (int i = panelRootGO.transform.childCount - 1; i >= 0; i--)
+                {
+                    Destroy(panelRootGO.transform.GetChild(i).gameObject);
+                }
+                    // Also remove any other duplicates to prevent another one from staying under SidePanel
+                    foreach (var t in Object.FindObjectsByType<Transform>())
+                    {
+                        if (t.name == "RuleTogglePanelRoot" && t.gameObject != panelRootGO)
+                        {
+                            Debug.Log($"RuleTogglePanel: Removing duplicate RuleTogglePanelRoot found at '{t.gameObject.transform.parent?.name}'");
+                            Destroy(t.gameObject);
+                        }
+                    }
+            }
+            else
+            {
+                // Create an inner root under the provided parent so we can control layout
+                panelRootGO = new GameObject("RuleTogglePanelRoot", typeof(RectTransform));
+                panelRootGO.transform.SetParent(parentContainer, false);
+                panelRootRT = panelRootGO.GetComponent<RectTransform>();
+            }
         }
         panelRootRT.anchorMin = new Vector2(0f, 1f);
         // Keep the root from stretching horizontally so preferred widths are respected
@@ -227,7 +276,47 @@ public class RuleTogglePanel : MonoBehaviour
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
         rootLE.preferredWidth = rectWidth;
         rootLE.minWidth = rectWidth;
-        Debug.Log($"RuleTogglePanel: Reapplied fixed width={rectWidth}, final size=({panelRootRT.rect.width}x{panelRootRT.rect.height})");
+        // Ensure the RuleTogglePanelRoot is parented under this RuleTogglePanel GameObject
+        if (panelRootGO.transform.parent != this.transform)
+        {
+            panelRootGO.transform.SetParent(this.transform, false);
+            panelRootGO.transform.SetAsFirstSibling();
+            Debug.Log("RuleTogglePanel: Reparented RuleTogglePanelRoot to RuleTogglePanel at end of init.");
+        }
+
+        // If we're hosted somewhere under SidePanel, let the SidePanel top-left be (0,0)
+        if (SidePanelOffset != Vector2.zero)
+        {
+            Transform cur = panelRootGO.transform;
+            Transform side = null;
+            while (cur != null)
+            {
+                if (cur.name == "SidePanel") { side = cur; break; }
+                cur = cur.parent;
+            }
+            if (side != null)
+            {
+                var sideRT = side.GetComponent<RectTransform>();
+                var parentRT = panelRootGO.transform.parent as RectTransform;
+                if (sideRT != null && parentRT != null)
+                {
+                    Vector3[] corners = new Vector3[4];
+                    sideRT.GetWorldCorners(corners);
+                    // Unity corners: 0=bottom-left, 1=top-left, 2=top-right, 3=bottom-right
+                    Vector3 topLeftWorld = corners[1];
+                    // Convert world top-left into parent's local coordinates
+                    Vector2 topLeftLocal;
+                    Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(null, topLeftWorld);
+                    RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRT, screenPoint, null, out topLeftLocal);
+                    // SidePanelOffset: x = right positive, y = down positive
+                    Vector2 desired = topLeftLocal + new Vector2(SidePanelOffset.x, -SidePanelOffset.y);
+                    panelRootRT.anchoredPosition = desired;
+                    Debug.Log($"RuleTogglePanel: Positioned root relative to SidePanel top-left at {SidePanelOffset} -> anchored={desired}");
+                }
+            }
+        }
+
+        Debug.Log($"RuleTogglePanel: Reapplied fixed width={rectWidth}, final size=({panelRootRT.rect.width}x{panelRootRT.rect.height}), parent='{panelRootGO.transform.parent?.name}'");
     }
 
     private void CreateRuleToggle(Transform parent, ISudokuRule rule, bool enabled)
