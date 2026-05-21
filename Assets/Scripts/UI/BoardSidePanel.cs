@@ -309,21 +309,21 @@ public class BoardSidePanel : MonoBehaviour
         }
 
         // No existing instance found: create a host object as a direct child of the SidePanel
-        var host = new GameObject("RuleTogglePanelHost", typeof(RectTransform));
-        host.transform.SetParent(RulesArea, false);
-        var rt = host.GetComponent<RectTransform>();
+        var hostGO = new GameObject("RuleTogglePanelHost", typeof(RectTransform));
+        hostGO.transform.SetParent(RulesArea, false);
+        var rt = hostGO.GetComponent<RectTransform>();
         // Host should not stretch horizontally; the toggle panel will have a preferred width
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(Padding, -Padding);
-        var hostLE = host.AddComponent<LayoutElement>();
+        var hostLE = hostGO.AddComponent<LayoutElement>();
         hostLE.preferredHeight = Mathf.Min(220f,  Mathf.Max(80f,  (float)Screen.height * 0.25f));
         hostLE.flexibleHeight = 0f;
         toggleLE = hostLE;
 
-        var panel = host.AddComponent<RuleTogglePanel>();
-        Debug.Log($"BoardSidePanel: Created RuleTogglePanel host '{host.name}' and attached RuleTogglePanel component at SidePanel top.");
+        var panel = hostGO.AddComponent<RuleTogglePanel>();
+        Debug.Log($"BoardSidePanel: Created RuleTogglePanel hostGO '{hostGO.name}' and attached RuleTogglePanel component at SidePanel top.");
 
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
@@ -344,9 +344,9 @@ public class BoardSidePanel : MonoBehaviour
             // Use the panel's MaxWidth when available; prefer 160px maximum for toggles
             float prefW = Mathf.Min(panel.MaxWidth, 160f);
             toggleLE.preferredWidth = prefW;
-            Debug.Log($"BoardSidePanel: Set RuleTogglePanel host preferredWidth={prefW} (panel.MaxWidth={panel.MaxWidth})");
-            // Also set the host RectTransform width immediately so layout reflects it
-            var hostRT = host.GetComponent<RectTransform>();
+            Debug.Log($"BoardSidePanel: Set RuleTogglePanel hostGO preferredWidth={prefW} (panel.MaxWidth={panel.MaxWidth})");
+            // Also set the hostGO RectTransform width immediately so layout reflects it
+            var hostRT = hostGO.GetComponent<RectTransform>();
             if (hostRT != null) hostRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, prefW);
             float topInset = Padding + toggleLE.preferredHeight + 6f;
             RulesArea.offsetMax = new Vector2(RulesArea.offsetMax.x, -topInset);
@@ -395,7 +395,21 @@ public class BoardSidePanel : MonoBehaviour
                     }
                     Debug.Log($"BoardSidePanel: Reparented existing RuleListPanel '{chosen.gameObject.name}' into RulesArea.");
                 }
-
+            
+            // Ensure the RuleListPanel sits immediately after the RuleTogglePanel in the
+            // RulesArea child order so it appears below the toggle block visually.
+            try
+            {
+                var toggle = RulesArea.GetComponentInChildren<RuleTogglePanel>(true);
+                if (toggle != null)
+                {
+                    int toggleIndex = toggle.transform.GetSiblingIndex();
+                    // Place the list right after the toggle (clamp to valid range)
+                    int targetIndex = Mathf.Clamp(toggleIndex + 1, 0, RulesArea.childCount - 1);
+                    chosen.transform.SetSiblingIndex(targetIndex);
+                }
+            }
+            catch { }
             // Wire Runner on chosen instance
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
@@ -419,18 +433,18 @@ public class BoardSidePanel : MonoBehaviour
         }
 
         // No existing RuleListPanel: create host and attach
-        var host = new GameObject("RuleListPanelHost", typeof(RectTransform));
-        host.transform.SetParent(RulesArea, false);
-        var rt = host.GetComponent<RectTransform>();
+        var hostGO = new GameObject("RuleListPanelHost", typeof(RectTransform));
+        hostGO.transform.SetParent(RulesArea, false);
+        var rt = hostGO.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 0f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = Vector2.zero;
-        var hostLE = host.AddComponent<LayoutElement>();
+        var hostLE = hostGO.AddComponent<LayoutElement>();
         hostLE.flexibleHeight = 1f;
 
-        var panel = host.AddComponent<RuleListPanel>();
-        Debug.Log($"BoardSidePanel: Created RuleListPanel host '{host.name}' and attached RuleListPanel component.");
+        var panel = hostGO.AddComponent<RuleListPanel>();
+        Debug.Log($"BoardSidePanel: Created RuleListPanel hostGO '{hostGO.name}' and attached RuleListPanel component.");
 
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
@@ -442,6 +456,19 @@ public class BoardSidePanel : MonoBehaviour
             panel.Runner = Object.FindAnyObjectByType<SolverRunner>();
             Debug.Log($"BoardSidePanel: Wired RuleListPanel.Runner fallback={(panel.Runner!=null)}");
         }
+
+        // Ensure the newly created list is positioned immediately after the toggle host
+        try
+        {
+            var toggle = RulesArea.GetComponentInChildren<RuleTogglePanel>(true);
+            if (toggle != null)
+            {
+                int toggleIndex = toggle.transform.GetSiblingIndex();
+                int targetIndex = Mathf.Clamp(toggleIndex + 1, 0, RulesArea.childCount - 1);
+                hostGO.transform.SetSiblingIndex(targetIndex);
+            }
+        }
+        catch { }
     }
 
     private void UpdatePanelGeometry()
@@ -510,41 +537,26 @@ public class BoardSidePanel : MonoBehaviour
         float leftPixel = left;
         float widthPixels = Mathf.Max(MinWidth, canvasWidth - leftPixel - right);
         float heightPixels = Mathf.Max(0f, canvasHeight - top - bottom);
+
         // Anchor to top-left and set explicit size; position by anchoredPosition so we can align with IMGUI board top
         _panelRect.anchorMin = new Vector2(0f, 1f);
         _panelRect.anchorMax = new Vector2(0f, 1f);
-        _panelRect.pivot = new Vector2(0f, 1f);
+        _panelRect.pivot = new Vector2(0.5f, 1f);
         _panelRect.sizeDelta = new Vector2(widthPixels, heightPixels);
 
         // If we have a BoardVisualizer, align the panel top with the board's top (IMGUI uses top-left screen origin).
         if (BoardVisualizer != null)
         {
-            // BoardVisualizer.Offset is in IMGUI coordinates (top-left origin). Convert to screen point (bottom-left origin) expected by ScreenPointToLocalPointInRectangle.
+            // BoardVisualizer.Offset is in IMGUI coordinates (top-left origin).
             Vector2 boardGuiOffset = BoardVisualizer.Offset; // x,y in IMGUI (top-left)
-            // Position horizontally at the computed panel left (right edge of the board),
-            // but vertically align with the board's top (boardGuiOffset.y).
-            Vector2 screenPoint = new Vector2(leftPixel, Screen.height - boardGuiOffset.y);
+            // For a RectTransform anchored at (0,1) with pivot (0.5,1), the anchoredPosition
+            // x should be leftPixel and y should be negative boardGuiOffset.y (to move down).
+            _panelRect.anchoredPosition = new Vector2(leftPixel, -boardGuiOffset.y);
 
-            RectTransform canvasRect = TargetCanvas.transform as RectTransform;
-            Camera cam = TargetCanvas.renderMode == RenderMode.ScreenSpaceCamera ? TargetCanvas.worldCamera : null;
-            Vector3 worldPoint;
-            bool wp = RectTransformUtility.ScreenPointToWorldPointInRectangle(canvasRect, screenPoint, cam, out worldPoint);
-
-            _panelRect.anchorMin = new Vector2(0f, 1f);
-            _panelRect.anchorMax = new Vector2(0f, 1f);
-            _panelRect.pivot = new Vector2(0f, 1f);
-            _panelRect.sizeDelta = new Vector2(widthPixels, heightPixels);
-            if (wp)
-            {
-                // Position the panel's top-left pivot at the computed world point
-                _panelRect.position = worldPoint;
-            }
-
-            // Debug info
             Vector3[] corners = new Vector3[4];
             _panelRect.GetWorldCorners(corners);
             float topWorldY = corners[1].y; // top-left corner
-            Debug.Log($"BoardSidePanel: panel pixels: canvas=({canvasWidth}x{canvasHeight}) left={leftPixel} width={widthPixels} top(screen)={screenPoint.y} worldOk={wp} world={worldPoint} height={heightPixels} worldPos={_panelRect.position} topWorldY={topWorldY}");
+            Debug.Log($"BoardSidePanel: panel pixels: canvas=({canvasWidth}x{canvasHeight}) left={leftPixel} width={widthPixels} top(screen)={Screen.height - boardGuiOffset.y} height={heightPixels} worldPos={_panelRect.position} topWorldY={topWorldY}");
         }
         else
         {

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -26,7 +25,7 @@ public class RuleListPanel : MonoBehaviour
 
     private System.Collections.IEnumerator Start()
     {
-        if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
+        if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         if (Runner == null)
         {
             Debug.LogWarning("RuleListPanel: No SolverRunner found in scene.");
@@ -41,9 +40,9 @@ public class RuleListPanel : MonoBehaviour
         }
 
         // Create a simple vertical panel under this GameObject to host rule rows
-        var panelRoot = new GameObject("RuleListRoot", typeof(RectTransform));
-        panelRoot.transform.SetParent(transform, false);
-        var rt = panelRoot.GetComponent<RectTransform>();
+        var ruleListRootGO = new GameObject("RuleListRoot", typeof(RectTransform));
+        ruleListRootGO.transform.SetParent(transform, false);
+        var rt = ruleListRootGO.GetComponent<RectTransform>();
         // Stretch the panel root to match the parent so it can take the
         // available width of the SidePanel. Constrain height via the
         // optional LayoutElement below rather than a fixed sizeDelta.
@@ -54,15 +53,15 @@ public class RuleListPanel : MonoBehaviour
         rt.offsetMin = Vector2.zero;
         rt.offsetMax = Vector2.zero;
         // Add a LayoutElement so callers can limit height if desired
-        var panelLE = panelRoot.AddComponent<LayoutElement>();
+        var panelLE = ruleListRootGO.AddComponent<LayoutElement>();
         panelLE.preferredHeight = MaxHeight;
         panelLE.flexibleHeight = 1f;
 
-        var bg = panelRoot.AddComponent<Image>();
+        var bg = ruleListRootGO.AddComponent<Image>();
         bg.color = new Color(0f, 0f, 0f, 0.45f);
 
         var scrollGO = new GameObject("Scroll", typeof(RectTransform));
-        scrollGO.transform.SetParent(panelRoot.transform, false);
+        scrollGO.transform.SetParent(ruleListRootGO.transform, false);
         var scroll = scrollGO.AddComponent<ScrollRect>();
         var scrollRT = scrollGO.GetComponent<RectTransform>();
         scrollRT.anchorMin = Vector2.zero;
@@ -70,37 +69,37 @@ public class RuleListPanel : MonoBehaviour
         scrollRT.offsetMin = new Vector2(6, 6);
         scrollRT.offsetMax = new Vector2(-6, -6);
 
-        var viewport = new GameObject("Viewport", typeof(RectTransform));
-        viewport.transform.SetParent(scrollGO.transform, false);
-        var vpRT = viewport.GetComponent<RectTransform>();
+        var viewportGO = new GameObject("Viewport", typeof(RectTransform));
+        viewportGO.transform.SetParent(scrollGO.transform, false);
+        var vpRT = viewportGO.GetComponent<RectTransform>();
         vpRT.anchorMin = Vector2.zero;
         vpRT.anchorMax = Vector2.one;
         vpRT.offsetMin = Vector2.zero;
         vpRT.offsetMax = Vector2.zero;
-        var vpImg = viewport.AddComponent<Image>();
+        var vpImg = viewportGO.AddComponent<Image>();
         vpImg.color = new Color(0f, 0f, 0f, 0f);
         vpImg.raycastTarget = true;
 
-        var content = new GameObject("Content", typeof(RectTransform));
-        content.transform.SetParent(viewport.transform, false);
-        var contentRT = content.GetComponent<RectTransform>();
+        var contentGO = new GameObject("Content", typeof(RectTransform));
+        contentGO.transform.SetParent(viewportGO.transform, false);
+        var contentRT = contentGO.GetComponent<RectTransform>();
         contentRT.anchorMin = new Vector2(0, 1);
         contentRT.anchorMax = new Vector2(1, 1);
         contentRT.pivot = new Vector2(0.5f, 1);
         contentRT.anchoredPosition = Vector2.zero;
-        var vlg = content.AddComponent<VerticalLayoutGroup>();
+        var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
         vlg.childControlHeight = true;
         vlg.childControlWidth = true;
         vlg.childForceExpandHeight = false;
         vlg.spacing = 4;
 
-        var csf = content.AddComponent<ContentSizeFitter>();
+        var csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         scroll.content = contentRT;
         scroll.viewport = vpRT;
 
-        _contentRoot = content.transform;
+        _contentRoot = contentGO.transform;
 
         // initial build
         BuildList();
@@ -153,26 +152,26 @@ public class RuleListPanel : MonoBehaviour
 
     private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview)
     {
-        var go = new GameObject(rule.GetType().Name + "_Row", typeof(RectTransform));
-        go.transform.SetParent(parent, false);
-        var rt = go.GetComponent<RectTransform>();
+        var ruleGO = new GameObject(rule.GetType().Name + "_Row", typeof(RectTransform));
+        ruleGO.transform.SetParent(parent, false);
+        var rt = ruleGO.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 1f);
         // Let the VerticalLayoutGroup control horizontal sizing; provide a preferred height.
         // If we have a description preview, increase the preferred height so the
         // description fits inside the same row instead of spilling underneath.
-        var le = go.AddComponent<LayoutElement>();
+        var le = ruleGO.AddComponent<LayoutElement>();
         bool hasDesc = (preview != null && !string.IsNullOrEmpty(preview.Description));
         le.preferredHeight = hasDesc ? 48f : 28f;
 
-        var btnImg = go.AddComponent<Image>();
+        var btnImg = ruleGO.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
-        var button = go.AddComponent<Button>();
+        var button = ruleGO.AddComponent<Button>();
 
         // Label
         var labelGO = new GameObject("Label", typeof(RectTransform));
-        labelGO.transform.SetParent(go.transform, false);
+        labelGO.transform.SetParent(ruleGO.transform, false);
         var label = labelGO.AddComponent<Text>();
         label.text = rule.Name + " (" + rule.GetType().Name + ")";
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
@@ -203,7 +202,7 @@ public class RuleListPanel : MonoBehaviour
         button.onClick.AddListener(() => { Runner.RunRule(rule); BuildList(); });
 
         // add hover preview via EventTrigger
-        var trigger = go.AddComponent<EventTrigger>();
+        var trigger = ruleGO.AddComponent<EventTrigger>();
         var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
         entryEnter.callback.AddListener((data) => { Runner.PreviewRule(rule); });
         trigger.triggers.Add(entryEnter);
@@ -215,7 +214,7 @@ public class RuleListPanel : MonoBehaviour
         if (hasDesc)
         {
             var descGO = new GameObject("Desc", typeof(RectTransform));
-            descGO.transform.SetParent(go.transform, false);
+            descGO.transform.SetParent(ruleGO.transform, false);
             var desc = descGO.AddComponent<Text>();
             desc.text = preview.Description;
             desc.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
