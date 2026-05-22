@@ -41,7 +41,7 @@ namespace Sudoku.Solver.Rules
             }
         }
 
-        public string Name => "Y-Wing Rectangle";
+        public string Name => "Y-Wing";
 
         public Difficulty Difficulty => Difficulty.Medium;
 

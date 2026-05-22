@@ -29,13 +29,55 @@ public class RuleTogglePanel : MonoBehaviour
     public Vector2 SidePanelOffset = Vector2.zero;
 
     private RuleRegistry _registry;
+
+    /**
+     * Simplified Start: Validate runner/registry, build panel, then finalize layout.
+     */
     private System.Collections.IEnumerator Start()
+    {
+        if (!InitRunnerAndRegistry()) yield break;
+
+        var panelRootGO = this.gameObject;
+        var panelRootRT = EnsureRectTransform(panelRootGO);
+
+        float rectHeight, rectWidth;
+        ConfigurePanelRoot(panelRootRT, out rectHeight, out rectWidth);
+        ConfigureAppearance(panelRootGO, rectHeight, rectWidth);
+
+        var togglesParent = EnsureTogglesContainer(panelRootGO);
+
+        // Remove designer-time objects under any Viewport child (keep Content)
+        var viewport = FindChildRecursive(panelRootGO.transform, "Viewport");
+        if (viewport != null)
+        {
+            for (int i = viewport.childCount - 1; i >= 0; --i)
+            {
+                var child = viewport.GetChild(i);
+                if (child.name == "Content") continue;
+                if (Application.isPlaying) Destroy(child.gameObject);
+                else DestroyImmediate(child.gameObject);
+                Debug.Log($"RuleTogglePanel: Removed design-time object '{child.name}' under Viewport.");
+            }
+        }
+
+        var expectedNames = BuildToggles(togglesParent);
+        CleanupExtraToggles(togglesParent, expectedNames);
+
+        // Allow layout to settle then finalize horizontal sizing
+        yield return null;
+        FinalizeLayout(panelRootGO, panelRootRT, rectWidth);
+        AlignWithSidePanel(panelRootGO, panelRootRT);
+    }
+
+    // --- Helper methods ---
+
+    private bool InitRunnerAndRegistry()
     {
         if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         if (Runner == null)
         {
             Debug.LogWarning("RuleTogglePanel: No SolverRunner found in scene.");
-            yield break;
+            return false;
         }
 
         Runner.EnsureEngine();
@@ -43,24 +85,36 @@ public class RuleTogglePanel : MonoBehaviour
         if (_registry == null)
         {
             Debug.LogWarning("RuleTogglePanel: Runner did not provide a RuleRegistry.");
-            yield break;
+            return false;
         }
 
-        // Use the GameObject this component is attached to as the panel root
-        GameObject panelRootGO = this.gameObject;
-        panelRootGO.name = "RuleTogglePanelRoot";
-        RectTransform panelRootRT = panelRootGO.GetComponent<RectTransform>();
-        if (panelRootRT == null) panelRootRT = panelRootGO.AddComponent<RectTransform>();
-        panelRootRT.anchorMin = new Vector2(0f, 1f);
-        panelRootRT.anchorMax = new Vector2(0f, 1f);
-        panelRootRT.pivot = new Vector2(0f, 1f);
-        panelRootRT.anchoredPosition = new Vector2(Padding, -Padding);
-        float CalculatedHeight = 26f + 4f + (28f + 2f) * _registry.GetRulesWithStatus().Count + 4f;
-        float rectHeight = Mathf.Min(MaxHeight, CalculatedHeight);
-        float rectWidth = MaxWidth;
+        return true;
+    }
+
+    private RectTransform EnsureRectTransform(GameObject go)
+    {
+        var rt = go.GetComponent<RectTransform>();
+        if (rt == null) rt = go.AddComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(Padding, -Padding);
+        return rt;
+    }
+
+    private void ConfigurePanelRoot(RectTransform panelRootRT, out float rectHeight, out float rectWidth)
+    {
+        int count = 0;
+        try { count = _registry.GetRulesWithStatus().Count; } catch { count = 0; }
+        float CalculatedHeight = 26f + 4f + (28f + 2f) * count + 4f;
+        rectHeight = Mathf.Min(MaxHeight, CalculatedHeight);
+        rectWidth = MaxWidth;
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
+    }
 
+    private void ConfigureAppearance(GameObject panelRootGO, float rectHeight, float rectWidth)
+    {
         var panelImg = panelRootGO.GetComponent<Image>();
         if (panelImg == null) panelImg = panelRootGO.AddComponent<Image>();
         panelImg.color = new Color(0f, 0f, 0f, 0.5f);
@@ -75,6 +129,7 @@ public class RuleTogglePanel : MonoBehaviour
         rootLE.preferredHeight = rectHeight;
         rootLE.preferredWidth = rectWidth;
         rootLE.flexibleWidth = 0f;
+
         var rootLayout = panelRootGO.GetComponent<VerticalLayoutGroup>();
         if (rootLayout == null) rootLayout = panelRootGO.AddComponent<VerticalLayoutGroup>();
         rootLayout.childControlHeight = true;
@@ -85,7 +140,11 @@ public class RuleTogglePanel : MonoBehaviour
         rootLayout.spacing = 4;
         rootLayout.padding = new RectOffset(4, 4, 4, 4);
 
-        // Header (reuse if already present in-scene)
+        EnsureHeader(panelRootGO);
+    }
+
+    private void EnsureHeader(GameObject panelRootGO)
+    {
         Transform headerTrans = panelRootGO.transform.Find("Header");
         GameObject headerGO;
         Text headerText;
@@ -132,8 +191,10 @@ public class RuleTogglePanel : MonoBehaviour
         if (headerLayout == null) headerLayout = headerGO.AddComponent<LayoutElement>();
         headerLayout.preferredHeight = 26f;
         headerLayout.flexibleWidth = 1f;
+    }
 
-        // RuleToggles wrapper (reuse if already present in-scene)
+    private Transform EnsureTogglesContainer(GameObject panelRootGO)
+    {
         Transform togglesTrans = panelRootGO.transform.Find("RuleToggles");
         GameObject RuleTogglesGO;
         if (togglesTrans != null)
@@ -146,34 +207,61 @@ public class RuleTogglePanel : MonoBehaviour
             RuleTogglesGO.transform.SetParent(panelRootGO.transform, false);
         }
 
-        // Ensure the wrapper expands to fill remaining vertical space
         var RuleTogglesLE = RuleTogglesGO.GetComponent<LayoutElement>();
         if (RuleTogglesLE == null) RuleTogglesLE = RuleTogglesGO.AddComponent<LayoutElement>();
         RuleTogglesLE.flexibleHeight = 1f;
 
-        // Prefer designer-provided Content if present; do not create or mutate ScrollRect/Viewport visuals at runtime.
-        Transform contentTransform = RuleTogglesGO.transform.Find("ScrollArea/Viewport/Content");
-        RectTransform contentRT = contentTransform != null ? contentTransform.GetComponent<RectTransform>() : null;
-        Transform togglesParent = contentTransform != null ? contentTransform : RuleTogglesGO.transform;
-
-        // Move any legacy children (designer-placed toggles) into the scroll content so they are visible at the top
-        if (contentTransform != null)
+        // Designer-provided Content may be a direct child or nested under a Scroll/Viewport.
+        // Prefer reusing any existing descendant named "Content" rather than creating
+        // a new one (which caused duplicate Content folders when designers nest it).
+        Transform contentTransform = RuleTogglesGO.transform.Find("Content");
+        if (contentTransform == null)
         {
-            var legacy = new System.Collections.Generic.List<Transform>();
-            for (int i = RuleTogglesGO.transform.childCount - 1; i >= 0; --i)
-            {
-                var c = RuleTogglesGO.transform.GetChild(i);
-                if (c.name == "ScrollArea") continue;
-                legacy.Add(c);
-            }
-            for (int i = legacy.Count - 1; i >= 0; --i)
-            {
-                var c = legacy[i];
-                if (c.name == "PlaceholderToggle") continue;
-                c.SetParent(contentTransform, false);
-            }
+            contentTransform = FindChildRecursive(RuleTogglesGO.transform, "Content");
         }
 
+        if (contentTransform == null)
+        {
+            var createdContent = new GameObject("Content", typeof(RectTransform));
+            createdContent.transform.SetParent(RuleTogglesGO.transform, false);
+            contentTransform = createdContent.transform;
+            var contentVlg = createdContent.AddComponent<VerticalLayoutGroup>();
+            contentVlg.childForceExpandHeight = false;
+            contentVlg.childControlHeight = true;
+            contentVlg.childControlWidth = true;
+            contentVlg.childAlignment = TextAnchor.UpperLeft;
+            contentVlg.spacing = 2f;
+            contentVlg.padding = new RectOffset(0,0,0,0);
+            var csf = createdContent.AddComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+        else
+        {
+            // Update designer-provided Content to ensure it has the expected layout
+            var existingGO = contentTransform.gameObject;
+            var existingVlg = existingGO.GetComponent<VerticalLayoutGroup>();
+            if (existingVlg == null)
+            {
+                existingVlg = existingGO.AddComponent<VerticalLayoutGroup>();
+            }
+            existingVlg.childForceExpandHeight = false;
+            existingVlg.childControlHeight = true;
+            existingVlg.childControlWidth = true;
+            existingVlg.childAlignment = TextAnchor.UpperLeft;
+            existingVlg.spacing = 2f;
+            existingVlg.padding = new RectOffset(0,0,0,0);
+
+            var csf = existingGO.GetComponent<ContentSizeFitter>();
+            if (csf == null) csf = existingGO.AddComponent<ContentSizeFitter>();
+            csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+
+        return contentTransform;
+    }
+
+    private System.Collections.Generic.HashSet<string> BuildToggles(Transform togglesParent)
+    {
+        var expectedNames = new System.Collections.Generic.HashSet<string>();
         var rules = new List<(ISudokuRule rule, bool enabled)>();
         try
         {
@@ -183,21 +271,17 @@ public class RuleTogglePanel : MonoBehaviour
         {
             Debug.LogError($"RuleTogglePanel: GetRulesWithStatus threw: {ex.Message}");
         }
-        int created = 0;
-        var expectedNames = new System.Collections.Generic.HashSet<string>();
+
         foreach (var entry in rules)
         {
             string ruleTypeName = entry.rule.GetType().Name;
             string toggleName = ruleTypeName + "_Toggle";
             expectedNames.Add(toggleName);
 
-            // If a static toggle exists in the scene (designer-placed), reuse it instead of creating a new one
-            // Search in the new content location first (if present), then fall back to legacy location.
             var existing = togglesParent.Find(toggleName);
-            if (existing == null) existing = RuleTogglesGO.transform.Find(toggleName);
             if (existing != null)
             {
-                // Find toggle and label children
+                // reuse designer-provided row when possible
                 var toggleTransform = existing.transform.Find("Toggle");
                 Toggle toggle = null;
                 if (toggleTransform != null) toggle = toggleTransform.GetComponent<Toggle>();
@@ -232,7 +316,6 @@ public class RuleTogglePanel : MonoBehaviour
 
                 if (toggle != null)
                 {
-                    // Clear prior listeners to avoid duplicate handlers
                     toggle.onValueChanged.RemoveAllListeners();
                     toggle.isOn = entry.enabled;
                     string capturedName = ruleTypeName;
@@ -242,19 +325,16 @@ public class RuleTogglePanel : MonoBehaviour
                         if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
                         Debug.Log($"Rule '{capturedName}' enabled={val}");
                     });
-                    // Hook up row button if present to flip the toggle
                     var rowButton = existing.GetComponent<Button>();
                     if (rowButton != null)
                     {
                         rowButton.onClick.RemoveAllListeners();
                         rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
                     }
-                    // Initialize graphic visibility
                     if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(entry.enabled);
                 }
                 else
                 {
-                    // If no Toggle component exists, create the runtime one to match CreateRuleToggle
                     CreateRuleToggle(togglesParent, entry.rule, entry.enabled);
                 }
             }
@@ -262,11 +342,13 @@ public class RuleTogglePanel : MonoBehaviour
             {
                 CreateRuleToggle(togglesParent, entry.rule, entry.enabled);
             }
-            created++;
         }
 
-        // Remove any extra toggles that are present in the content but no longer correspond to registered rules
-        var removalParent = togglesParent;
+        return expectedNames;
+    }
+
+    private void CleanupExtraToggles(Transform removalParent, System.Collections.Generic.HashSet<string> expectedNames)
+    {
         for (int i = removalParent.childCount - 1; i >= 0; --i)
         {
             var child = removalParent.GetChild(i);
@@ -278,43 +360,58 @@ public class RuleTogglePanel : MonoBehaviour
                 Debug.Log($"RuleTogglePanel: Removed extra toggle '{child.name}' from scene (not in registry).");
             }
         }
+    }
 
-        // Another frame to allow parent layout groups to run, then re-assert our fixed width
-        yield return null;
+    private void FinalizeLayout(GameObject panelRootGO, RectTransform panelRootRT, float rectWidth)
+    {
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
-        rootLE.preferredWidth = rectWidth;
-        rootLE.minWidth = rectWidth;
-
-        // If we're hosted somewhere under SidePanel, let the SidePanel top-left be (0,0)
-        if (SidePanelOffset != Vector2.zero)
+        var rootLE = panelRootGO.GetComponent<LayoutElement>();
+        if (rootLE != null)
         {
-            Transform cur = panelRootGO.transform;
-            Transform side = null;
-            while (cur != null)
+            rootLE.preferredWidth = rectWidth;
+            rootLE.minWidth = rectWidth;
+        }
+    }
+
+    private void AlignWithSidePanel(GameObject panelRootGO, RectTransform panelRootRT)
+    {
+        if (SidePanelOffset == Vector2.zero) return;
+        Transform cur = panelRootGO.transform;
+        Transform side = null;
+        while (cur != null)
+        {
+            if (cur.name == "SidePanel") { side = cur; break; }
+            cur = cur.parent;
+        }
+        if (side != null)
+        {
+            var sideRT = side.GetComponent<RectTransform>();
+            var parentRT = panelRootGO.transform.parent as RectTransform;
+            if (sideRT != null && parentRT != null)
             {
-                if (cur.name == "SidePanel") { side = cur; break; }
-                cur = cur.parent;
-            }
-            if (side != null)
-            {
-                var sideRT = side.GetComponent<RectTransform>();
-                var parentRT = panelRootGO.transform.parent as RectTransform;
-                if (sideRT != null && parentRT != null)
-                {
-                    Vector3[] corners = new Vector3[4];
-                    sideRT.GetWorldCorners(corners);
-                    // Unity corners: 0=bottom-left, 1=top-left, 2=top-right, 3=bottom-right
-                    Vector3 topLeftWorld = corners[1];
-                    // Convert world top-left into parent's local coordinates
-                    Vector2 topLeftLocal;
-                    Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(null, topLeftWorld);
-                    RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRT, screenPoint, null, out topLeftLocal);
-                    // SidePanelOffset: x = right positive, y = down positive
-                    Vector2 desired = topLeftLocal + new Vector2(SidePanelOffset.x, -SidePanelOffset.y);
-                    panelRootRT.anchoredPosition = desired;
-                }
+                Vector3[] corners = new Vector3[4];
+                sideRT.GetWorldCorners(corners);
+                Vector3 topLeftWorld = corners[1];
+                Vector2 topLeftLocal;
+                Vector2 screenPoint = RectTransformUtility.WorldToScreenPoint(null, topLeftWorld);
+                RectTransformUtility.ScreenPointToLocalPointInRectangle(parentRT, screenPoint, null, out topLeftLocal);
+                Vector2 desired = topLeftLocal + new Vector2(SidePanelOffset.x, -SidePanelOffset.y);
+                panelRootRT.anchoredPosition = desired;
             }
         }
+    }
+
+    private Transform FindChildRecursive(Transform parent, string name)
+    {
+        if (parent == null) return null;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            var c = parent.GetChild(i);
+            if (string.Equals(c.name, name, System.StringComparison.OrdinalIgnoreCase)) return c;
+            var r = FindChildRecursive(c, name);
+            if (r != null) return r;
+        }
+        return null;
     }
 
     private void CreateRuleToggle(Transform parent, ISudokuRule rule, bool enabled)
@@ -327,12 +424,9 @@ public class RuleTogglePanel : MonoBehaviour
 
         var h = ruleGO.AddComponent<HorizontalLayoutGroup>();
         h.childForceExpandHeight = false;
-        // Let the layout control child widths so the label can be given the
-        // remaining horizontal space and properly truncate/resize instead of wrapping.
         h.childControlWidth = true;
         h.childForceExpandWidth = false;
         h.spacing = 6f;
-        // Make the whole row clickable: add an invisible background Image and Button
         var rowBg = ruleGO.AddComponent<Image>();
         rowBg.color = new Color(0f, 0f, 0f, 0f);
         var rowButton = ruleGO.AddComponent<Button>();
@@ -342,17 +436,13 @@ public class RuleTogglePanel : MonoBehaviour
         toggleGO.transform.SetParent(ruleGO.transform, false);
         var toggle = toggleGO.AddComponent<Toggle>();
         var bgImg = toggleGO.AddComponent<Image>();
-        // Prefer a small fixed size so layout doesn't stretch this element vertically
         var toggleRect = toggleGO.GetComponent<RectTransform>();
         toggleRect.sizeDelta = new Vector2(26f, 26f);
-        // Provide a LayoutElement so HorizontalLayoutGroup can allocate a fixed
-        // width for the toggle when childControlWidth == true.
         var toggleLE = toggleGO.AddComponent<LayoutElement>();
         toggleLE.preferredWidth = 26f;
         toggleLE.preferredHeight = 26f;
         bgImg.color = new Color(1f, 1f, 1f, 0.06f);
         toggle.targetGraphic = bgImg;
-        // Toggle should not be directly clickable; the row Button handles clicks.
         toggle.interactable = false;
         bgImg.raycastTarget = false;
 
@@ -364,11 +454,9 @@ public class RuleTogglePanel : MonoBehaviour
         ckText.fontSize = 14;
         ckText.color = Color.white;
         ckText.alignment = TextAnchor.MiddleCenter;
-        // Don't let the checkmark or label block pointer events
         ckText.raycastTarget = false;
         var ckRect = checkMarkGO.GetComponent<RectTransform>();
         ckRect.sizeDelta = new Vector2(18f, 18f);
-        // Use the Text as the toggle's graphic so the checkmark shows/hides with isOn
         toggle.graphic = ckText;
 
         var labelGO = new GameObject("Label", typeof(RectTransform));
@@ -399,9 +487,7 @@ public class RuleTogglePanel : MonoBehaviour
             if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
             Debug.Log($"Rule '{ruleTypeName}' enabled={val}");
         });
-        // Row click flips the toggle state; onValueChanged handles registry update and visuals.
         rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
-        // Initialize graphic visibility
         if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(enabled);
         Debug.Log($"RuleTogglePanel: Added toggle for '{ruleTypeName}' (initially {(enabled?"ON":"OFF")}).");
 
@@ -410,8 +496,6 @@ public class RuleTogglePanel : MonoBehaviour
     private string SplitPascalCase(string input)
     {
         if (string.IsNullOrEmpty(input)) return input;
-        // Insert spaces before capital letters, but avoid splitting acronyms badly.
-        // This heuristic yields: HiddenSingles -> Hidden Singles, XYZRule -> XYZ Rule
         var withSpaces = Regex.Replace(input, "(?<!^)(?=[A-Z][a-z])", " ");
         withSpaces = Regex.Replace(withSpaces, "(?<!^)(?=[A-Z]{2,})", " ");
         return withSpaces.Replace('_', ' ');
