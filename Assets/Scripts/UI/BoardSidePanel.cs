@@ -357,10 +357,10 @@ public class BoardSidePanel : MonoBehaviour
     {
         if (RulesArea == null) return;
 
-        var all = Object.FindObjectsByType<RuleListPanel>();
+        var all = Object.FindObjectsByType<ApplyRulePanel>();
         if (all != null && all.Length > 0)
         {
-            RuleListPanel chosen = null;
+            ApplyRulePanel chosen = null;
             foreach (var p in all)
             {
                 var cur = p.transform;
@@ -393,7 +393,7 @@ public class BoardSidePanel : MonoBehaviour
                         if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
                         le.flexibleHeight = 1f;
                     }
-                    Debug.Log($"BoardSidePanel: Reparented existing RuleListPanel '{chosen.gameObject.name}' into RulesArea.");
+                    Debug.Log($"BoardSidePanel: Reparented existing ApplyRulePanel '{chosen.gameObject.name}' into RulesArea.");
                 }
             
             // Ensure the RuleListPanel sits immediately after the RuleTogglePanel in the
@@ -414,19 +414,19 @@ public class BoardSidePanel : MonoBehaviour
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
                 chosen.Runner = BoardVisualizer.Runner;
-                Debug.Log("BoardSidePanel: Wired RuleListPanel.Runner from BoardVisualizer.Runner");
+                Debug.Log("BoardSidePanel: Wired ApplyRulePanel.Runner from BoardVisualizer.Runner");
             }
             else
             {
                 chosen.Runner = Object.FindAnyObjectByType<SolverRunner>();
-                Debug.Log($"BoardSidePanel: Wired RuleListPanel.Runner fallback={(chosen.Runner!=null)}");
+                Debug.Log($"BoardSidePanel: Wired ApplyRulePanel.Runner fallback={(chosen.Runner!=null)}");
             }
 
             // Destroy duplicates
             for (int i = 0; i < all.Length; i++)
             {
                 if (all[i] == chosen) continue;
-                Debug.Log($"BoardSidePanel: Removing extra RuleListPanel instance '{all[i].gameObject.name}'");
+                Debug.Log($"BoardSidePanel: Removing extra ApplyRulePanel instance '{all[i].gameObject.name}'");
                 Destroy(all[i].gameObject);
             }
             return;
@@ -443,18 +443,18 @@ public class BoardSidePanel : MonoBehaviour
         var hostLE = hostGO.AddComponent<LayoutElement>();
         hostLE.flexibleHeight = 1f;
 
-        var panel = hostGO.AddComponent<RuleListPanel>();
-        Debug.Log($"BoardSidePanel: Created RuleListPanel hostGO '{hostGO.name}' and attached RuleListPanel component.");
+        var panel = hostGO.AddComponent<ApplyRulePanel>();
+        Debug.Log($"BoardSidePanel: Created ApplyRulePanel hostGO '{hostGO.name}' and attached ApplyRulePanel component.");
 
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
             panel.Runner = BoardVisualizer.Runner;
-            Debug.Log("BoardSidePanel: Wired RuleListPanel.Runner from BoardVisualizer.Runner");
+            Debug.Log("BoardSidePanel: Wired ApplyRulePanel.Runner from BoardVisualizer.Runner");
         }
         else
         {
             panel.Runner = Object.FindAnyObjectByType<SolverRunner>();
-            Debug.Log($"BoardSidePanel: Wired RuleListPanel.Runner fallback={(panel.Runner!=null)}");
+            Debug.Log($"BoardSidePanel: Wired ApplyRulePanel.Runner fallback={(panel.Runner!=null)}");
         }
 
         // Ensure the newly created list is positioned immediately after the toggle host

@@ -139,58 +139,6 @@ public class RuleTogglePanel : MonoBehaviour
         rootLayout.childAlignment = TextAnchor.UpperLeft;
         rootLayout.spacing = 4;
         rootLayout.padding = new RectOffset(4, 4, 4, 4);
-
-        EnsureHeader(panelRootGO);
-    }
-
-    private void EnsureHeader(GameObject panelRootGO)
-    {
-        Transform headerTrans = panelRootGO.transform.Find("Header");
-        GameObject headerGO;
-        Text headerText;
-        if (headerTrans != null)
-        {
-            headerGO = headerTrans.gameObject;
-            headerText = headerGO.GetComponent<Text>();
-            var headerTmp = headerGO.GetComponent<TextMeshProUGUI>();
-            if (headerTmp != null)
-            {
-                headerTmp.text = "Rules";
-                headerTmp.alignment = TMPro.TextAlignmentOptions.Center;
-                headerTmp.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
-                headerTmp.enableAutoSizing = false;
-                headerTmp.fontSize = 16;
-                headerTmp.color = Color.white;
-            }
-            else
-            {
-                if (headerText == null) headerText = headerGO.AddComponent<Text>();
-                headerText.text = "Rules";
-                headerText.font = GetSafeBuiltinFont("Arial.ttf");
-                headerText.fontSize = 16;
-                headerText.color = Color.white;
-                headerText.alignment = TextAnchor.MiddleCenter;
-                headerText.horizontalOverflow = HorizontalWrapMode.Overflow;
-                headerText.verticalOverflow = VerticalWrapMode.Truncate;
-            }
-        }
-        else
-        {
-            headerGO = new GameObject("Header", typeof(RectTransform));
-            headerGO.transform.SetParent(panelRootGO.transform, false);
-            headerText = headerGO.AddComponent<Text>();
-            headerText.text = "Rules";
-            headerText.font = GetSafeBuiltinFont("Arial.ttf");
-            headerText.fontSize = 16;
-            headerText.color = Color.white;
-            headerText.alignment = TextAnchor.MiddleCenter;
-            headerText.horizontalOverflow = HorizontalWrapMode.Overflow;
-            headerText.verticalOverflow = VerticalWrapMode.Truncate;
-        }
-        var headerLayout = headerGO.GetComponent<LayoutElement>();
-        if (headerLayout == null) headerLayout = headerGO.AddComponent<LayoutElement>();
-        headerLayout.preferredHeight = 26f;
-        headerLayout.flexibleWidth = 1f;
     }
 
     private Transform EnsureTogglesContainer(GameObject panelRootGO)

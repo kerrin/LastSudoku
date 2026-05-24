@@ -9,7 +9,7 @@ using Sudoku.Models;
  * UI panel that lists all currently enabled rules that can be applied to
  * the current board. Hovering a row previews the rule; clicking runs it.
  */
-public class RuleListPanel : MonoBehaviour
+public class ApplyRulePanel : MonoBehaviour
 {
     public SolverRunner Runner;
 
@@ -28,7 +28,7 @@ public class RuleListPanel : MonoBehaviour
         if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         if (Runner == null)
         {
-            Debug.LogWarning("RuleListPanel: No SolverRunner found in scene.");
+            Debug.LogWarning("ApplyRulePanel: No SolverRunner found in scene.");
             yield break;
         }
         
@@ -36,7 +36,7 @@ public class RuleListPanel : MonoBehaviour
         _registry = Runner.Registry;
         if (_registry == null)
         {
-            Debug.LogWarning("RuleListPanel: Runner has no RuleRegistry.");
+            Debug.LogWarning("ApplyRulePanel: Runner has no RuleRegistry.");
             yield break;
         }
 
@@ -148,7 +148,7 @@ public class RuleListPanel : MonoBehaviour
             created++;
         }
         // Optionally add a header summary
-        Debug.Log($"RuleListPanel: built list with {created} applicable rule(s)");
+        Debug.Log($"ApplyRulePanel: built list with {created} applicable rule(s)");
     }
 
     private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview)
