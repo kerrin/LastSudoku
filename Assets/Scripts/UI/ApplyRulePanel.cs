@@ -40,10 +40,21 @@ public class ApplyRulePanel : MonoBehaviour
             yield break;
         }
 
-        // Create a simple vertical panel under this GameObject to host rule rows
-        var ruleListRootGO = new GameObject("RuleListRoot", typeof(RectTransform));
-        ruleListRootGO.transform.SetParent(transform, false);
+        // Use an existing designer-created child named "ApplyRules" when present
+        GameObject ruleListRootGO = null;
+        var existing = transform.Find("ApplyRules");
+        if (existing != null)
+        {
+            ruleListRootGO = existing.gameObject;
+        }
+        else
+        {
+            ruleListRootGO = new GameObject("ApplyRules", typeof(RectTransform));
+            ruleListRootGO.transform.SetParent(transform, false);
+        }
+
         var rt = ruleListRootGO.GetComponent<RectTransform>();
+        if (rt == null) rt = ruleListRootGO.AddComponent<RectTransform>();
         // Stretch the panel root to match the parent so it can take the
         // available width of the SidePanel. Constrain height via the
         // optional LayoutElement below rather than a fixed sizeDelta.
@@ -53,48 +64,117 @@ public class ApplyRulePanel : MonoBehaviour
         rt.anchoredPosition = Vector2.zero;
         rt.offsetMin = Vector2.zero;
         rt.offsetMax = Vector2.zero;
-        // Add a LayoutElement so callers can limit height if desired
-        var panelLE = ruleListRootGO.AddComponent<LayoutElement>();
+
+        // Ensure a LayoutElement so the parent VerticalLayoutGroup can size the
+        // header + rules area correctly. Prefer flexibleHeight so it expands.
+        var panelLE = ruleListRootGO.GetComponent<LayoutElement>();
+        if (panelLE == null) panelLE = ruleListRootGO.AddComponent<LayoutElement>();
         panelLE.preferredHeight = MaxHeight;
         panelLE.flexibleHeight = 1f;
 
-        var bg = ruleListRootGO.AddComponent<Image>();
+        var bg = ruleListRootGO.GetComponent<Image>();
+        if (bg == null) bg = ruleListRootGO.AddComponent<Image>();
         bg.color = new Color(0f, 0f, 0f, 0.45f);
 
-        var scrollGO = new GameObject("Scroll", typeof(RectTransform));
-        scrollGO.transform.SetParent(ruleListRootGO.transform, false);
-        var scroll = scrollGO.AddComponent<ScrollRect>();
-        var scrollRT = scrollGO.GetComponent<RectTransform>();
+        // Reuse designer-time hierarchy when present: ScrollArea (or Scroll) -> Viewport (or ViewPort) -> Content
+        // Try exact known names first, then fall back to a recursive search to handle naming/case differences.
+        Transform scrollTrans = ruleListRootGO.transform.Find("ScrollArea");
+        if (scrollTrans == null) scrollTrans = ruleListRootGO.transform.Find("Scroll");
+        if (scrollTrans == null) scrollTrans = FindChildRecursive(ruleListRootGO.transform, "ScrollArea");
+        if (scrollTrans == null) scrollTrans = FindChildRecursive(ruleListRootGO.transform, "Scroll");
+        GameObject scrollGO;
+        ScrollRect scroll;
+        RectTransform scrollRT;
+        if (scrollTrans != null)
+        {
+            scrollGO = scrollTrans.gameObject;
+            scroll = scrollGO.GetComponent<ScrollRect>();
+            if (scroll == null) scroll = scrollGO.AddComponent<ScrollRect>();
+            scrollRT = scrollGO.GetComponent<RectTransform>();
+        }
+        else
+        {
+            scrollGO = new GameObject("ScrollArea", typeof(RectTransform));
+            scrollGO.transform.SetParent(ruleListRootGO.transform, false);
+            scroll = scrollGO.AddComponent<ScrollRect>();
+            scrollRT = scrollGO.GetComponent<RectTransform>();
+        }
         scrollRT.anchorMin = Vector2.zero;
         scrollRT.anchorMax = Vector2.one;
         scrollRT.offsetMin = new Vector2(6, 6);
         scrollRT.offsetMax = new Vector2(-6, -6);
 
-        var viewportGO = new GameObject("Viewport", typeof(RectTransform));
-        viewportGO.transform.SetParent(scrollGO.transform, false);
-        var vpRT = viewportGO.GetComponent<RectTransform>();
+        // Viewport (accept "Viewport" or "ViewPort", and search recursively)
+        Transform vpTrans = scrollGO.transform.Find("Viewport");
+        if (vpTrans == null) vpTrans = scrollGO.transform.Find("ViewPort");
+        if (vpTrans == null) vpTrans = FindChildRecursive(scrollGO.transform, "Viewport");
+        if (vpTrans == null) vpTrans = FindChildRecursive(scrollGO.transform, "ViewPort");
+        GameObject viewportGO;
+        RectTransform vpRT;
+        if (vpTrans != null)
+        {
+            viewportGO = vpTrans.gameObject;
+            vpRT = viewportGO.GetComponent<RectTransform>();
+        }
+        else
+        {
+            viewportGO = new GameObject("Viewport", typeof(RectTransform));
+            viewportGO.transform.SetParent(scrollGO.transform, false);
+            vpRT = viewportGO.GetComponent<RectTransform>();
+        }
         vpRT.anchorMin = Vector2.zero;
         vpRT.anchorMax = Vector2.one;
         vpRT.offsetMin = Vector2.zero;
         vpRT.offsetMax = Vector2.zero;
-        var vpImg = viewportGO.AddComponent<Image>();
+        var vpImg = viewportGO.GetComponent<Image>();
+        if (vpImg == null) vpImg = viewportGO.AddComponent<Image>();
         vpImg.color = new Color(0f, 0f, 0f, 0f);
         vpImg.raycastTarget = true;
 
-        var contentGO = new GameObject("Content", typeof(RectTransform));
-        contentGO.transform.SetParent(viewportGO.transform, false);
-        var contentRT = contentGO.GetComponent<RectTransform>();
+        // Content (prefer existing descendant named "Content")
+        Transform contentTrans = null;
+        // Try direct path first with common names
+        var tryPathNames = new string[] { "ScrollArea/Viewport/Content", "Scroll/Viewport/Content", "ScrollArea/ViewPort/Content", "Scroll/ViewPort/Content" };
+        foreach (var p in tryPathNames)
+        {
+            contentTrans = ruleListRootGO.transform.Find(p);
+            if (contentTrans != null) break;
+        }
+        // fallback: search under the viewport, then anywhere under the ruleListRootGO
+        if (contentTrans == null && vpTrans != null)
+        {
+            contentTrans = FindChildRecursive(vpTrans, "Content");
+        }
+        if (contentTrans == null)
+        {
+            contentTrans = FindChildRecursive(ruleListRootGO.transform, "Content");
+        }
+        GameObject contentGO;
+        RectTransform contentRT;
+        if (contentTrans != null)
+        {
+            contentGO = contentTrans.gameObject;
+            contentRT = contentGO.GetComponent<RectTransform>();
+        }
+        else
+        {
+            contentGO = new GameObject("Content", typeof(RectTransform));
+            contentGO.transform.SetParent(viewportGO.transform, false);
+            contentRT = contentGO.GetComponent<RectTransform>();
+        }
         contentRT.anchorMin = new Vector2(0, 1);
         contentRT.anchorMax = new Vector2(1, 1);
         contentRT.pivot = new Vector2(0.5f, 1);
         contentRT.anchoredPosition = Vector2.zero;
-        var vlg = contentGO.AddComponent<VerticalLayoutGroup>();
+        var vlg = contentGO.GetComponent<VerticalLayoutGroup>();
+        if (vlg == null) vlg = contentGO.AddComponent<VerticalLayoutGroup>();
         vlg.childControlHeight = true;
         vlg.childControlWidth = true;
         vlg.childForceExpandHeight = false;
         vlg.spacing = 4;
 
-        var csf = contentGO.AddComponent<ContentSizeFitter>();
+        var csf = contentGO.GetComponent<ContentSizeFitter>();
+        if (csf == null) csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         scroll.content = contentRT;
@@ -230,5 +310,18 @@ public class ApplyRulePanel : MonoBehaviour
             dRT.offsetMin = new Vector2(8f, 4f);
             dRT.offsetMax = new Vector2(-8f, -4f);
         }
+    }
+
+    private Transform FindChildRecursive(Transform parent, string name)
+    {
+        if (parent == null) return null;
+        for (int i = 0; i < parent.childCount; i++)
+        {
+            var c = parent.GetChild(i);
+            if (string.Equals(c.name, name, System.StringComparison.OrdinalIgnoreCase)) return c;
+            var r = FindChildRecursive(c, name);
+            if (r != null) return r;
+        }
+        return null;
     }
 }
