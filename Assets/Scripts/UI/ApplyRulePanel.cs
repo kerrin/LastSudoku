@@ -79,49 +79,24 @@ public class ApplyRulePanel : MonoBehaviour
         // Reuse designer-time hierarchy when present: ScrollArea (or Scroll) -> Viewport (or ViewPort) -> Content
         // Try exact known names first, then fall back to a recursive search to handle naming/case differences.
         Transform scrollTrans = ruleListRootGO.transform.Find("ScrollArea");
-        if (scrollTrans == null) scrollTrans = ruleListRootGO.transform.Find("Scroll");
-        if (scrollTrans == null) scrollTrans = FindChildRecursive(ruleListRootGO.transform, "ScrollArea");
-        if (scrollTrans == null) scrollTrans = FindChildRecursive(ruleListRootGO.transform, "Scroll");
         GameObject scrollGO;
         ScrollRect scroll;
         RectTransform scrollRT;
-        if (scrollTrans != null)
-        {
-            scrollGO = scrollTrans.gameObject;
-            scroll = scrollGO.GetComponent<ScrollRect>();
-            if (scroll == null) scroll = scrollGO.AddComponent<ScrollRect>();
-            scrollRT = scrollGO.GetComponent<RectTransform>();
-        }
-        else
-        {
-            scrollGO = new GameObject("ScrollArea", typeof(RectTransform));
-            scrollGO.transform.SetParent(ruleListRootGO.transform, false);
-            scroll = scrollGO.AddComponent<ScrollRect>();
-            scrollRT = scrollGO.GetComponent<RectTransform>();
-        }
+        scrollGO = scrollTrans.gameObject;
+        scroll = scrollGO.GetComponent<ScrollRect>();
+        scrollRT = scrollGO.GetComponent<RectTransform>();
+        
         scrollRT.anchorMin = Vector2.zero;
         scrollRT.anchorMax = Vector2.one;
         scrollRT.offsetMin = new Vector2(6, 6);
         scrollRT.offsetMax = new Vector2(-6, -6);
 
         // Viewport (accept "Viewport" or "ViewPort", and search recursively)
-        Transform vpTrans = scrollGO.transform.Find("Viewport");
-        if (vpTrans == null) vpTrans = scrollGO.transform.Find("ViewPort");
-        if (vpTrans == null) vpTrans = FindChildRecursive(scrollGO.transform, "Viewport");
-        if (vpTrans == null) vpTrans = FindChildRecursive(scrollGO.transform, "ViewPort");
+        Transform vpTrans = scrollGO.transform.Find("ViewPort");
         GameObject viewportGO;
         RectTransform vpRT;
-        if (vpTrans != null)
-        {
-            viewportGO = vpTrans.gameObject;
-            vpRT = viewportGO.GetComponent<RectTransform>();
-        }
-        else
-        {
-            viewportGO = new GameObject("Viewport", typeof(RectTransform));
-            viewportGO.transform.SetParent(scrollGO.transform, false);
-            vpRT = viewportGO.GetComponent<RectTransform>();
-        }
+        viewportGO = vpTrans.gameObject;
+        vpRT = viewportGO.GetComponent<RectTransform>();
         vpRT.anchorMin = Vector2.zero;
         vpRT.anchorMax = Vector2.one;
         vpRT.offsetMin = Vector2.zero;
@@ -134,34 +109,11 @@ public class ApplyRulePanel : MonoBehaviour
         // Content (prefer existing descendant named "Content")
         Transform contentTrans = null;
         // Try direct path first with common names
-        var tryPathNames = new string[] { "ScrollArea/Viewport/Content", "Scroll/Viewport/Content", "ScrollArea/ViewPort/Content", "Scroll/ViewPort/Content" };
-        foreach (var p in tryPathNames)
-        {
-            contentTrans = ruleListRootGO.transform.Find(p);
-            if (contentTrans != null) break;
-        }
-        // fallback: search under the viewport, then anywhere under the ruleListRootGO
-        if (contentTrans == null && vpTrans != null)
-        {
-            contentTrans = FindChildRecursive(vpTrans, "Content");
-        }
-        if (contentTrans == null)
-        {
-            contentTrans = FindChildRecursive(ruleListRootGO.transform, "Content");
-        }
+        contentTrans = ruleListRootGO.transform.Find("ScrollArea/ViewPort/Content");        
         GameObject contentGO;
         RectTransform contentRT;
-        if (contentTrans != null)
-        {
-            contentGO = contentTrans.gameObject;
-            contentRT = contentGO.GetComponent<RectTransform>();
-        }
-        else
-        {
-            contentGO = new GameObject("Content", typeof(RectTransform));
-            contentGO.transform.SetParent(viewportGO.transform, false);
-            contentRT = contentGO.GetComponent<RectTransform>();
-        }
+        contentGO = contentTrans.gameObject;
+        contentRT = contentGO.GetComponent<RectTransform>();
         contentRT.anchorMin = new Vector2(0, 1);
         contentRT.anchorMax = new Vector2(1, 1);
         contentRT.pivot = new Vector2(0.5f, 1);
