@@ -186,6 +186,11 @@ public class ApplyRulePanel : MonoBehaviour
 
     private void BuildListInternal()
     {
+        // Always add a dedicated Validate Board row so users can explicitly
+        // validate the current board and highlight conflicts. This should
+        // appear regardless of whether candidates have been initialised.
+        CreateValidateRow(_contentRoot);
+
         // If candidates have not yet been initialised, show only the Initialise
         // Candidates entry and hide other rules until it has been run.
         if (!Runner.CandidatesInitialised)
@@ -194,8 +199,6 @@ public class ApplyRulePanel : MonoBehaviour
             Debug.Log("ApplyRulePanel: showing only Initialise Candidates until it is run");
             return;
         }
-
-        // Otherwise don't show the initialise entry once it has been run; show rules.
 
         var rules = _registry.GetRulesWithStatus();
         int created = 0;
@@ -326,6 +329,57 @@ public class ApplyRulePanel : MonoBehaviour
         var entryExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
         entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
         trigger.triggers.Add(entryExit);
+    }
+
+    private void CreateValidateRow(Transform parent)
+    {
+        var ruleGO = new GameObject("ValidateBoard_Row", typeof(RectTransform));
+        ruleGO.transform.SetParent(parent, false);
+        var rt = ruleGO.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        var le = ruleGO.AddComponent<LayoutElement>();
+        le.preferredHeight = 28f;
+
+        var btnImg = ruleGO.AddComponent<Image>();
+        btnImg.color = new Color(1f, 1f, 1f, 0.02f);
+        var button = ruleGO.AddComponent<Button>();
+
+        // Label
+        var labelGO = new GameObject("Label", typeof(RectTransform));
+        labelGO.transform.SetParent(ruleGO.transform, false);
+        var label = labelGO.AddComponent<Text>();
+        label.text = "Validate Board";
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = 14;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+        var lblRT = labelGO.GetComponent<RectTransform>();
+        lblRT.anchorMin = new Vector2(0f, 0f);
+        lblRT.anchorMax = new Vector2(1f, 1f);
+        lblRT.offsetMin = new Vector2(8f, 2f);
+        lblRT.offsetMax = new Vector2(-8f, -2f);
+        var labelLE = labelGO.AddComponent<LayoutElement>();
+        labelLE.flexibleWidth = 1f;
+
+        // click runs validation and colours the row accordingly. Rebuild list
+        // afterwards so highlights reset when the board changes or other rules
+        // are applied (the list is rebuilt in those cases).
+        button.onClick.AddListener(() => {
+            if (Runner == null) return;
+            bool ok = Runner.ValidateBoard();
+            if (ok)
+            {
+                btnImg.color = new Color(0f, 0.45f, 0f, 1f); // dark green
+            }
+            else
+            {
+                btnImg.color = new Color(0.6f, 0f, 0f, 1f); // red
+            }
+        });
+
+        // No hover preview for validate row — it only acts on click.
     }
 
     private System.Collections.IEnumerator ApplyRuleCoroutine(ISudokuRule rule)

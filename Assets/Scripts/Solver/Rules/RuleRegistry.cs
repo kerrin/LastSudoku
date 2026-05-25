@@ -171,6 +171,25 @@ namespace Sudoku.Solver.Rules
                     Debug.LogWarning($"ApplyNext threw for {r.GetType().Name}: {ex.Message}");
                 }
             }
+            // No rule could be applied. As a helpful fallback, validate the
+            // board and, if invalid, return a RuleResult that highlights the
+            // conflicting cells/digit so UI visualizers can show the problem.
+            try
+            {
+                var conflicts = board.FindConflicts();
+                if (conflicts != null && conflicts.Count > 0)
+                {
+                    var rr = new RuleResult { Apply = false, Description = "Board INVALID: duplicate digits in a unit." };
+                    rr.UsedCells.AddRange(conflicts);
+                    Debug.LogError(rr.Description);
+                    return (null, rr);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"ApplyNext: validation threw: {ex.Message}");
+            }
+
             return (null, new RuleResult { Apply = false });
         }
 

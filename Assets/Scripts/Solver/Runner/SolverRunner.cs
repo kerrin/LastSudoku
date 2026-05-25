@@ -159,7 +159,14 @@ namespace Sudoku.Solver
             LastRuleResult = result;
             if (rule == null || result == null || !result.Apply)
             {
-                Debug.Log("No applicable rule found.");
+                if (result != null && result.UsedCells != null && result.UsedCells.Count > 0)
+                {
+                    Debug.Log("No applicable rule found; board validation indicates conflicts: " + result.Description + "\n" + BoardToString(_board));
+                }
+                else
+                {
+                    Debug.Log("No applicable rule found.");
+                }
                 return;
             }
             Debug.Log($"Applied '{rule.Name}': {result.Description}\n{BoardToString(_board)}");
@@ -323,14 +330,23 @@ namespace Sudoku.Solver
             }
 
             bool valid = _board.IsValid();
-            var msg = valid ? "Board is valid." : "Board is INVALID: duplicate found in a unit.";
-            Debug.Log(msg + "\n" + BoardToString(_board));
+            if (valid)
+            {
+                var msg = "Board is valid.";
+                Debug.Log(msg + "\n" + BoardToString(_board));
+                LastAppliedRule = null;
+                LastRuleResult = new RuleResult { Apply = false, Description = msg };
+                return true;
+            }
 
-            // Store a simple RuleResult-like message for UI inspection
+            // Board invalid: collect conflict details and surface them for UI highlighting
+            var conflicts = _board.FindConflicts();
+            var errMsg = "Board is INVALID: duplicate found in a unit.";
+            Debug.LogError(errMsg + "\n" + BoardToString(_board));
             LastAppliedRule = null;
-            LastRuleResult = new RuleResult { Apply = false, Description = msg };
-
-            return valid;
+            LastRuleResult = new RuleResult { Apply = false, Description = errMsg };
+            if (conflicts != null) LastRuleResult.UsedCells.AddRange(conflicts);
+            return false;
         }
 
         private string BoardToString(Board board)

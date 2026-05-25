@@ -128,5 +128,87 @@ namespace Sudoku.Solver.Rules
 
             return true;
         }
+
+        /**
+         * Find detailed conflicts in the board. Returns a list of `UsedCell`
+         * entries describing cells that violate unit uniqueness (duplicates).
+         * Each `UsedCell.Candidate` is set to the duplicated digit.
+         */
+        public static List<UsedCell> FindConflicts(this Board board)
+        {
+            var conflicts = new List<UsedCell>();
+            int size = board.Size;
+
+            // Helper to record duplicates from a mapping digit -> list of cells
+            void RecordDuplicates(Dictionary<int, List<Cell>> map)
+            {
+                foreach (var kv in map)
+                {
+                    int digit = kv.Key;
+                    var cells = kv.Value;
+                    if (cells.Count > 1)
+                    {
+                        foreach (var cell in cells)
+                        {
+                            // avoid duplicate entries for same cell/digit
+                            if (!conflicts.Exists(u => u.Row == cell.Row && u.Column == cell.Column && u.Candidate == digit))
+                            {
+                                conflicts.Add(new UsedCell { Row = cell.Row, Column = cell.Column, Candidate = digit });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Rows
+            for (int r = 0; r < size; r++)
+            {
+                var map = new Dictionary<int, List<Cell>>();
+                foreach (var cell in board.GetRow(r))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (!map.ContainsKey(v)) map[v] = new List<Cell>();
+                        map[v].Add(cell);
+                    }
+                }
+                RecordDuplicates(map);
+            }
+
+            // Columns
+            for (int c = 0; c < size; c++)
+            {
+                var map = new Dictionary<int, List<Cell>>();
+                foreach (var cell in board.GetColumn(c))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (!map.ContainsKey(v)) map[v] = new List<Cell>();
+                        map[v].Add(cell);
+                    }
+                }
+                RecordDuplicates(map);
+            }
+
+            // Boxes
+            for (int b = 0; b < size; b++)
+            {
+                var map = new Dictionary<int, List<Cell>>();
+                foreach (var cell in board.GetBox(b))
+                {
+                    if (cell.Value.HasValue)
+                    {
+                        int v = cell.Value.Value;
+                        if (!map.ContainsKey(v)) map[v] = new List<Cell>();
+                        map[v].Add(cell);
+                    }
+                }
+                RecordDuplicates(map);
+            }
+
+            return conflicts;
+        }
     }
 }

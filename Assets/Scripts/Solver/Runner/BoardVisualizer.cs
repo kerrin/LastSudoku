@@ -132,6 +132,7 @@ namespace Sudoku.Solver
                     Rect cellRect = new Rect(x0 + c * cellSize, y0 + r * cellSize, cellSize, cellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
                     System.Collections.Generic.HashSet<int> usedCandidatesForCell = null;
+                    // If the result actually applied, show placed values and remove highlights
                     if (resultToShow != null && resultToShow.Apply)
                     {
                         var changes = resultToShow.Changes;
@@ -141,29 +142,29 @@ namespace Sudoku.Solver
                             {
                                 if (ch.Row == r && ch.Column == c)
                                 {
-                                    // placed value
                                     if (ch.NewValue.HasValue)
                                     {
                                         DrawHighlightBorder(cellRect, new Color(0.1f, 0.8f, 0.1f, 1f));
                                     }
-                                    // candidate removals: no longer draw a yellow cell-level border here.
-                                    // per-candidate highlights are rendered inside DrawCandidates instead.
                                     break;
                                 }
                             }
                         }
+                    }
 
-                        // mark cells that were used to deduce the rule result (draw highlight and collect candidate digits)
-                        if (resultToShow.UsedCells != null)
+                    // mark cells that were used to deduce the rule result or are reported
+                    // as conflicts by validation. For validation conflicts (Apply==false)
+                    // render a red-ish highlight so the user can spot invalid cells.
+                    if (resultToShow != null && resultToShow.UsedCells != null)
+                    {
+                        foreach (var uc in resultToShow.UsedCells)
                         {
-                            foreach (var uc in resultToShow.UsedCells)
+                            if (uc.Row == r && uc.Column == c)
                             {
-                                if (uc.Row == r && uc.Column == c)
-                                {
-                                    if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
-                                    DrawHighlight(cellRect, new Color(0.1f, 0.6f, 1f, 0.45f));
-                                    if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
-                                }
+                                if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
+                                var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
+                                DrawHighlight(cellRect, highlightColor);
+                                if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
                             }
                         }
                     }
