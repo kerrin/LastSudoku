@@ -93,13 +93,40 @@ namespace Sudoku.Solver.Rules
                     else
                     {
                         // set the value and clear the cell's own candidates
+                        Debug.Log($"EnactAll: setting value {change.NewValue.Value} at ({change.Row},{change.Column})");
                         board.SetValue(cell, change.NewValue.Value);
                     }
                 }
                 if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
                 {
-                    foreach (int v in change.RemovedCandidates) cell.Candidates.Remove(v);
+                    foreach (int v in change.RemovedCandidates)
+                    {
+                        if (cell.Candidates.Contains(v))
+                        {
+                            Debug.Log($"EnactAll: removing candidate {v} at ({change.Row},{change.Column})");
+                            cell.Candidates.Remove(v);
+                        }
+                        else
+                        {
+                            Debug.Log($"EnactAll: candidate {v} at ({change.Row},{change.Column}) was already missing");
+                        }
+                    }
                 }
+            }
+
+            // Diagnostic dump: log current candidates/value for every changed cell
+            foreach (var changePost in Changes)
+            {
+                var c = board.Cells[changePost.Row, changePost.Column];
+                var candList = c.Candidates != null ? string.Join(",", c.Candidates) : "(null)";
+                Debug.Log($"EnactAll: POST state for ({changePost.Row},{changePost.Column}) value={(c.Value.HasValue?c.Value.Value.ToString():".")} candidates=[{candList}]");
+
+                int peerCount = 0;
+                foreach (var peer in board.GetPeers(c))
+                {
+                    peerCount++;
+                }
+                Debug.Log($"EnactAll: peers for ({changePost.Row},{changePost.Column}) = {peerCount}");
             }
         }
     }

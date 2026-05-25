@@ -37,6 +37,9 @@ namespace Sudoku.Solver
         // Track the last seen RuleResult so we can render removed candidates
         // in red until a new rule result is produced.
         private Sudoku.Solver.Rules.RuleResult _lastSeenRuleResult;
+        // last result logged to avoid spamming logs every frame
+        private Sudoku.Solver.Rules.RuleResult _lastLoggedResultToShow;
+        private bool _lastLoggedPreviewActive = false;
 
         private void EnsureStyles(int cellSize)
         {
@@ -102,10 +105,21 @@ namespace Sudoku.Solver
                 }
 
                 // Choose which RuleResult to use for display: prefer a hovered
-                // preview (so mouseover highlights show instantly), then the last
-                // applied rule (stored in `_lastSeenRuleResult`), then the
-                // Runner.LastRuleResult fallback.
-                var resultToShow = Runner.PreviewRuleResult ?? _lastSeenRuleResult ?? Runner.LastRuleResult;
+                // preview (only if it actually applies) so mouseover highlights
+                // show instantly, then the last applied rule (stored in
+                // `_lastSeenRuleResult`), then the Runner.LastRuleResult fallback.
+                var activePreview = Runner.PreviewRuleResult != null && Runner.PreviewRuleResult.Apply;
+                var resultToShow = activePreview ? Runner.PreviewRuleResult : (_lastSeenRuleResult ?? Runner.LastRuleResult);
+
+                // Log when the display source changes or preview toggles (throttled)
+                if (resultToShow != _lastLoggedResultToShow || activePreview != _lastLoggedPreviewActive)
+                {
+                    string src = activePreview ? "PreviewRuleResult" : ( _lastSeenRuleResult != null ? "LastSeenApplied" : "LastRuleResult" );
+                    string desc = resultToShow != null ? resultToShow.Description ?? "(no desc)" : "(none)";
+                    Debug.Log($"BoardVisualizer: using result source={src}, desc={desc}, previewActive={activePreview}");
+                    _lastLoggedResultToShow = resultToShow;
+                    _lastLoggedPreviewActive = activePreview;
+                }
 
             float x0 = Offset.x;
             float y0 = Offset.y;
@@ -201,6 +215,62 @@ namespace Sudoku.Solver
         private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.HashSet<int> highlightDigits)
         {
             if (cell == null || cell.Candidates == null) return;
+            // Temporary debug: if this cell is affected by the preview or the
+            // last applied result, dump the live candidate list so we can
+            // correlate model state with EnactAll logs.
+            try
+            {
+                var previewResLocal = Runner != null ? Runner.PreviewRuleResult : null;
+                var appliedResLocal = _lastSeenRuleResult;
+                bool cellAffected = false;
+                System.Action<RuleResult> checkRes = (res) =>
+                {
+                    if (res == null || res.Changes == null) return;
+                    foreach (var ch in res.Changes)
+                    {
+                        if (ch == null) continue;
+                        if (ch.Row == cell.Row && ch.Column == cell.Column)
+                        {
+                            cellAffected = true; break;
+                        }
+                        if (ch.NewValue.HasValue)
+                        {
+                            var boardLocal = Runner != null ? Runner.CurrentBoard : null;
+                            if (boardLocal != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < boardLocal.Size && ch.Column < boardLocal.Size)
+                            {
+                                var originBox = boardLocal.Cells[ch.Row, ch.Column].Box;
+                                if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
+                                {
+                                    cellAffected = true; break;
+                                }
+                            }
+                        }
+                    }
+                };
+
+                checkRes(previewResLocal);
+                checkRes(appliedResLocal);
+
+                if (cellAffected)
+                {
+                    var liveSb = new StringBuilder();
+                    if (cell.Candidates != null)
+                    {
+                        foreach (var cd in cell.Candidates)
+                        {
+                            liveSb.Append(cd).Append(',');
+                        }
+                    }
+                    var liveStr = liveSb.Length > 0 ? liveSb.ToString(0, liveSb.Length - 1) : "(none)";
+                    var previewActiveLocal = previewResLocal != null && previewResLocal.Apply;
+                    var appliedDesc = _lastSeenRuleResult != null ? _lastSeenRuleResult.Description : (Runner.LastRuleResult != null ? Runner.LastRuleResult.Description : "(none)");
+                    Debug.Log($"BoardVisualizer: LIVE candidates for ({cell.Row},{cell.Column}) = [{liveStr}], previewActive={previewActiveLocal}, appliedDesc='{appliedDesc}'");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogException(ex);
+            }
             // small 3x3 layout for candidates assuming up to 9 digits
             int size = 3;
             float cs = rect.width / size;
@@ -212,73 +282,59 @@ namespace Sudoku.Solver
                 int cc = idx % size;
                 Rect r = new Rect(rect.x + cc * cs + 2, rect.y + rr * cs + 2, cs - 4, cs - 4);
                 bool hasCandidate = cell.Candidates.Contains(d);
+                bool previewActive = Runner != null && Runner.PreviewRuleResult != null && Runner.PreviewRuleResult.Apply;
                 // Determine if this digit was removed by the last seen rule result for this cell.
+                // Consider both previewed changes (hover) and the last actually applied rule
+                // so the UI highlights either case appropriately. Check removals regardless
+                // of whether the candidate currently exists so previewed removals are shown
+                // when hovering the rule.
                 bool removedRecently = false;
-                // When deciding whether a candidate was recently removed, consider
-                // both previewed changes (hover) and the last actually applied
-                // rule so the UI highlights either case appropriately.
                 var previewRes = Runner != null ? Runner.PreviewRuleResult : null;
                 var appliedRes = _lastSeenRuleResult;
-                if (!hasCandidate)
+
+                // Helper to test a RuleResult for removals/placements that affect this cell
+                System.Action<RuleResult, System.Action<bool>> inspectWithCallback = (res, cb) =>
                 {
-                    // check preview removals first
-                    if (previewRes != null && previewRes.Changes != null)
+                    if (res == null || res.Changes == null) return;
+                    foreach (var ch in res.Changes)
                     {
-                        foreach (var ch in previewRes.Changes)
+                        if (ch == null) continue;
+                        // explicit removal recorded for this cell
+                        if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
                         {
-                            // explicit removal recorded for this cell
-                                if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
-                            {
-                                removedRecently = true;
-                                break;
-                            }
+                            cb(true);
+                            break;
+                        }
 
-                            // implied removals: if the rule placed `d` in another cell, that
-                            // placement removes `d` from all its peers. Treat peers as recently
-                            // removed even if the rule didn't emit explicit RemovedCandidates.
-                            if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                        // implied removals: if the rule placed `d` in another cell, that
+                        // placement removes `d` from all its peers. Treat peers as recently
+                        // removed even if the rule didn't emit explicit RemovedCandidates.
+                        if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                        {
+                            var board = Runner != null ? Runner.CurrentBoard : null;
+                            if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
                             {
-                                // ensure we have a board reference
-                                var board = Runner != null ? Runner.CurrentBoard : null;
-                                if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
+                                var originBox = board.Cells[ch.Row, ch.Column].Box;
+                                if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
                                 {
-                                    var originBox = board.Cells[ch.Row, ch.Column].Box;
-                                    if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
-                                    {
-                                        removedRecently = true;
-                                        break;
-                                    }
+                                    cb(true);
+                                    break;
                                 }
                             }
                         }
                     }
+                };
 
-                    // if not removed by preview, check applied changes
-                    if (!removedRecently && appliedRes != null && appliedRes.Changes != null)
-                    {
-                        foreach (var ch in appliedRes.Changes)
-                        {
-                            if (ch.Row == cell.Row && ch.Column == cell.Column && ch.RemovedCandidates != null && ch.RemovedCandidates.Contains(d))
-                            {
-                                removedRecently = true;
-                                break;
-                            }
-                            if (ch.NewValue.HasValue && ch.NewValue.Value == d)
-                            {
-                                var board = Runner != null ? Runner.CurrentBoard : null;
-                                if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)
-                                {
-                                    var originBox = board.Cells[ch.Row, ch.Column].Box;
-                                    if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
-                                    {
-                                        removedRecently = true;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                // Determine whether the preview would remove this candidate and whether
+                // a previously applied rule removed it. We'll use these flags to decide
+                // drawing behavior: when a preview is active, hide candidates removed
+                // by either the preview or by prior applied rules; when no preview is
+                // active, draw previously-applied removals in red.
+                bool willBeRemovedByPreview = false;
+                inspectWithCallback(previewRes, (val) => { if (val) willBeRemovedByPreview = true; });
+
+                bool wasRemovedByApplied = false;
+                inspectWithCallback(appliedRes, (val) => { if (val) wasRemovedByApplied = true; });
 
                 bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
                 // Draw a small yellow border around candidates used in deductions so
@@ -289,16 +345,48 @@ namespace Sudoku.Solver
                     DrawCandidateBorder(r, new Color(1f, 0.85f, 0.25f, 1f));
                 }
 
-                if (removedRecently)
+                if (previewActive)
                 {
-                    Color prev = GUI.color;
-                    GUI.color = Color.red;
-                    GUI.Label(r, d.ToString(), _candidateStyle);
-                    GUI.color = prev;
+                    // Preview active: show candidates the preview will remove in red,
+                    // but hide candidates removed by previously applied rules so the
+                    // preview view represents the board as-if the preview were applied.
+                    if (willBeRemovedByPreview)
+                    {
+                        Color prev = GUI.color;
+                        GUI.color = Color.red;
+                        GUI.Label(r, d.ToString(), _candidateStyle);
+                        GUI.color = prev;
+                    }
+                    else if (wasRemovedByApplied)
+                    {
+                        // previously-applied removal: hide it while previewing
+                    }
+                    else if (hasCandidate)
+                    {
+                        GUI.Label(r, d.ToString(), _candidateStyle);
+                    }
                 }
-                else if (hasCandidate)
+                else
                 {
-                    GUI.Label(r, d.ToString(), _candidateStyle);
+                    // No active preview: show previously applied removals in red,
+                    // otherwise draw existing candidates normally.
+                    if (wasRemovedByApplied)
+                    {
+                        Color prev = GUI.color;
+                        GUI.color = Color.red;
+                        GUI.Label(r, d.ToString(), _candidateStyle);
+                        GUI.color = prev;
+                    }
+                    else if (hasCandidate)
+                    {
+                        GUI.Label(r, d.ToString(), _candidateStyle);
+                        // Diagnostic: applied result says this candidate was removed but it's still present
+                        if (wasRemovedByApplied)
+                        {
+                            var who = _lastSeenRuleResult != null ? _lastSeenRuleResult.Description : (Runner.LastRuleResult != null ? Runner.LastRuleResult.Description : "(unknown)");
+                            Debug.LogWarning($"BoardVisualizer: candidate {d} at ({cell.Row},{cell.Column}) is still present but wasMarkedRemovedByAppliedResult='{who}'");
+                        }
+                    }
                 }
             }
         }

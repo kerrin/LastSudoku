@@ -62,7 +62,12 @@ namespace Sudoku.Solver.Rules
         public static void SetValue(this Board board, Cell cell, int value)
         {
             cell.Value = value;
+            // Clear this cell's candidates and remove the placed value from all peers
             cell.Candidates.Clear();
+            foreach (var peer in board.GetPeers(cell))
+            {
+                if (peer.Candidates != null) peer.Candidates.Remove(value);
+            }
         }
 
         /**

@@ -217,8 +217,10 @@ public class ApplyRulePanel : MonoBehaviour
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
-        // click runs the rule
-        button.onClick.AddListener(() => { Runner.RunRule(rule); BuildList(); });
+        // click runs the rule. Suppress preview requests during the apply so
+        // the preview doesn't reappear while the rule is enacting and causing
+        // visual-state inconsistencies.
+        button.onClick.AddListener(() => { StartCoroutine(ApplyRuleCoroutine(rule)); });
 
         // add hover preview via EventTrigger
         var trigger = ruleGO.AddComponent<EventTrigger>();
@@ -230,6 +232,17 @@ public class ApplyRulePanel : MonoBehaviour
         trigger.triggers.Add(entryExit);
 
         // Description/tooltips removed: list shows only the rule name.
+    }
+
+    private System.Collections.IEnumerator ApplyRuleCoroutine(ISudokuRule rule)
+    {
+        if (Runner != null) Runner.SuppressPreviewRequests = true;
+        Runner.ClearPreview();
+        // wait one frame to allow UI/visualiser to pick up the cleared preview
+        yield return null;
+        Runner.RunRule(rule);
+        if (Runner != null) Runner.SuppressPreviewRequests = false;
+        BuildList();
     }
 
     private Transform FindChildRecursive(Transform parent, string name)

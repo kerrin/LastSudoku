@@ -12,6 +12,9 @@ namespace Sudoku.Solver
      */
     public class SolverRunner : MonoBehaviour
     {
+        /** When true, ignore incoming preview requests (useful during apply). */
+        public bool SuppressPreviewRequests = false;
+
         [Tooltip("Provide 9 strings each with 9 characters (digits 1-9 or . for empty)")]
         public string[] PuzzleRows = new string[9];
 
@@ -164,6 +167,11 @@ namespace Sudoku.Solver
          */
         public void PreviewRule(ISudokuRule rule)
         {
+            if (SuppressPreviewRequests)
+            {
+                Debug.Log("PreviewRule: suppressed");
+                return;
+            }
             if (_board == null) LoadBoardFromRows();
             if (_board == null) { PreviewRuleResult = null; return; }
             EnsureEngine();
@@ -172,6 +180,7 @@ namespace Sudoku.Solver
             {
                 var res = rule.CalculateChanges(_board);
                 PreviewRuleResult = (res != null && res.Apply) ? res : new RuleResult { Apply = false };
+                Debug.Log($"PreviewRule: {rule.GetType().Name} => Apply={PreviewRuleResult.Apply}");
             }
             catch (System.Exception ex)
             {
@@ -184,6 +193,7 @@ namespace Sudoku.Solver
         public void ClearPreview()
         {
             PreviewRuleResult = null;
+            Debug.Log("Preview cleared");
         }
 
         /**
@@ -191,6 +201,7 @@ namespace Sudoku.Solver
          */
         public void RunRule(ISudokuRule rule)
         {
+            Debug.Log($"RunRule: begin {rule?.GetType().Name}");
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
@@ -221,6 +232,7 @@ namespace Sudoku.Solver
             LastRuleResult = res;
             PreviewRuleResult = null;
             Debug.Log($"Applied '{rule.Name}': {res.Description}\n{BoardToString(_board)}");
+            Debug.Log($"RunRule: end {rule.GetType().Name}");
         }
 
         [ContextMenu("Run Solve")]
