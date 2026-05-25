@@ -105,7 +105,9 @@ public class ApplyRulePanel : MonoBehaviour
         var vpImg = viewportGO.GetComponent<Image>();
         if (vpImg == null) vpImg = viewportGO.AddComponent<Image>();
         vpImg.color = new Color(0f, 0f, 0f, 0f);
-        vpImg.raycastTarget = true;
+        // The viewport should not block raycasts to the rule rows/buttons;
+        // leave it non-raycastable so pointer events reach the child rows.
+        vpImg.raycastTarget = false;
 
         // Content (prefer existing descendant named "Content")
         Transform contentTrans = null;
@@ -155,8 +157,35 @@ public class ApplyRulePanel : MonoBehaviour
     private void BuildList()
     {
         if (_contentRoot == null || _registry == null || Runner == null) return;
-        // clear
-        for (int i = _contentRoot.childCount - 1; i >= 0; i--) DestroyImmediate(_contentRoot.GetChild(i).gameObject);
+
+        // If running, destroy children then rebuild next frame to ensure
+        // Unity finishes its internal layout + event update cycle so hitboxes
+        // don't become stale. In edit-mode we can rebuild synchronously.
+        if (Application.isPlaying)
+        {
+            for (int i = _contentRoot.childCount - 1; i >= 0; i--)
+            {
+                Destroy(_contentRoot.GetChild(i).gameObject);
+            }
+            StartCoroutine(BuildListAsync());
+        }
+        else
+        {
+            // editor/editor-time synchronous rebuild
+            for (int i = _contentRoot.childCount - 1; i >= 0; i--) DestroyImmediate(_contentRoot.GetChild(i).gameObject);
+            BuildListInternal();
+        }
+    }
+
+    private System.Collections.IEnumerator BuildListAsync()
+    {
+        // allow destruction to complete and the UI system to settle
+        yield return null;
+        BuildListInternal();
+    }
+
+    private void BuildListInternal()
+    {
         // If candidates have not yet been initialised, show only the Initialise
         // Candidates entry and hide other rules until it has been run.
         if (!Runner.CandidatesInitialised)
@@ -190,6 +219,11 @@ public class ApplyRulePanel : MonoBehaviour
         }
         // Optionally add a header summary
         Debug.Log($"ApplyRulePanel: built list with {created} applicable rule(s)");
+
+        // Force an immediate layout rebuild so the ScrollRect and EventSystem
+        // see the final child positions and sizes before any pointer events.
+        var contentRect = _contentRoot.GetComponent<RectTransform>();
+        if (contentRect != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
     }
 
     private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview)
