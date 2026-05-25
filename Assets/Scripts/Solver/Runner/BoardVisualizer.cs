@@ -331,10 +331,16 @@ namespace Sudoku.Solver
                 // by either the preview or by prior applied rules; when no preview is
                 // active, draw previously-applied removals in red.
                 bool willBeRemovedByPreview = false;
-                inspectWithCallback(previewRes, (val) => { if (val) willBeRemovedByPreview = true; });
+                // Only consider a candidate as "will be removed" by the preview if
+                // that candidate actually exists in the cell right now. This avoids
+                // showing red for digits that were never present (e.g. when a rule
+                // records RemovedCandidates for a cell as "all except X").
+                inspectWithCallback(previewRes, (val) => { if (val && hasCandidate) willBeRemovedByPreview = true; });
 
                 bool wasRemovedByApplied = false;
-                inspectWithCallback(appliedRes, (val) => { if (val) wasRemovedByApplied = true; });
+                // Similarly, for previously-applied removals only mark them if the
+                // candidate was present in the live board at the time of drawing.
+                inspectWithCallback(appliedRes, (val) => { if (val && hasCandidate) wasRemovedByApplied = true; });
 
                 bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
                 // Draw a small yellow border around candidates used in deductions so

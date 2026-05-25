@@ -52,15 +52,14 @@ namespace Sudoku.Solver.Rules
             if (missing == -1) return false;
 
             var change = new CellChange { Row = empty.Row, Column = empty.Column, OldValue = empty.Value, NewValue = missing };
-            // When enacting a placement, record it as the single deduction for this call.
+            // When enacting a placement, record candidate removals for the target
+            // cell (so EnactCandidates can leave only the missing digit). Do NOT
+            // mark every filled unit cell as a "used" cell for UI highlighting;
+            // only the deduced cell itself should be shown as the deduction.
             for (int v = 1; v <= size; v++) if (v != missing) change.RemovedCandidates.Add(v);
-            foreach (Cell p in unit.Where(c => c.Value.HasValue))
-            {
-                if (!result.UsedCells.Exists(u => u.Row == p.Row && u.Column == p.Column))
-                    result.UsedCells.Add(new UsedCell { Row = p.Row, Column = p.Column });
-            }
 
             result.Changes.Add(change);
+            // Record only the empty cell + candidate as the used/deduction cell.
             if (!result.UsedCells.Exists(u => u.Row == empty.Row && u.Column == empty.Column && u.Candidate == missing))
                 result.UsedCells.Add(new UsedCell { Row = empty.Row, Column = empty.Column, Candidate = missing });
 
@@ -71,8 +70,8 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(missing);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == missing))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = missing });
+                    // Do NOT add peers to UsedCells here; they are changed but are
+                    // not the primary deduction to highlight for the Last-Cell rule.
                 }
             }
 
