@@ -119,14 +119,12 @@ public class ApplyRulePanel : MonoBehaviour
         contentRT.pivot = new Vector2(0.5f, 1);
         contentRT.anchoredPosition = Vector2.zero;
         var vlg = contentGO.GetComponent<VerticalLayoutGroup>();
-        if (vlg == null) vlg = contentGO.AddComponent<VerticalLayoutGroup>();
         vlg.childControlHeight = true;
         vlg.childControlWidth = true;
         vlg.childForceExpandHeight = false;
         vlg.spacing = 4;
 
         var csf = contentGO.GetComponent<ContentSizeFitter>();
-        if (csf == null) csf = contentGO.AddComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
         scroll.content = contentRT;
@@ -195,8 +193,7 @@ public class ApplyRulePanel : MonoBehaviour
         // If we have a description preview, increase the preferred height so the
         // description fits inside the same row instead of spilling underneath.
         var le = ruleGO.AddComponent<LayoutElement>();
-        bool hasDesc = (preview != null && !string.IsNullOrEmpty(preview.Description));
-        le.preferredHeight = hasDesc ? 48f : 28f;
+        le.preferredHeight = 28f;
 
         var btnImg = ruleGO.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
@@ -206,28 +203,17 @@ public class ApplyRulePanel : MonoBehaviour
         var labelGO = new GameObject("Label", typeof(RectTransform));
         labelGO.transform.SetParent(ruleGO.transform, false);
         var label = labelGO.AddComponent<Text>();
-        label.text = rule.Name + " (" + rule.GetType().Name + ")";
+        label.text = rule.Name;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.fontSize = 14;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();
-        // Place the label in the top half of the row when a description exists,
-        // otherwise fill the row vertically.
-        if (hasDesc)
-        {
-            lblRT.anchorMin = new Vector2(0f, 0.5f);
-            lblRT.anchorMax = new Vector2(1f, 1f);
-            lblRT.offsetMin = new Vector2(8f, 6f);
-            lblRT.offsetMax = new Vector2(-8f, -6f);
-        }
-        else
-        {
-            lblRT.anchorMin = new Vector2(0f, 0f);
-            lblRT.anchorMax = new Vector2(1f, 1f);
-            lblRT.offsetMin = new Vector2(8f, 2f);
-            lblRT.offsetMax = new Vector2(-8f, -2f);
-        }
+        // Place the label to fill the row vertically.
+        lblRT.anchorMin = new Vector2(0f, 0f);
+        lblRT.anchorMax = new Vector2(1f, 1f);
+        lblRT.offsetMin = new Vector2(8f, 2f);
+        lblRT.offsetMax = new Vector2(-8f, -2f);
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
@@ -243,25 +229,7 @@ public class ApplyRulePanel : MonoBehaviour
         entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
         trigger.triggers.Add(entryExit);
 
-        // optionally show a tooltip/description when available
-        if (hasDesc)
-        {
-            var descGO = new GameObject("Desc", typeof(RectTransform));
-            descGO.transform.SetParent(ruleGO.transform, false);
-            var desc = descGO.AddComponent<Text>();
-            desc.text = preview.Description;
-            desc.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            desc.fontSize = 10;
-            desc.color = new Color(0.9f, 0.9f, 0.9f, 0.8f);
-            desc.alignment = TextAnchor.UpperLeft;
-            var dRT = descGO.GetComponent<RectTransform>();
-            // Place description in the bottom half of the row so it remains
-            // visually attached to its rule and does not flow outside the list.
-            dRT.anchorMin = new Vector2(0f, 0f);
-            dRT.anchorMax = new Vector2(1f, 0.5f);
-            dRT.offsetMin = new Vector2(8f, 4f);
-            dRT.offsetMax = new Vector2(-8f, -4f);
-        }
+        // Description/tooltips removed: list shows only the rule name.
     }
 
     private Transform FindChildRecursive(Transform parent, string name)
