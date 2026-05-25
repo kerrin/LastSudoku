@@ -43,6 +43,8 @@ namespace Sudoku.Solver
             * it is used by UI visualizers to show what a rule would change.
             */
         public RuleResult PreviewRuleResult { get; private set; }
+        /** Whether candidates have been initialised for the current board. */
+        public bool CandidatesInitialised { get; private set; } = false;
 
         private void Awake()
         {
@@ -114,6 +116,7 @@ namespace Sudoku.Solver
                 }
             }
             _board = board;
+            CandidatesInitialised = false;
             Debug.Log("Board loaded from PuzzleRows:\n" + BoardToString(_board));
         }
 
@@ -142,6 +145,7 @@ namespace Sudoku.Solver
                         }
                     }
                 }
+                CandidatesInitialised = true;
         }
 
         [ContextMenu("Run Next Rule Step")]
@@ -187,6 +191,34 @@ namespace Sudoku.Solver
                 Debug.LogWarning($"PreviewRule threw for {rule.GetType().Name}: {ex.Message}");
                 PreviewRuleResult = new RuleResult { Apply = false, Description = "Preview error" };
             }
+        }
+
+        /** Prepare a lightweight preview for the Initialise Candidates tool.
+         * Highlights all empty cells (used to indicate candidate initialization)
+         */
+        public void PreviewInitialiseCandidates()
+        {
+            if (SuppressPreviewRequests)
+            {
+                Debug.Log("PreviewInitialiseCandidates: suppressed");
+                return;
+            }
+            if (_board == null) LoadBoardFromRows();
+            if (_board == null) { PreviewRuleResult = null; return; }
+            var res = new RuleResult { Apply = true, Description = "Initialise Candidates (preview)" };
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell != null && !cell.Value.HasValue)
+                    {
+                        res.UsedCells.Add(new UsedCell { Row = r, Column = c });
+                    }
+                }
+            }
+            PreviewRuleResult = res;
+            Debug.Log("PreviewInitialiseCandidates: prepared preview highlighting empty cells.");
         }
 
         /** Clear any previewed rule result. */
@@ -276,6 +308,7 @@ namespace Sudoku.Solver
                         for (int v = 1; v <= _board.Size; v++) cell.Candidates.Add(v);
                     }
                 }
+            CandidatesInitialised = true;
             Debug.Log("Candidates reset.");
         }
 

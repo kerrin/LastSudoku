@@ -22,6 +22,7 @@ public class ApplyRulePanel : MonoBehaviour
     private RuleRegistry _registry;
     private Transform _contentRoot;
     private Board _lastBoard;
+    
 
     private System.Collections.IEnumerator Start()
     {
@@ -156,6 +157,16 @@ public class ApplyRulePanel : MonoBehaviour
         if (_contentRoot == null || _registry == null || Runner == null) return;
         // clear
         for (int i = _contentRoot.childCount - 1; i >= 0; i--) DestroyImmediate(_contentRoot.GetChild(i).gameObject);
+        // If candidates have not yet been initialised, show only the Initialise
+        // Candidates entry and hide other rules until it has been run.
+        if (!Runner.CandidatesInitialised)
+        {
+            CreateInitialiseCandidatesRow(_contentRoot);
+            Debug.Log("ApplyRulePanel: showing only Initialise Candidates until it is run");
+            return;
+        }
+
+        // Otherwise don't show the initialise entry once it has been run; show rules.
 
         var rules = _registry.GetRulesWithStatus();
         int created = 0;
@@ -232,6 +243,55 @@ public class ApplyRulePanel : MonoBehaviour
         trigger.triggers.Add(entryExit);
 
         // Description/tooltips removed: list shows only the rule name.
+    }
+
+    private void CreateInitialiseCandidatesRow(Transform parent)
+    {
+        var ruleGO = new GameObject("InitialiseCandidates_Row", typeof(RectTransform));
+        ruleGO.transform.SetParent(parent, false);
+        var rt = ruleGO.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+        var le = ruleGO.AddComponent<LayoutElement>();
+        le.preferredHeight = 28f;
+
+        var btnImg = ruleGO.AddComponent<Image>();
+        btnImg.color = new Color(1f, 1f, 1f, 0.02f);
+        var button = ruleGO.AddComponent<Button>();
+
+        // Label
+        var labelGO = new GameObject("Label", typeof(RectTransform));
+        labelGO.transform.SetParent(ruleGO.transform, false);
+        var label = labelGO.AddComponent<Text>();
+        label.text = "Initialise Candidates";
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = 14;
+        label.color = Color.white;
+        label.alignment = TextAnchor.MiddleLeft;
+        var lblRT = labelGO.GetComponent<RectTransform>();
+        lblRT.anchorMin = new Vector2(0f, 0f);
+        lblRT.anchorMax = new Vector2(1f, 1f);
+        lblRT.offsetMin = new Vector2(8f, 2f);
+        lblRT.offsetMax = new Vector2(-8f, -2f);
+        var labelLE = labelGO.AddComponent<LayoutElement>();
+        labelLE.flexibleWidth = 1f;
+
+        button.onClick.AddListener(() => {
+            if (Runner == null) return;
+            Runner.InitialiseCandidates();
+            BuildList();
+        });
+
+        // add hover preview via EventTrigger to highlight cells that would be
+        // initialised (empty cells). Exit clears the preview.
+        var trigger = ruleGO.AddComponent<EventTrigger>();
+        var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+        entryEnter.callback.AddListener((data) => { Runner.PreviewInitialiseCandidates(); });
+        trigger.triggers.Add(entryEnter);
+        var entryExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+        entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
+        trigger.triggers.Add(entryExit);
     }
 
     private System.Collections.IEnumerator ApplyRuleCoroutine(ISudokuRule rule)
