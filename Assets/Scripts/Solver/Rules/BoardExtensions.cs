@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Sudoku.Models;
+using Sudoku.Solver;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 
@@ -136,10 +137,61 @@ namespace Sudoku.Solver.Rules
          */
         public static List<UsedCell> FindConflicts(this Board board)
         {
+            var conflicts = CollectConflicts(board);
+
+            // If we already found conflicts, return them now.
+            if (conflicts != null && conflicts.Count > 0) return conflicts;
+
+            // No immediate conflicts: attempt to solve a copy of the board with a full rule set
+            // so we can detect latent inconsistencies (e.g. candidate-driven contradictions).
+            try
+            {
+                // Create a deep copy of the board so we do not alter the user's board state
+                var copy = new Board(board.Size, board.BoxWidth, board.BoxHeight);
+                for (int r = 0; r < board.Size; r++)
+                {
+                    for (int c = 0; c < board.Size; c++)
+                    {
+                        var src = board.Cells[r, c];
+                        copy.Cells[r, c] = src?.Clone();
+                    }
+                }
+
+                // Create a fresh registry with all rules enabled and attempt to solve the copy
+                var registry = new RuleRegistry();
+                registry.RegisterDefaults();
+                var engine = new SolverEngine(registry);
+                var solved = engine.Solve(copy, out var steps);
+
+                if (solved)
+                {
+                    // If solved, re-check for any duplicates in the solved board state
+                    var postConflicts = CollectConflicts(copy);
+                    if (postConflicts != null && postConflicts.Count > 0) return postConflicts;
+                    // solved and no conflicts -> return empty list
+                    return new List<UsedCell>();
+                }
+                else
+                {
+                    // Not solvable by the full-rule solver: return a special marker UsedCell
+                    // with negative coordinates so the UI can detect and render a global "unsolvable" state.
+                    return new List<UsedCell> { new UsedCell { Row = -1, Column = -1, Candidate = null } };
+                }
+            }
+            catch
+            {
+                // On any unexpected error during the attempt, return the empty conflict list.
+                return new List<UsedCell>();
+            }
+        }
+
+        // Internal helper: collect duplicate used-cells from a given board without
+        // invoking the higher-level FindConflicts logic (avoids recursion).
+        private static List<UsedCell> CollectConflicts(Board board)
+        {
             var conflicts = new List<UsedCell>();
             int size = board.Size;
 
-            // Helper to record duplicates from a mapping digit -> list of cells
             void RecordDuplicates(Dictionary<int, List<Cell>> map)
             {
                 foreach (var kv in map)
@@ -150,7 +202,6 @@ namespace Sudoku.Solver.Rules
                     {
                         foreach (var cell in cells)
                         {
-                            // avoid duplicate entries for same cell/digit
                             if (!conflicts.Exists(u => u.Row == cell.Row && u.Column == cell.Column && u.Candidate == digit))
                             {
                                 conflicts.Add(new UsedCell { Row = cell.Row, Column = cell.Column, Candidate = digit });

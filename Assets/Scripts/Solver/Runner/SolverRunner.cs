@@ -329,24 +329,30 @@ namespace Sudoku.Solver
                 return false;
             }
 
-            bool valid = _board.IsValid();
-            if (valid)
+            // Perform a full conflict discovery. `FindConflicts` performs immediate
+            // duplicate detection and — if no immediate conflicts — will attempt to
+            // solve a copy of the board with all rules to discover latent
+            // contradictions. This is more thorough than `IsValid` alone.
+            var conflicts = _board.FindConflicts();
+            if (conflicts != null && conflicts.Count > 0)
             {
-                var msg = "Board is valid.";
-                Debug.Log(msg + "\n" + BoardToString(_board));
+                // Special sentinel: a UsedCell with negative coordinates indicates
+                // the board was found unsolvable by the full-rule solver.
+                bool unsolvable = conflicts.Exists(u => u.Row < 0);
+                var errMsg = unsolvable ? "Board is UNSOLVABLE by the full solver." : "Board is INVALID: duplicate found in a unit.";
+                Debug.LogError(errMsg + "\n" + BoardToString(_board));
                 LastAppliedRule = null;
-                LastRuleResult = new RuleResult { Apply = false, Description = msg };
-                return true;
+                LastRuleResult = new RuleResult { Apply = false, Description = errMsg };
+                LastRuleResult.UsedCells.AddRange(conflicts);
+                return false;
             }
 
-            // Board invalid: collect conflict details and surface them for UI highlighting
-            var conflicts = _board.FindConflicts();
-            var errMsg = "Board is INVALID: duplicate found in a unit.";
-            Debug.LogError(errMsg + "\n" + BoardToString(_board));
+            // No conflicts found
+            var okMsg = "Board is valid.";
+            Debug.Log(okMsg + "\n" + BoardToString(_board));
             LastAppliedRule = null;
-            LastRuleResult = new RuleResult { Apply = false, Description = errMsg };
-            if (conflicts != null) LastRuleResult.UsedCells.AddRange(conflicts);
-            return false;
+            LastRuleResult = new RuleResult { Apply = false, Description = okMsg };
+            return true;
         }
 
         private string BoardToString(Board board)

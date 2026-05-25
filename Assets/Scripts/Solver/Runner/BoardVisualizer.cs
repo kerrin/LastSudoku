@@ -157,14 +157,27 @@ namespace Sudoku.Solver
                     // render a red-ish highlight so the user can spot invalid cells.
                     if (resultToShow != null && resultToShow.UsedCells != null)
                     {
-                        foreach (var uc in resultToShow.UsedCells)
+                        // Special marker: a UsedCell with negative coordinates indicates
+                        // the board is globally unsolvable (detected by attempting to
+                        // solve a copy). Render the whole board with a dark-yellow tint
+                        // in this case so the user can easily notice the unsolvable state.
+                        bool unsolvable = resultToShow.UsedCells.Exists(u => u.Row < 0);
+                        if (unsolvable)
                         {
-                            if (uc.Row == r && uc.Column == c)
+                            var unsolvableColor = new Color(0.8f, 0.6f, 0.05f, 0.55f);
+                            DrawHighlight(cellRect, unsolvableColor);
+                        }
+                        else
+                        {
+                            foreach (var uc in resultToShow.UsedCells)
                             {
-                                if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
-                                var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
-                                DrawHighlight(cellRect, highlightColor);
-                                if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
+                                if (uc.Row == r && uc.Column == c)
+                                {
+                                    if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
+                                    var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
+                                    DrawHighlight(cellRect, highlightColor);
+                                    if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
+                                }
                             }
                         }
                     }
