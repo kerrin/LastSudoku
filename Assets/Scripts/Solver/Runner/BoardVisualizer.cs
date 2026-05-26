@@ -302,7 +302,6 @@ namespace Sudoku.Solver
                 // so the UI highlights either case appropriately. Check removals regardless
                 // of whether the candidate currently exists so previewed removals are shown
                 // when hovering the rule.
-                bool removedRecently = false;
                 var previewRes = Runner != null ? Runner.PreviewRuleResult : null;
                 var appliedRes = _lastSeenRuleResult;
 
@@ -400,12 +399,6 @@ namespace Sudoku.Solver
                     else if (hasCandidate)
                     {
                         GUI.Label(r, d.ToString(), _candidateStyle);
-                        // Diagnostic: applied result says this candidate was removed but it's still present
-                        if (wasRemovedByApplied)
-                        {
-                            var who = _lastSeenRuleResult != null ? _lastSeenRuleResult.Description : (Runner.LastRuleResult != null ? Runner.LastRuleResult.Description : "(unknown)");
-                            Debug.LogWarning($"BoardVisualizer: candidate {d} at ({cell.Row},{cell.Column}) is still present but wasMarkedRemovedByAppliedResult='{who}'");
-                        }
                     }
                 }
             }

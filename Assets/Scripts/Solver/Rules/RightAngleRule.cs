@@ -47,8 +47,39 @@ namespace Sudoku.Solver.Rules
             return FindElimination(board) != null;
         }
 
-        private (Cell e1, Cell e2, int digit, List<Cell> removals)? FindElimination(Board board)
+        public RuleResult CalculateChanges(Board board)
         {
+            var info = FindElimination(board);
+            var result = new RuleResult();
+            if (info == null)
+            {
+                result.Apply = false;
+                return result;
+            }
+
+            foreach (Cell used in info.UsedCells)
+            {
+                if (!result.UsedCells.Exists(u => u.Row == used.Row && u.Column == used.Column && u.Candidate == info.digit))
+                    result.UsedCells.Add(new UsedCell { Row = used.Row, Column = used.Column, Candidate = info.digit });
+            }
+            var change = new CellChange { Row = info.DeducedCell.Row, Column = info.DeducedCell.Column, NewValue = info.digit, RemovedCandidates = RuleExtensions.AllCandidatesExcept(info.DeducedCell, info.digit) };
+            
+            result.Changes.Add(change);
+            result.Apply = true;
+            result.Description = $"Right-angle placed {info.digit} into {change.Row},{change.Column} cell";
+            return result;
+        }
+
+        private class ElimInfo
+        {
+            public int digit;
+            public List<Cell> UsedCells = new List<Cell>();
+            public Cell DeducedCell = new Cell();
+            public string Description;
+        }
+        private ElimInfo FindElimination(Board board)
+        {
+            ElimInfo result = new ElimInfo();
             int size = board.Size;
             int boxesPerRow = size / board.BoxWidth;
             int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
@@ -129,56 +160,34 @@ namespace Sudoku.Solver.Rules
 
                             if (!colHas) continue;
 
-                            // We've found a valid deduction: place 'digit' into 'empty'
-                            var removals = new List<Cell> { empty };
-
+                            result.digit = digit;
+                            result.DeducedCell = empty;
                             // Endpoint cells: the placed cell in the empty's row within
-                            // the box, and the placed cell in the empty's column within
                             // the box. Find them and return as endpoints.
-                            Cell rowEndpoint = null;
-                            Cell colEndpoint = null;
                             foreach (var cell in quad)
                             {
-                                if (cell.Row == empty.Row && cell.Value.HasValue) rowEndpoint = cell;
-                                if (cell.Column == empty.Column && cell.Value.HasValue) colEndpoint = cell;
+                                if (cell.Row == empty.Row && cell.Value.HasValue) result.UsedCells.Add(cell);
+                                if (cell.Column == empty.Column && cell.Value.HasValue) result.UsedCells.Add(cell);
+                                if (cell.Row != empty.Row && cell.Column != empty.Column && cell.Value.HasValue) result.UsedCells.Add(cell);
+                            }
+                            // Now mark the used cells in the row and column outside the box as well (for UI highlighting)
+                            for (int cc = 0; cc < size; cc++)                            {
+                                var cell = board.Cells[rowInBox, cc];
+                                if (cell.Value.HasValue && cell.Value == digit && !result.UsedCells.Exists(u => u.Row == cell.Row && u.Column == cell.Column)) result.UsedCells.Add(cell);
                             }
 
-                            return (rowEndpoint, colEndpoint, digit, removals);
+                            for (int rr = 0; rr < size; rr++)
+                            {
+                                var cell = board.Cells[rr, colInBox];
+                                if (cell.Value.HasValue && cell.Value == digit && !result.UsedCells.Exists(u => u.Row == cell.Row && u.Column == cell.Column)) result.UsedCells.Add(cell);
+                            }
+
+                            return result;
                         }
                     }
                 }
             }
             return null;
-        }
-
-        public RuleResult CalculateChanges(Board board)
-        {
-            var found = FindElimination(board);
-            var r = new RuleResult();
-            if (found == null)
-            {
-                r.Apply = false;
-                return r;
-            }
-            var (e1, e2, digit, removals) = found.Value;
-
-            // mark endpoints as used for deduction (record the specific candidate)
-            if (e1 != null && !r.UsedCells.Exists(u => u.Row == e1.Row && u.Column == e1.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e1.Row, Column = e1.Column, Candidate = digit });
-            if (e2 != null && !r.UsedCells.Exists(u => u.Row == e2.Row && u.Column == e2.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = e2.Row, Column = e2.Column, Candidate = digit });
-
-            // Only place into the first intersection cell found (deterministic)
-            var first = removals.OrderBy(p => p.Row).ThenBy(p => p.Column).FirstOrDefault();
-            if (first != null && !first.Value.HasValue)
-            {
-                UnityEngine.Debug.Log($"RightAngle placing digit {digit} into ({first.Row},{first.Column})");
-                var change = new CellChange { Row = first.Row, Column = first.Column, OldValue = first.Value, NewValue = digit };
-                for (int v = 1; v <= board.Size; v++) change.RemovedCandidates.Add(v);
-                r.Changes.Add(change);
-                if (!r.UsedCells.Exists(u => u.Row == first.Row && u.Column == first.Column && u.Candidate == digit)) r.UsedCells.Add(new UsedCell { Row = first.Row, Column = first.Column, Candidate = digit });
-            }
-            r.Apply = r.Changes.Count > 0;
-            if (r.Apply) r.Description = $"Right-angle placed {digit} into {r.Changes.Count} cell(s)";
-            return r;
         }
     }
 }

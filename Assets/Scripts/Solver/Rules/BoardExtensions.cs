@@ -1,7 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
-using Sudoku.Models;
-using Sudoku.Solver;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 

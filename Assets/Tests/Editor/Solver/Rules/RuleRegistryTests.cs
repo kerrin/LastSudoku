@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Tests.Editor
@@ -57,20 +58,22 @@ namespace Sudoku.Tests.Editor
         [Test]
         public void ApplyAll_AppliesRegisteredRules_WhenBoardHasChanges()
         {
-            var board = TestHelpers.CreateEmptyBoard();
+            Board board = TestHelpers.CreateEmptyBoard();
             var registry = new RuleRegistry();
             registry.RegisterMinimal();
             registry.RegisterMedium();
             registry.RegisterAdvanced();
 
             // make a naked single to ensure ApplyAll applies something
-            var target = board.Cells[3, 3];
-            target.Candidates.Clear();
-            target.Candidates.Add(2);
-
+            foreach(Cell cell in board.GetBox(0)) {
+                if(cell.Row == 1 && cell.Column == 1) continue; // Ignore the center cell of the box to create a naked single there for 5
+                board.Cells[cell.Row, cell.Column].Value = cell.Row * board.BoxHeight + cell.Column + 1;
+            }
+            
             var results = registry.ApplyAll(board);
             Assert.IsNotEmpty(results);
             Assert.AreEqual("Naked Single", results[0].rule.Name);
+            Assert.AreEqual(5, board.Cells[1, 1].Value);
         }
     }
 }

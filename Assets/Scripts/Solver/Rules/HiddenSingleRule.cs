@@ -1,7 +1,7 @@
 using System.Collections.Generic;
-using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
+using UnityEngine;
 
 namespace Sudoku.Solver.Rules
 {
@@ -41,6 +41,10 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
+        /**
+         * Search for a hidden single in rows. 
+         * Returns the first one found, or null if none found.
+         */
         private HiddenSingleResult FindInRows(Board board)
         {
             int size = board.Size;
@@ -51,16 +55,20 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetRow(r))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1) {
-                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
-                        }
+                        if (cell.Value.HasValue && cell.Value == digit) break; // Digit already placed in this row, skip to next row.
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next row.
                     }
-                    
+                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
                 }
             }
             return null;
         }
 
+        /**
+         * Search for a hidden single in columns. 
+         * Returns the first one found, or null if none found.
+         */
         private HiddenSingleResult FindInColumns(Board board)
         {
             int size = board.Size;
@@ -71,17 +79,20 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetColumn(c))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1)
-                        {
-                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
-                        }
+                        if (cell.Value.HasValue && cell.Value == digit) break; // Digit already placed in this column, skip to next column.
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next column.
                     }
-                    
+                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
                 }
             }
             return null;
         }
 
+        /**
+         * Search for a hidden single in boxes. 
+         * Returns the first one found, or null if none found.
+         */
         private HiddenSingleResult FindInBoxes(Board board)
         {
             int size = board.Size;
@@ -92,10 +103,11 @@ namespace Sudoku.Solver.Rules
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetBox(b))
                     {
-                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit) && cell.Candidates.Count == 1) {
-                            return new HiddenSingleResult { Cell = cell, Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
-                        }
+                        if(cell.Value.HasValue && cell.Value == digit) break; // If the digit is already placed in the box, skip to next box.
+                        if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
+                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next box. 
                     }
+                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
                 }
             }
             return null;
@@ -110,11 +122,11 @@ namespace Sudoku.Solver.Rules
                 result.Apply = false;
                 return result;
             }
-            var cell = found.Cell;
-            var digit = found.Digit;
-            var unit = found.Unit;
-            var unitIndex = found.UnitIndex;
-            var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
+            Cell cell = found.Cell;
+            int digit = found.Digit;
+            UnitKind unit = found.Unit;
+            int unitIndex = found.UnitIndex;
+            CellChange change = new CellChange { Row = cell.Row, Column = cell.Column, NewValue = digit, RemovedCandidates = RuleExtensions.AllCandidatesExcept(cell, digit) };
             // Highlight the whole unit (row/column/box) that contained the single candidate.
             List<Cell> unitCells = new List<Cell>();
             switch (unit)
@@ -148,8 +160,6 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == digit))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = digit });
                 }
             }
 

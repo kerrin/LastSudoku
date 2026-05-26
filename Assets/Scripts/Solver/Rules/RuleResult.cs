@@ -46,6 +46,7 @@ namespace Sudoku.Solver.Rules
          * Cells that were consulted/used when deducing the rule result (but may not
          * themselves have changed). This is useful for UI highlighting of contributing
          * cells.
+         * If the candidate of the cell is set, that will also be highlighted as the specific candidate that contributed to the deduction
          */
         public List<UsedCell> UsedCells = new List<UsedCell>();
 

@@ -7,7 +7,7 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * A simple Box-Line /Empty Rectangle / Intersection Removal implementation.
+     * A simple Box-Line / Empty Rectangle / Intersection Removal implementation.
      *
      * If all candidates for a digit within a box lie in a single row (or column),
      * then that digit can be eliminated from other cells in that row (or column)
@@ -15,7 +15,7 @@ namespace Sudoku.Solver.Rules
      */
     public class BoxLineRule : ISudokuRule
     {
-        public string Name => "Intersection";
+        public string Name => "Box Line";
 
         public Difficulty Difficulty => Difficulty.Medium;
 
@@ -60,9 +60,6 @@ namespace Sudoku.Solver.Rules
                             var change = new CellChange { Row = trg.Row, Column = trg.Column };
                             change.RemovedCandidates.Add(digit);
                             result.Changes.Add(change);
-
-                            if (!result.UsedCells.Exists(u => u.Row == trg.Row && u.Column == trg.Column && u.Candidate == digit))
-                                result.UsedCells.Add(new UsedCell { Row = trg.Row, Column = trg.Column, Candidate = digit });
                         }
 
                         result.Apply = true;
@@ -89,41 +86,56 @@ namespace Sudoku.Solver.Rules
             {
                 if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cells.Add(cell);
             }
-            if (cells.Count == 0) return null;
+            if (cells.Count == 0) return null; // All cells in box are filled or don't contain the digit as a candidate, so no elimination possible.
 
-            // all in same row?
-            bool sameRow = true;
-            int row = cells[0].Row;
-            foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
-            if (sameRow)
-            {
-                var targets = new List<Cell>();
-                foreach (Cell rc in board.GetRow(row))
+            foreach(Cell checkCell in cells) {
+                // all in same row?
+                int row = checkCell.Row;
+                bool sameRow = true;
+                foreach (Cell c in cells) if (c.Row != row) { sameRow = false; break; }
+                if (sameRow)
                 {
-                    if (rc.Box == boxIndex) continue;
-                    if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) targets.Add(rc);
+                    var targets = new List<Cell>();
+                    foreach (Cell rc in board.GetRow(row))
+                    {
+                        if (rc.Box == boxIndex) continue;
+                        if (!rc.Value.HasValue && rc.Candidates.Contains(digit)) targets.Add(rc);
+                    }
+                    if (targets.Count > 0)
+                    {
+                        // Also add the other cells in the row without values in the box as "used" cells for UI highlighting, since they contributed to the deduction.
+                        foreach (Cell rc in board.GetRow(row))
+                        {
+                            if (rc.Box != boxIndex) continue; // Not in the box, so not a used cell for this deduction.
+                            if (!rc.Value.HasValue && !rc.Candidates.Contains(digit) && !cells.Exists(c => c.Row == rc.Row && c.Column == rc.Column))
+                                cells.Add(rc); // Same row, and doesn't have the digit as a candidate, so it contributed to the deduction
+                        }
+                        return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from row {row} outside box {boxIndex} via Box-Line" };
+                    }
                 }
-                if (targets.Count > 0)
+                // all in same column?
+                int col = checkCell.Column;
+                bool sameCol = true;
+                foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
+                if (sameCol)
                 {
-                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from row {row} outside box {boxIndex} via Box-Line" };
-                }
-            }
-
-            // all in same column?
-            bool sameCol = true;
-            int col = cells[0].Column;
-            foreach (Cell c in cells) if (c.Column != col) { sameCol = false; break; }
-            if (sameCol)
-            {
-                var targets = new List<Cell>();
-                foreach (Cell cc in board.GetColumn(col))
-                {
-                    if (cc.Box == boxIndex) continue;
-                    if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) targets.Add(cc);
-                }
-                if (targets.Count > 0)
-                {
-                    return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from column {col} outside box {boxIndex} via Box-Line" };
+                    var targets = new List<Cell>();
+                    foreach (Cell cc in board.GetColumn(col))
+                    {
+                        if (cc.Box == boxIndex) continue;
+                        if (!cc.Value.HasValue && cc.Candidates.Contains(digit)) targets.Add(cc);
+                    }
+                    if (targets.Count > 0)
+                    {
+                        // Also add the other cells in the column without values in the box as "used" cells for UI highlighting, since they contributed to the deduction.
+                        foreach (Cell cc in board.GetColumn(col))
+                        {
+                            if (cc.Box != boxIndex) continue; // Not in the box, so not a used cell for this deduction.
+                            if (!cc.Value.HasValue && !cc.Candidates.Contains(digit) && !cells.Exists(c => c.Row == cc.Row && c.Column == cc.Column))
+                                cells.Add(cc); // Same column, and doesn't have the digit as a candidate, so it contributed to the deduction
+                        }
+                        return new ElimInfo { Used = cells, Targets = targets, Description = $"Removed {digit} from column {col} outside box {boxIndex} via Box-Line" };
+                    }
                 }
             }
 

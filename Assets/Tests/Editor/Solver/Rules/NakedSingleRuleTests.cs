@@ -20,8 +20,31 @@ namespace Sudoku.Tests.Editor
             var board = TestHelpers.CreateEmptyBoard();
             // make cell (0,0) a naked single with candidate 5
             var target = board.Cells[0, 0];
-            target.Candidates.Clear();
-            target.Candidates.Add(5);
+            // values:
+            // x1.|.8.|..7
+            // .3.|5..|...
+            // ..6|...|..5
+            // -----------
+            // ...|...|...
+            // 2..|.5.|...
+            // ...|...|...
+            // -----------
+            // 45.|...|...
+            // ...|...|...
+            // 9..|...|..5
+            board.Cells[0, 1].Value = 1;
+            board.Cells[0, 4].Value = 8;
+            board.Cells[0, 8].Value = 7;
+            board.Cells[1, 1].Value = 3;
+            board.Cells[1, 3].Value = 5; // Not seen by 0,0
+            board.Cells[2, 2].Value = 6;
+            board.Cells[2, 8].Value = 5; // Not seen by 0,0
+            board.Cells[4, 0].Value = 2;
+            board.Cells[4, 4].Value = 5; // Not seen by 0,0
+            board.Cells[6, 0].Value = 4;
+            board.Cells[6, 1].Value = 5; // Not seen by 0,0
+            board.Cells[8, 0].Value = 9;
+            board.Cells[8, 8].Value = 5; // Not seen by 0,0
 
             var rule = new NakedSingleRule();
             Assert.IsTrue(rule.CanApply(board));
@@ -32,34 +55,6 @@ namespace Sudoku.Tests.Editor
             res.EnactAll(board);
             Assert.AreEqual(5, board.Cells[0, 0].Value);
             // peers must have had candidate 5 removed
-            foreach (var peer in board.GetPeers(target))
-            {
-                Assert.IsFalse(peer.Candidates.Contains(5));
-            }
-        }
-
-        /**
-         * Test if:
-         * Single candidate gets set as value.
-         * Candidate is removed from peers.
-         * UsedCells are recorded for peers with values and candidate removals.
-         */
-        [Test]
-        public void NakedSingleRule_RecordsUsedCells()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            // make cell (0,0) a naked single with candidate 5
-            var target = board.Cells[0, 0];
-            target.Candidates.Clear();
-            target.Candidates.Add(5);
-
-            var rule = new NakedSingleRule();
-            var res = rule.CalculateChanges(board);
-            Assert.IsTrue(res.Apply);
-            // enact recorded changes on the board
-            res.EnactAll(board);
-            Assert.AreEqual(5, board.Cells[0, 0].Value);
-            // peers must have had candidate 5 removed and recorded as used cells
             foreach (var peer in board.GetPeers(target))
             {
                 Assert.IsFalse(peer.Candidates.Contains(5));

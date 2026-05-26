@@ -1,6 +1,4 @@
 using System.Collections.Generic;
-using System.Linq;
-using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 
@@ -88,29 +86,27 @@ namespace Sudoku.Solver.Rules
             MissingSingleResult found = FindAny(board);
             if (found == null)
             {
-                    result.Apply = false;
+                result.Apply = false;
                 return result;
             }
             Cell cell = found.Cell;
             int digit = found.Digit;
             UnitKind unit = found.Unit;
             int unitIndex = found.UnitIndex;
-            // highlight all cells in the unit used for deduction
+            // Highlight all empty cells (cells that currently have candidates)
+            // in the same unit as the found cell — these contributed to the deduction
             IEnumerable<Cell> unitCells = unit == UnitKind.Row ? board.GetRow(unitIndex)
                                         : unit == UnitKind.Column ? board.GetColumn(unitIndex)
                                         : board.GetBox(unitIndex);
             foreach (var uc in unitCells)
             {
-                if (!result.UsedCells.Exists(u => u.Row == uc.Row && u.Column == uc.Column && u.Candidate == digit))
-                    result.UsedCells.Add(new UsedCell { Row = uc.Row, Column = uc.Column, Candidate = digit });
+                if (!uc.Value.HasValue && uc.Candidates != null && uc.Candidates.Count > 0)
+                {
+                    if (!result.UsedCells.Exists(u => u.Row == uc.Row && u.Column == uc.Column && u.Candidate == digit))
+                        result.UsedCells.Add(new UsedCell { Row = uc.Row, Column = uc.Column, Candidate = digit});
+                }
             }
-            var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit };
-            // mark peers with values as used
-            foreach (Cell peer in board.GetPeers(cell))
-            {
-                if (peer.Value.HasValue && !result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column))
-                    result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column });
-            }
+            var change = new CellChange { Row = cell.Row, Column = cell.Column, OldValue = cell.Value, NewValue = digit, RemovedCandidates = RuleExtensions.AllCandidatesExcept(cell, digit) };
 
             // Record the placement and peer candidate removals as consequences of the single deduction
             result.Changes.Add(change);
@@ -124,8 +120,6 @@ namespace Sudoku.Solver.Rules
                     var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
                     peerChange.RemovedCandidates.Add(digit);
                     result.Changes.Add(peerChange);
-                    if (!result.UsedCells.Exists(u => u.Row == peer.Row && u.Column == peer.Column && u.Candidate == digit))
-                        result.UsedCells.Add(new UsedCell { Row = peer.Row, Column = peer.Column, Candidate = digit });
                 }
             }
 
