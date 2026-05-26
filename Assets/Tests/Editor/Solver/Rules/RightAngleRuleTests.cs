@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
@@ -96,6 +97,7 @@ namespace Sudoku.Tests.Editor
             var board = new Board(9, 3, 3);
             // Populate board from InitialValues with bounds checks
             int rows = Math.Min(9, InitialValues.Count);
+            // Populate the cell values
             for (int r = 0; r < 9; r++)
             {
                 for (int c = 0; c < 9; c++)
@@ -111,6 +113,7 @@ namespace Sudoku.Tests.Editor
                 }
             }
 
+            // Populate the candidates
             for (int r = 0; r < rows; r++)
             {
                 var rowCandidates = InitialValues[r].Candidates ?? new List<int>[0];
@@ -133,14 +136,91 @@ namespace Sudoku.Tests.Editor
             // With value-placement semantics, expect the rule to have placed 8 at (1,4)
             Assert.AreEqual(8, board.Cells[1, 4].Value, "Expected the RightAngleRule to place digit 8 at (1,4)");
             Assert.IsEmpty(board.Cells[1, 4].Candidates, "Candidates should be cleared when a value is placed");
-            // for (int c = 0; c <= 8; c++) {
-            //     if (c == 4) continue;
-            //     Assert.IsFalse(board.Cells[1, c].Candidates.Contains(8), $"Expected candidate 8 to be removed from cell (1,{c})");
-            // }
-            // for (int r = 0; r <= 8; r++) {
-            //     if (r == 1) continue;
-            //     Assert.IsFalse(board.Cells[r, 4].Candidates.Contains(8), $"Expected candidate 8 to be removed from cell ({r},4)");
-            // }
+            // Check candidates removed from row 1 and column 4
+            for (int c = 0; c <= 8; c++) {
+                Assert.IsFalse(board.Cells[1, c].Candidates.Contains(8), $"Expected candidate 8 to be removed from cell (1,{c})");
+            }
+            for (int r = 0; r <= 8; r++) {
+                Assert.IsFalse(board.Cells[r, 4].Candidates.Contains(8), $"Expected candidate 8 to be removed from cell ({r},4)");
+            }
+        }
+                
+        /** 
+          * Starting with the InitialValues board,
+          * modified to be
+          * ...|..8|.56
+          * ...|..6|...
+          * ...|.23|...
+          * ---+---+---
+          * ...|...|...
+          * ...|...|...
+          * ...|...|...
+          * ---+---+---
+          * ...|8..|...
+          * ...|9..|...
+          * ...|...|...
+          * We don't expect right angle to apply because the 8 in (0,4) should prevent the rule from firing, 
+          * so the test will fail if the rule places an 8 at (1,4) or removes candidates from row 1 or column 4. 
+          * This tests that the rule correctly checks for the presence of the "right angle" pattern and doesn't misfire when it's not present.
+          */
+        [Test]
+        public void RightAngle_NotRunCheck()
+        {
+            var board = new Board(9, 3, 3);
+            // Populate board from InitialValues with bounds checks
+            int rows = Math.Min(9, InitialValues.Count);
+            // Populate the cell values
+            for (int r = 0; r < 9; r++)
+            {
+                for (int c = 0; c < 9; c++)
+                {
+                    var cell = new Cell(r, c);
+                    if (r < rows)
+                    {
+                        var vals = InitialValues[r].Values ?? new int?[0];
+                        if (c < vals.Length) cell.Value = vals[c];
+                    }
+                    board.Cells[r, c] = cell;
+                    board.Cells[r, c].Candidates.Clear();
+                }
+            }
+
+            // Populate the candidates
+            for (int r = 0; r < rows; r++)
+            {
+                var rowCandidates = InitialValues[r].Candidates ?? new List<int>[0];
+                int cols = Math.Min(9, rowCandidates.Length);
+                for (int c = 0; c < cols; c++)
+                {
+                    var cand = rowCandidates[c];
+                    if (cand == null) continue;
+                    foreach (var d in cand) board.Cells[r, c].Candidates.Add(d);
+                }
+            }
+
+            board.Cells[0, 0].Value = null;
+            board.Cells[0, 0].Candidates = new HashSet<int>(Enumerable.Range(1, 9));
+            // Add candidate 8 to all cells in column 0
+            for (int r = 0; r < 9; r++) {                
+                board.Cells[r, 0].Candidates.Add(8);
+            }
+            board.Cells[0, 5].Value = 8;
+            board.Cells[0, 5].Candidates = new HashSet<int>(Enumerable.Range(1, 9));
+            // Remove candidate 8 from all cells in row 0
+            for (int c = 0; c < 9; c++) {
+                board.Cells[0, c].Candidates.Remove(8);
+            }
+            // Remove candidate 8 from all cells in column 5
+            for (int r = 0; r < 9; r++) {
+                board.Cells[r, 5].Candidates.Remove(8);
+            }
+
+            var registry = new RuleRegistry();
+            registry.Register(new RightAngleRule());
+            
+            var (rule, result) = registry.ApplyNext(board);
+            Assert.IsNull(rule);
+            Assert.IsFalse(result.Apply);            
         }
     }
 }

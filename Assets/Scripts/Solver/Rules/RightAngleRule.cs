@@ -137,19 +137,22 @@ namespace Sudoku.Solver.Rules
                         {
                             if (placedValues.Contains(digit)) continue;
 
-                            // check row for candidate digit
-                            // Per comment: require set values (not candidates) in the
-                            // row/column outside the right-angle to support deduction.
+                            // Skip digits already present anywhere in the box
+                            if (boxObj.Any(cell => cell.Value.HasValue && cell.Value.Value == digit)) continue;
+
+                            // check row for a set value of the digit outside this box
+                            // Require a placed digit in the same row but not inside the box.
                             bool rowHas = false;
                             for (int cc = 0; cc < size; cc++)
                             {
+                                if (cc >= startBoxCol && cc < startBoxCol + board.BoxWidth) continue;
                                 var cell = board.Cells[rowInBox, cc];
                                 if (cell.Value.HasValue && cell.Value == digit) { rowHas = true; break; }
                             }
 
                             if (!rowHas) continue;
 
-                            // check column for a set value of the digit
+                            // check column for a set value of the digit outside this box
                             bool colHas = false;
                             for (int rr = 0; rr < size; rr++)
                             {
