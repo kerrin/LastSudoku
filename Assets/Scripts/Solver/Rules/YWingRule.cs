@@ -10,14 +10,14 @@ namespace Sudoku.Solver.Rules
      * For a rectangle of cells (that do not need to be adjacent), 
      * if three corners are bi-value
      * cells whose candidate pairs together cover exactly three digits
-     * (e.g. {a,b}, {a,c}, {b,c}), then the fourth corner must be the
-     * digit not in the opposite corner pair (e.g. c in this example)
+     * (e.g. {a,b}, {a,c}, {b,c}), then the fourth corner not must be the
+     * digit missing in the opposite corner pair (e.g. c in this example)
      * (ab),(bc)
      * (ac),(*c*)
      *
      * The 3 cells used for deduction cannot contain any other candidates beyond the three-digit union, 
-     * but the cell we set the value in can contain other candidates (which will be cleared when we set the value). 
-     * This is a valid Y-wing pattern even if the target cell does not currently list the digit as a candidate.
+     * but the cell we remove the candidate from can contain other candidates (which will be unaffected). 
+     * This rule should only trigger if the target cell currently lists the digit as a candidate.
      */
     public class YWingRule : ISudokuRule
     {
@@ -248,44 +248,27 @@ namespace Sudoku.Solver.Rules
                     r.UsedCells.Add(new UsedCell { Row = bv.Row, Column = bv.Column, Candidate = null });
             }
 
-            // Place the digit into the target cell. Do NOT record blanket candidate
-            // removals for the target here — if callers choose to only enact
-            // candidates (preview mode) we must not clear the target's candidates
-            // without actually assigning the value. Leave candidate clearing to
-            // `EnactAll` which sets the value and clears candidates atomically.
-            var change = new CellChange { Row = target.Row, Column = target.Column, OldValue = target.Value, NewValue = digit };
-            r.Changes.Add(change);
-
-            // Also remove the placed digit from all peers' candidates (recorded as separate changes)
-            foreach (var peer in board.GetPeers(target))
+            // Remove the deduced digit from the target cell's candidates (don't set the value)
+            if (hadCandidate)
             {
-                if (peer.Value.HasValue) continue;
-                if (peer.Candidates.Contains(digit))
-                {
-                    // avoid adding duplicate peer change entries
-                    if (!r.Changes.Exists(ch => ch.Row == peer.Row && ch.Column == peer.Column && ch.RemovedCandidates.Contains(digit)))
-                    {
-                        var peerChange = new CellChange { Row = peer.Row, Column = peer.Column };
-                        peerChange.RemovedCandidates.Add(digit);
-                        r.Changes.Add(peerChange);
-                    }
-                }
+                var targetChange = new CellChange { Row = target.Row, Column = target.Column };
+                targetChange.RemovedCandidates.Add(digit);
+                r.Changes.Add(targetChange);
             }
 
-            // also record the target as used
+            // also record the target as used (for UI highlighting)
             if (!r.UsedCells.Exists(u => u.Row == target.Row && u.Column == target.Column && u.Candidate == digit))
                 r.UsedCells.Add(new UsedCell { Row = target.Row, Column = target.Column, Candidate = digit });
 
             r.Apply = r.Changes.Count > 0;
             if (r.Apply)
             {
-                r.Description = $"YWing rectangle placed {digit} into ({target.Row},{target.Column})";
+                r.Description = $"YWing removed {digit} from ({target.Row},{target.Column})";
                 if (!hadCandidate)
                 {
-                    UnityEngine.Debug.LogWarning($"YWing placed {digit} into ({target.Row},{target.Column}) even though it was not a candidate");
+                    UnityEngine.Debug.LogWarning($"YWing attempted to remove {digit} from ({target.Row},{target.Column}) even though it was not a candidate");
                     r.Description += " (digit was not present in target candidates)";
                 }
-                // Debug: dump used cells and bival info to help UI highlighting troubleshooting
                 try
                 {
                     UnityEngine.Debug.Log($"YWing Debug: union={{ {string.Join(',', union)} }} bivals={{ {string.Join(';', bivals.Select(b=>$"({b.Row},{b.Column}):[{string.Join(',', b.Candidates)}]"))} }}");
@@ -296,6 +279,7 @@ namespace Sudoku.Solver.Rules
                     UnityEngine.Debug.LogException(ex);
                 }
             }
+
             return r;
         }
     }
