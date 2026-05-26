@@ -7,14 +7,15 @@ namespace Sudoku.Solver.Rules
     /**
      * Skyscraper technique (rows/columns variant).
      *
-    * For a digit d, find two rows each containing exactly two candidate positions
-    * for d (conjugate pairs) and sharing exactly one column. Let the non-shared columns be a and c
+     * For a digit d, find two rows each containing *exactly* two candidate positions
+     * for d (conjugate pairs) and sharing *exactly* one column. 
+     * Let the non-shared columns be a and c
      * and the shared column be b. Then the cells at (r1,a) and (r2,c) are the
      * skyscraper endpoints; any cell that sees both endpoints cannot contain d.
      * The same logic is applied symmetrically swapping rows/columns.
      *
      * The steps to using a skyscraper are:
-     * 1. Find a single candidate that appears exactly twice in two columns (or rows). 
+     * 1. Find a single candidate that appears *exactly* twice in two columns (or rows). 
      * 2. In the two columns, two of the candidate cells must share the same row to form the floor of the skyscraper.
      * 3. The other two cells must appear in different rows to form a slanted roof.
      * 4. Peers of the roof endpoints can have the candidate eliminated.
@@ -74,7 +75,12 @@ namespace Sudoku.Solver.Rules
             // Row-based skyscraper
             foreach (int digit in digitsOrder)
             {
-                // collect rows with two or more candidate columns for digit
+                var positions = new List<string>();
+                for (int rr = 0; rr < size; rr++)
+                    for (int cc = 0; cc < size; cc++)
+                        if (!board.Cells[rr, cc].Value.HasValue && board.Cells[rr, cc].Candidates.Contains(digit)) positions.Add($"({rr},{cc})");
+                UnityEngine.Debug.Log($"Skyscraper: digit={digit} positions={string.Join(',', positions)}");
+                // collect rows with two or more candidate columns for digit (allow subset enumeration)
                 var rows = new List<(int row, List<int> cols)>();
                 for (int r = 0; r < size; r++)
                 {
@@ -85,9 +91,11 @@ namespace Sudoku.Solver.Rules
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) cols.Add(c);
                     }
                     // suppressed per-digit/row logging to avoid flooding the console
-                    // include rows that have two or more candidates (allow subset enumeration)
-                    if (cols.Count >= 2) rows.Add((r, cols));
+                    // include rows that have exactly two candidates (conjugate pairs)
+                    if (cols.Count == 2) rows.Add((r, cols));
                 }
+
+                
 
                 for (int i = 0; i < rows.Count; i++)
                     for (int j = i + 1; j < rows.Count; j++)
@@ -127,7 +135,7 @@ namespace Sudoku.Solver.Rules
                                 var removals = new List<Cell>();
                                 foreach (Cell p in peers1)
                                 {
-                                    // Exclude endpoints and floor witness cells from being removed
+                                        // Exclude endpoints and floor witness cells from being removed
                                     if (p == e1 || p == e2 || p == f1 || p == f2) continue;
                                     if (!p.Value.HasValue && p.Candidates.Contains(digit)) removals.Add(p);
                                 }
@@ -153,9 +161,12 @@ namespace Sudoku.Solver.Rules
                         var cell = board.Cells[r, c];
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) rs.Add(r);
                     }
-                    // include columns that have two or more candidates (allow subset enumeration)
-                    if (rs.Count >= 2) cols.Add((c, rs));
+                    // include columns that have exactly two candidates (conjugate pairs)
+                    if (rs.Count == 2) cols.Add((c, rs));
                 }
+
+                if (cols.Count > 0)
+                    UnityEngine.Debug.Log($"Skyscraper: digit={digit} cols={string.Join(',', cols.Select(cc => cc.col + ":" + string.Join('|', cc.rows)))}");
 
                 for (int i = 0; i < cols.Count; i++)
                     for (int j = i + 1; j < cols.Count; j++)
