@@ -72,8 +72,8 @@ namespace Sudoku.Solver.Rules
         {
             Register(new NakedSingleRule());
             Register(new HiddenSingleRule());
-            Register(new LastCellInUnitRule());
-            Register(new MissingSingleRule());
+            // The following rules were removed because they duplicate existing logic:
+            // LastCellInUnitRule and MissingSingleRule
         }
 
         /**

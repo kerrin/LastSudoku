@@ -17,7 +17,7 @@ namespace Sudoku.Tests.Editor
         {
             var registry = new RuleRegistry();
             registry.RegisterMinimal();
-            Assert.AreEqual(4, registry.Rules.Count);
+            Assert.AreEqual(2, registry.Rules.Count);
         }
 
         /** Ensure that calling <c>RegisterMedium</c> populates the registry with the expected rules. */

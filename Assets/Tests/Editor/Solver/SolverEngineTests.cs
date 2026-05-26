@@ -10,7 +10,7 @@ namespace Sudoku.Tests.Solver
     public class SolverEngineTests
     {
         [Test]
-        public void ApplyLastCellInUnit_PlacesMissingValue()
+        public void ApplyBasicRules_PlacesMissingValue()
         {
             var board = new Board(9, 3, 3);
             for (int r = 0; r < 9; r++)
@@ -34,7 +34,7 @@ namespace Sudoku.Tests.Solver
             var steps = registry.ApplyAll(board, 10);
 
             // The empty cell at (0,0) should be filled with the missing digit (1).
-            Assert.IsTrue(board.Cells[0, 0].Value.HasValue, "Expected the rule to place a value at (0,0)");
+            Assert.IsTrue(board.Cells[0, 0].Value.HasValue, "Expected a rule to place a value at (0,0)");
             Assert.AreEqual(1, board.Cells[0, 0].Value.Value);
             Assert.IsTrue(steps.Any(), "Expected at least one rule application");
             // At least one applied step must include a change that placed 1 at (0,0).
