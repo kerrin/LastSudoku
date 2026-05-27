@@ -56,7 +56,6 @@ public class RuleTogglePanel : MonoBehaviour
                 if (child.name == "Content") continue;
                 if (Application.isPlaying) Destroy(child.gameObject);
                 else DestroyImmediate(child.gameObject);
-                Debug.Log($"RuleTogglePanel: Removed design-time object '{child.name}' under Viewport.");
             }
         }
 
@@ -249,7 +248,6 @@ public class RuleTogglePanel : MonoBehaviour
                     label.horizontalOverflow = HorizontalWrapMode.Overflow;
                     label.verticalOverflow = VerticalWrapMode.Truncate;
                     label.resizeTextForBestFit = true;
-                    Debug.Log($"RuleTogglePanel: Set label (Text) for '{ruleTypeName}' => '{label.text}'");
                 }
                 else if (tmpLabel != null) {
                     var ttxt = SplitPascalCase(entry.rule.Name ?? "");
@@ -259,7 +257,6 @@ public class RuleTogglePanel : MonoBehaviour
                     tmpLabel.enableAutoSizing = true;
                     tmpLabel.fontSizeMin = 10;
                     tmpLabel.fontSizeMax = 14;
-                    Debug.Log($"RuleTogglePanel: Set label (TMP) for '{ruleTypeName}' => '{tmpLabel.text}'");
                 }
 
                 if (toggle != null)
@@ -271,7 +268,6 @@ public class RuleTogglePanel : MonoBehaviour
                     {
                         _registry.SetEnabled(capturedName, val);
                         if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
-                        Debug.Log($"Rule '{capturedName}' enabled={val}");
                     });
                     var rowButton = existing.GetComponent<Button>();
                     if (rowButton != null)
@@ -305,7 +301,6 @@ public class RuleTogglePanel : MonoBehaviour
             {
                 if (Application.isPlaying) Destroy(child.gameObject);
                 else DestroyImmediate(child.gameObject);
-                Debug.Log($"RuleTogglePanel: Removed extra toggle '{child.name}' from scene (not in registry).");
             }
         }
     }
@@ -413,7 +408,6 @@ public class RuleTogglePanel : MonoBehaviour
         var lblTxt = SplitPascalCase(rule.Name ?? "");
         if (string.IsNullOrEmpty(lblTxt)) lblTxt = rule.GetType().Name;
         label.text = lblTxt;
-        Debug.Log($"RuleTogglePanel: Created label for '{rule.GetType().Name}' => '{label.text}'");
         label.font = GetSafeBuiltinFont("Arial.ttf");
         label.fontSize = 14;
         label.color = Color.white;
@@ -433,12 +427,9 @@ public class RuleTogglePanel : MonoBehaviour
         {
             _registry.SetEnabled(ruleTypeName, val);
             if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
-            Debug.Log($"Rule '{ruleTypeName}' enabled={val}");
         });
         rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
         if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(enabled);
-        Debug.Log($"RuleTogglePanel: Added toggle for '{ruleTypeName}' (initially {(enabled?"ON":"OFF")}).");
-
     }
 
     private string SplitPascalCase(string input)

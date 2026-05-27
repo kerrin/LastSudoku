@@ -70,7 +70,6 @@ namespace Sudoku.Solver.Rules
                 digitCounts[d] = cnt;
             }
             var digitsOrder = digitCounts.OrderBy(kv => kv.Value).ThenBy(kv => kv.Key).Select(kv => kv.Key).ToList();
-            UnityEngine.Debug.Log($"Skyscraper: digit order = {string.Join(',', digitsOrder)}");
 
             // Row-based skyscraper
             foreach (int digit in digitsOrder)
@@ -79,7 +78,6 @@ namespace Sudoku.Solver.Rules
                 for (int rr = 0; rr < size; rr++)
                     for (int cc = 0; cc < size; cc++)
                         if (!board.Cells[rr, cc].Value.HasValue && board.Cells[rr, cc].Candidates.Contains(digit)) positions.Add($"({rr},{cc})");
-                UnityEngine.Debug.Log($"Skyscraper: digit={digit} positions={string.Join(',', positions)}");
                 // collect rows with two or more candidate columns for digit (allow subset enumeration)
                 var rows = new List<(int row, List<int> cols)>();
                 for (int r = 0; r < size; r++)
@@ -141,7 +139,6 @@ namespace Sudoku.Solver.Rules
                                 }
                                 if (removals.Count > 0)
                                 {
-                                    UnityEngine.Debug.Log($"Skyscraper: found candidate digit={digit} e1=({e1.Row},{e1.Column}) e2=({e2.Row},{e2.Column}) removals={removals.Count}");
                                     candidates.Add((e1, e2, digit, removals, new List<Cell> { e1, e2, f1, f2 }));
                                     if (candidates.Count >= MaxCandidates) goto SELECT;
                                 }
@@ -165,8 +162,6 @@ namespace Sudoku.Solver.Rules
                     if (rs.Count == 2) cols.Add((c, rs));
                 }
 
-                if (cols.Count > 0)
-                    UnityEngine.Debug.Log($"Skyscraper: digit={digit} cols={string.Join(',', cols.Select(cc => cc.col + ":" + string.Join('|', cc.rows)))}");
 
                 for (int i = 0; i < cols.Count; i++)
                     for (int j = i + 1; j < cols.Count; j++)
@@ -211,7 +206,6 @@ namespace Sudoku.Solver.Rules
                                 }
                                 if (removals.Count > 0)
                                 {
-                                    UnityEngine.Debug.Log($"Skyscraper: found candidate digit={digit} e1=({e1.Row},{e1.Column}) e2=({e2.Row},{e2.Column}) removals={removals.Count}");
                                     candidates.Add((e1, e2, digit, removals, new List<Cell> { e1, e2, f1, f2 }));
                                     if (candidates.Count >= MaxCandidates) goto SELECT;
                                 }
@@ -271,14 +265,6 @@ SELECT:
 
             r.Apply = r.Changes.Count > 0;
             if (r.Apply) r.Description = $"Skyscraper removed {digit} from {r.Changes.Count} cell(s)";
-            if (r.Apply)
-            {
-                UnityEngine.Debug.Log($"Skyscraper: UsedCells: {string.Join(',', r.UsedCells.Select(u => $"({u.Row},{u.Column}:{(u.Candidate.HasValue?u.Candidate.Value.ToString():"-")})"))}");
-                foreach (var ch in r.Changes)
-                {
-                    UnityEngine.Debug.Log($"Skyscraper: removal digit={digit} at ({ch.Row},{ch.Column})");
-                }
-            }
             return r;
         }
         

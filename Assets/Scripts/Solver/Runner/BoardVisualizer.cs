@@ -116,7 +116,6 @@ namespace Sudoku.Solver
                 {
                     string src = activePreview ? "PreviewRuleResult" : ( _lastSeenRuleResult != null ? "LastSeenApplied" : "LastRuleResult" );
                     string desc = resultToShow != null ? resultToShow.Description ?? "(no desc)" : "(none)";
-                    Debug.Log($"BoardVisualizer: using result source={src}, desc={desc}, previewActive={activePreview}");
                     _lastLoggedResultToShow = resultToShow;
                     _lastLoggedPreviewActive = activePreview;
                 }
@@ -278,7 +277,6 @@ namespace Sudoku.Solver
                     var liveStr = liveSb.Length > 0 ? liveSb.ToString(0, liveSb.Length - 1) : "(none)";
                     var previewActiveLocal = previewResLocal != null && previewResLocal.Apply;
                     var appliedDesc = _lastSeenRuleResult != null ? _lastSeenRuleResult.Description : (Runner.LastRuleResult != null ? Runner.LastRuleResult.Description : "(none)");
-                    Debug.Log($"BoardVisualizer: LIVE candidates for ({cell.Row},{cell.Column}) = [{liveStr}], previewActive={previewActiveLocal}, appliedDesc='{appliedDesc}'");
                 }
             }
             catch (System.Exception ex)

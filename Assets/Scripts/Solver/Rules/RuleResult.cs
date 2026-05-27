@@ -95,14 +95,9 @@ namespace Sudoku.Solver.Rules
                             break;
                         }
                     }
-                    if (conflict)
-                    {
-                        Debug.LogWarning($"Skipped applying {change.NewValue.Value} at ({change.Row},{change.Column}) due to conflict with peers.");
-                    }
-                    else
+                    if (!conflict)
                     {
                         // set the value and clear the cell's own candidates
-                        Debug.Log($"EnactAll: setting value {change.NewValue.Value} at ({change.Row},{change.Column})");
                         board.SetValue(cell, change.NewValue.Value);
                     }
                 }
@@ -112,12 +107,7 @@ namespace Sudoku.Solver.Rules
                     {
                         if (cell.Candidates.Contains(v))
                         {
-                            Debug.Log($"EnactAll: removing candidate {v} at ({change.Row},{change.Column})");
                             cell.Candidates.Remove(v);
-                        }
-                        else
-                        {
-                            Debug.Log($"EnactAll: candidate {v} at ({change.Row},{change.Column}) was already missing");
                         }
                     }
                 }
@@ -128,14 +118,12 @@ namespace Sudoku.Solver.Rules
             {
                 var c = board.Cells[changePost.Row, changePost.Column];
                 var candList = c.Candidates != null ? string.Join(",", c.Candidates) : "(null)";
-                Debug.Log($"EnactAll: POST state for ({changePost.Row},{changePost.Column}) value={(c.Value.HasValue?c.Value.Value.ToString():".")} candidates=[{candList}]");
 
                 int peerCount = 0;
                 foreach (var peer in board.GetPeers(c))
                 {
                     peerCount++;
                 }
-                Debug.Log($"EnactAll: peers for ({changePost.Row},{changePost.Column}) = {peerCount}");
             }
         }
     }

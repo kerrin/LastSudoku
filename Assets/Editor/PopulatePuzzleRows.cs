@@ -16,7 +16,6 @@ public static class PopulatePuzzleRows
         runner.PuzzleRows = rows;
         EditorUtility.SetDirty(runner);
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-        Debug.Log($"Populated PuzzleRows on '{runner.gameObject.name}'.");
     }
 
     private static SolverRunner GetTargetRunner()

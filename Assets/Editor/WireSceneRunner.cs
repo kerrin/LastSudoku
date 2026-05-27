@@ -59,6 +59,5 @@ public static class WireSceneRunner
         }
 
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-        Debug.Log("WireSceneRunner: wired SolverRunner to BoardVisualizer and RuleTogglePanel.");
     }
 }

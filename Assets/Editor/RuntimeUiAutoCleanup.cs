@@ -29,8 +29,5 @@ static class RuntimeUiAutoCleanup
             Object.DestroyImmediate(m.gameObject);
             removed++;
         }
-
-        if (removed > 0)
-            Debug.Log($"Runtime UI auto-cleanup removed {removed} generated runtime UI object(s) before entering Play mode.");
     }
 }

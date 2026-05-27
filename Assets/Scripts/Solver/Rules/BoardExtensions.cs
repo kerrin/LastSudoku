@@ -280,8 +280,6 @@ namespace Sudoku.Solver.Rules
                 while (start >= 0 && board.ChangeLog[start].GroupId == gid) start--;
                 start++;
 
-                    UnityEngine.Debug.Log($"UndoLast: lastIdx={lastIdx} start={start} gid={gid} ChangeLogCount={board.ChangeLog.Count}");
-
                 // Undo entries in reverse order for the group
                 for (int i = lastIdx; i >= start; i--)
                 {
@@ -322,7 +320,6 @@ namespace Sudoku.Solver.Rules
                 }
 
                 board.ChangeLogIndex = start;
-                UnityEngine.Debug.Log($"UndoLast: new ChangeLogIndex={board.ChangeLogIndex}");
                 return true;
             }
 
@@ -339,8 +336,6 @@ namespace Sudoku.Solver.Rules
                 if (first == null) return false;
 
                 int gid = first.GroupId;
-
-                UnityEngine.Debug.Log($"RedoNext: idx={idx} gid={gid} ChangeLogCount={board.ChangeLog.Count}");
 
                 // Find group end (exclusive)
                 int end = idx;
@@ -370,7 +365,6 @@ namespace Sudoku.Solver.Rules
                 }
 
                 board.ChangeLogIndex = end;
-                UnityEngine.Debug.Log($"RedoNext: advanced ChangeLogIndex to {board.ChangeLogIndex}");
                 return true;
             }
 

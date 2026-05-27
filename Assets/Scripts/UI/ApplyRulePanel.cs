@@ -196,7 +196,6 @@ public class ApplyRulePanel : MonoBehaviour
         if (!Runner.CandidatesInitialised)
         {
             CreateInitialiseCandidatesRow(_contentRoot);
-            Debug.Log("ApplyRulePanel: showing only Initialise Candidates until it is run");
             return;
         }
 
@@ -221,7 +220,6 @@ public class ApplyRulePanel : MonoBehaviour
             created++;
         }
         // Optionally add a header summary
-        Debug.Log($"ApplyRulePanel: built list with {created} applicable rule(s)");
 
         // Force an immediate layout rebuild so the ScrollRect and EventSystem
         // see the final child positions and sizes before any pointer events.

@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using Sudoku.Solver.Rules;
 
 namespace Sudoku.Scripts.UI
 {
@@ -46,7 +47,7 @@ namespace Sudoku.Scripts.UI
 
             if (parent == null)
             {
-                var canvas = Object.FindObjectOfType<Canvas>();
+                var canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
                 if (canvas != null) parent = canvas.transform as RectTransform;
             }
 
@@ -77,17 +78,25 @@ namespace Sudoku.Scripts.UI
             containerRT.sizeDelta = new Vector2(360, 48);
             containerRT.anchoredPosition = new Vector2(0, 8); // 8 px above bottom
 
-            var layout = _containerGO.GetComponent<UnityEngine.UI.HorizontalLayoutGroup>();
-            if (layout == null) layout = _containerGO.AddComponent<UnityEngine.UI.HorizontalLayoutGroup>();
+            var layout = _containerGO.GetComponent<HorizontalLayoutGroup>();
+            if (layout == null) layout = _containerGO.AddComponent<HorizontalLayoutGroup>();
             layout.childAlignment = TextAnchor.MiddleCenter;
             layout.spacing = 8;
             layout.childForceExpandHeight = false;
             layout.childForceExpandWidth = false;
 
             // Ensure buttons exist (idempotent) so edit-mode and play-mode both show them
-            EnsureButtonExists(_containerGO.transform, "UndoButton", "Undo", 80, () => Debug.Log("Runtime: Undo clicked"));
-            EnsureButtonExists(_containerGO.transform, "ViewChangesButton", "View Changes", 140, () => Debug.Log("Runtime: View Changes clicked"));
-            EnsureButtonExists(_containerGO.transform, "RedoButton", "Redo", 80, () => Debug.Log("Runtime: Redo clicked"));
+            EnsureButtonExists(_containerGO.transform, "UndoButton", "Undo", 80, () => {
+                var runner = UnityEngine.Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
+                if (runner != null && runner.CurrentBoard != null) runner.CurrentBoard.UndoLast();
+            });
+            EnsureButtonExists(_containerGO.transform, "ViewChangesButton", "View Changes", 140, () => {
+                ChangeLogPanelRuntime.TogglePanel();
+            });
+            EnsureButtonExists(_containerGO.transform, "RedoButton", "Redo", 80, () => {
+                var runner = UnityEngine.Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
+                if (runner != null && runner.CurrentBoard != null) runner.CurrentBoard.RedoNext();
+            });
         }
 
         private void CreateButton(Transform parent, string text, float width, UnityEngine.Events.UnityAction onClick)

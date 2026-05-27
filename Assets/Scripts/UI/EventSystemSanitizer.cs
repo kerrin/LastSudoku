@@ -43,7 +43,6 @@ public static class EventSystemSanitizer
                     UnityEngine.Object.DestroyImmediate(standalone);
                     go.AddComponent(inputModuleType);
                 }
-                Debug.Log($"EventSystemSanitizer: Replaced StandaloneInputModule with InputSystemUIInputModule on '{go.name}'.");
             }
             else
             {

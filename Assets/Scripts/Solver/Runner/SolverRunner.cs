@@ -116,8 +116,8 @@ namespace Sudoku.Solver
                 }
             }
             _board = board;
+            Debug.Log($"SolverRunner.LoadBoardFromRows: runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()}");
             CandidatesInitialised = false;
-            Debug.Log("Board loaded from PuzzleRows:\n" + BoardToString(_board));
         }
 
         [ContextMenu("Initialise Candidates")]
@@ -146,6 +146,7 @@ namespace Sudoku.Solver
                     }
                 }
                 CandidatesInitialised = true;
+            Debug.Log($"SolverRunner.InitialiseCandidates: runner.InstanceID={this.GetInstanceID()} board.hash={_board?.GetHashCode() ?? 0} candidatesInitialised={CandidatesInitialised}");
         }
 
         [ContextMenu("Run Next Rule Step")]
@@ -159,17 +160,10 @@ namespace Sudoku.Solver
             LastRuleResult = result;
             if (rule == null || result == null || !result.Apply)
             {
-                if (result != null && result.UsedCells != null && result.UsedCells.Count > 0)
-                {
-                    Debug.Log("No applicable rule found; board validation indicates conflicts: " + result.Description + "\n" + BoardToString(_board));
-                }
-                else
-                {
-                    Debug.Log("No applicable rule found.");
-                }
+                Debug.Log($"SolverRunner.RunNextStep: no rule applied. runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()}");
                 return;
             }
-            Debug.Log($"Applied '{rule.Name}': {result.Description}\n{BoardToString(_board)}");
+            Debug.Log($"SolverRunner.RunNextStep: applied {rule.GetType().Name} runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} changes={result.Changes?.Count ?? 0}");
         }
 
         /**
@@ -178,11 +172,7 @@ namespace Sudoku.Solver
          */
         public void PreviewRule(ISudokuRule rule)
         {
-            if (SuppressPreviewRequests)
-            {
-                Debug.Log("PreviewRule: suppressed");
-                return;
-            }
+            if (SuppressPreviewRequests) return;            
             if (_board == null) LoadBoardFromRows();
             if (_board == null) { PreviewRuleResult = null; return; }
             EnsureEngine();
@@ -191,11 +181,9 @@ namespace Sudoku.Solver
             {
                 var res = rule.CalculateChanges(_board);
                 PreviewRuleResult = (res != null && res.Apply) ? res : new RuleResult { Apply = false };
-                Debug.Log($"PreviewRule: {rule.GetType().Name} => Apply={PreviewRuleResult.Apply}");
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"PreviewRule threw for {rule.GetType().Name}: {ex.Message}");
                 PreviewRuleResult = new RuleResult { Apply = false, Description = "Preview error" };
             }
         }
@@ -205,11 +193,7 @@ namespace Sudoku.Solver
          */
         public void PreviewInitialiseCandidates()
         {
-            if (SuppressPreviewRequests)
-            {
-                Debug.Log("PreviewInitialiseCandidates: suppressed");
-                return;
-            }
+            if (SuppressPreviewRequests) return;
             if (_board == null) LoadBoardFromRows();
             if (_board == null) { PreviewRuleResult = null; return; }
             var res = new RuleResult { Apply = true, Description = "Initialise Candidates (preview)" };
@@ -225,14 +209,12 @@ namespace Sudoku.Solver
                 }
             }
             PreviewRuleResult = res;
-            Debug.Log("PreviewInitialiseCandidates: prepared preview highlighting empty cells.");
         }
 
         /** Clear any previewed rule result. */
         public void ClearPreview()
         {
             PreviewRuleResult = null;
-            Debug.Log("Preview cleared");
         }
 
         /**
@@ -240,16 +222,11 @@ namespace Sudoku.Solver
          */
         public void RunRule(ISudokuRule rule)
         {
-            Debug.Log($"RunRule: begin {rule?.GetType().Name}");
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
             if (rule == null) return;
-            if (!Registry.IsEnabled(rule))
-            {
-                Debug.LogWarning($"RunRule: rule {rule.GetType().Name} is disabled.");
-                return;
-            }
+            if (!Registry.IsEnabled(rule)) return;
             RuleResult res = null;
             try
             {
@@ -260,18 +237,62 @@ namespace Sudoku.Solver
                 Debug.LogWarning($"RunRule: CalculateChanges threw for {rule.GetType().Name}: {ex.Message}");
                 return;
             }
-            if (res == null || !res.Apply)
+            if (res == null || !res.Apply) return;
+            // Before enacting, populate OldValue for each change (mirror RuleRegistry behavior)
+            try
             {
-                Debug.Log("RunRule: rule had no effect.");
-                return;
+                foreach (var ch in res.Changes)
+                {
+                    try
+                    {
+                        var cell = _board.Cells[ch.Row, ch.Column];
+                        ch.OldValue = cell?.Value;
+                    }
+                    catch { }
+                }
             }
+            catch { }
+
             // Enact all recorded changes
             res.EnactAll(_board);
+
+            // Append a deep copy of each recorded change to the board's in-memory change log
+            try
+            {
+                if (_board.ChangeLog == null) _board.ChangeLog = new System.Collections.Generic.List<CellChange>();
+                if (_board.ChangeLogIndex < _board.ChangeLog.Count)
+                {
+                    _board.ChangeLog.RemoveRange(_board.ChangeLogIndex, _board.ChangeLog.Count - _board.ChangeLogIndex);
+                }
+                int gid = _board.NextChangeGroupId;
+                _board.NextChangeGroupId++;
+                foreach (var ch in res.Changes)
+                {
+                    var copy = new CellChange
+                    {
+                        Row = ch.Row,
+                        Column = ch.Column,
+                        OldValue = ch.OldValue,
+                        NewValue = ch.NewValue,
+                        RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                        GroupId = gid,
+                        SourceRuleName = rule.GetType().Name,
+                        SourceRuleDescription = res.Description
+                    };
+                    _board.ChangeLog.Add(copy);
+                }
+                Debug.Log($"SolverRunner.RunRule: appended {res.Changes.Count} changes as group {gid}; runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} ChangeLogCount={_board.ChangeLog.Count}");
+                _board.ChangeLogIndex = _board.ChangeLog.Count;
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning($"SolverRunner.RunRule: failed to append changes to ChangeLog: {ex.Message}");
+            }
+
             LastAppliedRule = rule;
             LastRuleResult = res;
             PreviewRuleResult = null;
-            Debug.Log($"Applied '{rule.Name}': {res.Description}\n{BoardToString(_board)}");
-            Debug.Log($"RunRule: end {rule.GetType().Name}");
+            Debug.Log($"SolverRunner.RunRule: enacted {rule.GetType().Name} runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} changes={res.Changes?.Count ?? 0}");
         }
 
         [ContextMenu("Run Solve")]
@@ -293,11 +314,7 @@ namespace Sudoku.Solver
                 LastAppliedRule = null;
                 LastRuleResult = null;
             }
-            Debug.Log($"Solver finished. Solved={solved}. Steps={steps.Count}\n{BoardToString(_board)}");
-            foreach ((ISudokuRule rule, RuleResult result) s in steps)
-            {
-                Debug.Log($"{s.rule.Name}: {s.result.Description}");
-            }
+            Debug.Log($"SolverRunner.RunSolve: runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} steps={steps?.Count ?? 0} solved={solved}");
         }
 
         [ContextMenu("Reset Candidates for Empty Cells")]
@@ -316,18 +333,13 @@ namespace Sudoku.Solver
                     }
                 }
             CandidatesInitialised = true;
-            Debug.Log("Candidates reset.");
         }
 
         [ContextMenu("Validate Board")]
         public bool ValidateBoard()
         {
             if (_board == null) LoadBoardFromRows();
-            if (_board == null)
-            {
-                Debug.LogError("No board loaded to validate.");
-                return false;
-            }
+            if (_board == null)  return false;
 
             // Perform a full conflict discovery. `FindConflicts` performs immediate
             // duplicate detection and — if no immediate conflicts — will attempt to
@@ -349,7 +361,6 @@ namespace Sudoku.Solver
 
             // No conflicts found
             var okMsg = "Board is valid.";
-            Debug.Log(okMsg + "\n" + BoardToString(_board));
             LastAppliedRule = null;
             LastRuleResult = new RuleResult { Apply = false, Description = okMsg };
             return true;

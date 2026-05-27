@@ -277,24 +277,20 @@ public class BoardSidePanel : MonoBehaviour
                         if (chosenRT != null) chosenRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, prefW);
                         toggleLE = le;
                     }
-                    Debug.Log($"BoardSidePanel: Reparented existing RuleTogglePanel '{chosen.gameObject.name}' into SidePanel top.");
                 }
 
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
                 chosen.Runner = BoardVisualizer.Runner;
-                Debug.Log("BoardSidePanel: Wired RuleTogglePanel.Runner from BoardVisualizer.Runner");
             }
             else
             {
                 chosen.Runner = Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-                Debug.Log($"BoardSidePanel: Wired RuleTogglePanel.Runner fallback={(chosen.Runner!=null)}");
             }
 
             for (int i = 0; i < all.Length; i++)
             {
                 if (all[i] == chosen) continue;
-                Debug.Log($"BoardSidePanel: Removing extra RuleTogglePanel instance '{all[i].gameObject.name}'");
                 Destroy(all[i].gameObject);
             }
 
@@ -323,17 +319,14 @@ public class BoardSidePanel : MonoBehaviour
         toggleLE = hostLE;
 
         var panel = hostGO.AddComponent<RuleTogglePanel>();
-        Debug.Log($"BoardSidePanel: Created RuleTogglePanel hostGO '{hostGO.name}' and attached RuleTogglePanel component at SidePanel top.");
 
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
             panel.Runner = BoardVisualizer.Runner;
-            Debug.Log("BoardSidePanel: Wired RuleTogglePanel.Runner from BoardVisualizer.Runner");
         }
         else
         {
             panel.Runner = Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-            Debug.Log($"BoardSidePanel: Wired RuleTogglePanel.Runner fallback={(panel.Runner!=null)}");
         }
 
         // Also ensure a RuleListPanel is present in the RulesArea to list/apply rules
@@ -344,7 +337,6 @@ public class BoardSidePanel : MonoBehaviour
             // Use the panel's MaxWidth when available; prefer 160px maximum for toggles
             float prefW = Mathf.Min(panel.MaxWidth, 160f);
             toggleLE.preferredWidth = prefW;
-            Debug.Log($"BoardSidePanel: Set RuleTogglePanel hostGO preferredWidth={prefW} (panel.MaxWidth={panel.MaxWidth})");
             // Also set the hostGO RectTransform width immediately so layout reflects it
             var hostRT = hostGO.GetComponent<RectTransform>();
             if (hostRT != null) hostRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, prefW);
@@ -393,7 +385,6 @@ public class BoardSidePanel : MonoBehaviour
                         if (le == null) le = chosen.gameObject.AddComponent<LayoutElement>();
                         le.flexibleHeight = 1f;
                     }
-                    Debug.Log($"BoardSidePanel: Reparented existing ApplyRulePanel '{chosen.gameObject.name}' into RulesArea.");
                 }
             
             // Ensure the RuleListPanel sits immediately after the RuleTogglePanel in the
@@ -414,19 +405,16 @@ public class BoardSidePanel : MonoBehaviour
             if (BoardVisualizer != null && BoardVisualizer.Runner != null)
             {
                 chosen.Runner = BoardVisualizer.Runner;
-                Debug.Log("BoardSidePanel: Wired ApplyRulePanel.Runner from BoardVisualizer.Runner");
             }
             else
             {
                 chosen.Runner = Object.FindAnyObjectByType<SolverRunner>();
-                Debug.Log($"BoardSidePanel: Wired ApplyRulePanel.Runner fallback={(chosen.Runner!=null)}");
             }
 
             // Destroy duplicates
             for (int i = 0; i < all.Length; i++)
             {
                 if (all[i] == chosen) continue;
-                Debug.Log($"BoardSidePanel: Removing extra ApplyRulePanel instance '{all[i].gameObject.name}'");
                 Destroy(all[i].gameObject);
             }
             return;
@@ -444,17 +432,14 @@ public class BoardSidePanel : MonoBehaviour
         hostLE.flexibleHeight = 1f;
 
         var panel = hostGO.AddComponent<ApplyRulePanel>();
-        Debug.Log($"BoardSidePanel: Created ApplyRulePanel hostGO '{hostGO.name}' and attached ApplyRulePanel component.");
 
         if (BoardVisualizer != null && BoardVisualizer.Runner != null)
         {
             panel.Runner = BoardVisualizer.Runner;
-            Debug.Log("BoardSidePanel: Wired ApplyRulePanel.Runner from BoardVisualizer.Runner");
         }
         else
         {
             panel.Runner = Object.FindAnyObjectByType<SolverRunner>();
-            Debug.Log($"BoardSidePanel: Wired ApplyRulePanel.Runner fallback={(panel.Runner!=null)}");
         }
 
         // Ensure the newly created list is positioned immediately after the toggle host
@@ -481,7 +466,7 @@ public class BoardSidePanel : MonoBehaviour
 
         // Make sure we have a valid canvas reference for pixel-accurate layout.
         if (TargetCanvas == null)
-            TargetCanvas = Object.FindAnyObjectByType<Canvas>();
+            TargetCanvas = FindAnyObjectByType<Canvas>();
 
         // Use screen dimensions for geometry because the board is drawn with IMGUI
         // coordinates (Screen space). This keeps both systems aligned.
@@ -521,11 +506,9 @@ public class BoardSidePanel : MonoBehaviour
                 // Move left so min width fits
                 left = Mathf.Max(Padding, canvasWidth - MinWidth - Padding);
             }
-            Debug.Log($"BoardSidePanel: boardLeft={boardLeft} cell={cell} gridSize={gridSize} boardWidth={boardWidth} left={left} availableWidth={availableWidth} canvasWidth={canvasWidth}");
         }
         else
         {
-            Debug.Log($"Guessing BoardSidePanel geometry: BoardVisualizer or Runner or Board missing. Defaulting panel left to canvasWidth - MinWidth - Padding.");
             // If we don't have board geometry yet, place the panel at the right edge
             left = Mathf.Max(Padding, canvasWidth - MinWidth - Padding);
         }
@@ -556,7 +539,6 @@ public class BoardSidePanel : MonoBehaviour
             Vector3[] corners = new Vector3[4];
             _panelRect.GetWorldCorners(corners);
             float topWorldY = corners[1].y; // top-left corner
-            Debug.Log($"BoardSidePanel: panel pixels: canvas=({canvasWidth}x{canvasHeight}) left={leftPixel} width={widthPixels} top(screen)={Screen.height - boardGuiOffset.y} height={heightPixels} worldPos={_panelRect.position} topWorldY={topWorldY}");
         }
         else
         {

@@ -11,7 +11,6 @@ public static class ChangeLogTools
         var existing = GameObject.Find("ChangeLogRuntimeControls");
         if (existing != null)
         {
-            Debug.Log("ChangeLogTools: Found existing ChangeLogRuntimeControls in scene. Selecting it.");
             Selection.activeGameObject = existing;
             return;
         }
@@ -19,7 +18,6 @@ public static class ChangeLogTools
         var go = new GameObject("ChangeLogRuntimeControls");
         go.AddComponent<Sudoku.Scripts.UI.ChangeLogRuntimeControls>();
         EditorSceneManager.MarkSceneDirty(EditorSceneManager.GetActiveScene());
-        Debug.Log("ChangeLogTools: Spawned ChangeLogRuntimeControls. Save the scene to persist.");
     }
 }
 #endif

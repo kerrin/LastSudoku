@@ -6,7 +6,7 @@ public static class RuntimeUiCleanup
     [MenuItem("Tools/Runtime UI/Cleanup/Remove SidePanels")] 
     public static void RemoveSidePanels()
     {
-        var panels = Object.FindObjectsOfType<Transform>();
+        var panels = Object.FindObjectsByType<Transform>();
         int removed = 0;
         foreach (var t in panels)
         {
@@ -16,13 +16,12 @@ public static class RuntimeUiCleanup
                 removed++;
             }
         }
-        Debug.Log($"Removed {removed} SidePanel game object(s).");
     }
 
     [MenuItem("Tools/Runtime UI/Cleanup/Remove Generated UI")] 
     public static void RemoveGeneratedUI()
     {
-        var markers = Object.FindObjectsOfType<GeneratedRuntimeUI>();
+        var markers = Object.FindObjectsByType<GeneratedRuntimeUI>();
         int removed = 0;
         foreach (var m in markers)
         {
@@ -32,13 +31,12 @@ public static class RuntimeUiCleanup
                 removed++;
             }
         }
-        Debug.Log($"Removed {removed} generated runtime UI object(s) (marked with GeneratedRuntimeUI).");
     }
 
     [MenuItem("Tools/Runtime UI/Cleanup/Remove Empty Canvases")] 
     public static void RemoveEmptyCanvases()
     {
-        var canvases = Object.FindObjectsOfType<Canvas>();
+        var canvases = Object.FindObjectsByType<Canvas>();
         int removed = 0;
         foreach (var c in canvases)
         {
@@ -51,6 +49,5 @@ public static class RuntimeUiCleanup
                 removed++;
             }
         }
-        Debug.Log($"Removed {removed} empty Canvas object(s).");
     }
 }

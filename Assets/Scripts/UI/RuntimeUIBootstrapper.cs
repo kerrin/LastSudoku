@@ -18,7 +18,6 @@ namespace Sudoku.Scripts.UI
             var go = new GameObject("ChangeLogRuntimeControls");
             Object.DontDestroyOnLoad(go);
             go.AddComponent<ChangeLogRuntimeControls>();
-            Debug.Log("RuntimeUIBootstrapper: Created ChangeLogRuntimeControls GameObject at runtime.");
         }
     }
 }

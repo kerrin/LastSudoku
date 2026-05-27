@@ -9,7 +9,6 @@ public static class RuleTogglePanelEditor
         var panels = Object.FindObjectsByType<RuleTogglePanel>();
         if (panels == null || panels.Length == 0)
         {
-            Debug.Log("RuleTogglePanelEditor: No RuleTogglePanel instances found in open scenes.");
             return;
         }
 
@@ -18,8 +17,6 @@ public static class RuleTogglePanelEditor
         {
             if (ApplyToPanel(p)) updated++;
         }
-
-        Debug.Log($"RuleTogglePanelEditor: Updated {updated} panel(s).");
     }
 
     [MenuItem("CONTEXT/RuleTogglePanel/Apply Scene Update")]
@@ -27,7 +24,6 @@ public static class RuleTogglePanelEditor
     {
         var panel = command.context as RuleTogglePanel;
         if (panel == null) return;
-        if (ApplyToPanel(panel)) Debug.Log("RuleTogglePanelEditor: Panel updated.");
     }
 
     private static bool ApplyToPanel(RuleTogglePanel panel)

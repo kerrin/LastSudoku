@@ -152,7 +152,6 @@ namespace Sudoku.Solver.Rules
 
                             var bivals = chosenTrip;
                             var target = chosenTarget;
-                            UnityEngine.Debug.Log($"YWing: rectangle rows {r1},{r2} cols {c1},{c2} triple: {string.Join(";", bivals.Select(b => $"({b.Row},{b.Column}):[{string.Join(",", b.Candidates)}]"))} target=({target.Row},{target.Column}):[{string.Join(",", target.Candidates)}]");
 
                             // find the neighbor in same row and same column (within rectangle)
                             Cell rowNeighbor = null;
@@ -268,15 +267,6 @@ namespace Sudoku.Solver.Rules
                 {
                     UnityEngine.Debug.LogWarning($"YWing attempted to remove {digit} from ({target.Row},{target.Column}) even though it was not a candidate");
                     r.Description += " (digit was not present in target candidates)";
-                }
-                try
-                {
-                    UnityEngine.Debug.Log($"YWing Debug: union={{ {string.Join(',', union)} }} bivals={{ {string.Join(';', bivals.Select(b=>$"({b.Row},{b.Column}):[{string.Join(',', b.Candidates)}]"))} }}");
-                    UnityEngine.Debug.Log($"YWing Debug: UsedCells={{ {string.Join(';', r.UsedCells.Select(u=>$"({u.Row},{u.Column}:{(u.Candidate.HasValue?u.Candidate.Value.ToString():"-")})"))} }}");
-                }
-                catch (System.Exception ex)
-                {
-                    UnityEngine.Debug.LogException(ex);
                 }
             }
 

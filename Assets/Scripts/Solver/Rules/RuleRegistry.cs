@@ -121,18 +121,15 @@ namespace Sudoku.Solver.Rules
                 // Skip disabled rules
                 if (!IsEnabled(r))
                 {
-                    Debug.Log($"Skipping disabled rule: {r.GetType().Name}");
                     continue;
                 }
                 try
                 {
                     if (!r.CanApply(board) && enactAll)
                     {
-                        Debug.Log($"Rule {r.GetType().Name} cannot apply.");
                         continue;
                     }
 
-                    Debug.Log($"Applying rule: {r.GetType().Name}");
                     RuleResult res = r.CalculateChanges(board);
                     if (res != null && res.Apply)
                     {
@@ -166,9 +163,7 @@ namespace Sudoku.Solver.Rules
                             // reflects a linear history.
                             if (board.ChangeLogIndex < board.ChangeLog.Count)
                             {
-                                Debug.Log($"RuleRegistry: trimming ChangeLog from index {board.ChangeLogIndex} (count before={board.ChangeLog.Count})");
                                 board.ChangeLog.RemoveRange(board.ChangeLogIndex, board.ChangeLog.Count - board.ChangeLogIndex);
-                                Debug.Log($"RuleRegistry: ChangeLog count after trim={board.ChangeLog.Count}");
                             }
 
                             // Assign a new group id for this atomic application of the rule
@@ -189,12 +184,17 @@ namespace Sudoku.Solver.Rules
                                     SourceRuleDescription = res.Description
                                 };
                                 board.ChangeLog.Add(copy);
-                                Debug.Log($"RuleRegistry: appended change -> group={gid} ({copy.Row},{copy.Column}) New={copy.NewValue?.ToString() ?? "null"} Old={copy.OldValue?.ToString() ?? "null"} RemovedCount={copy.RemovedCandidates?.Count}");
                             }
+
+                            // Log appended changes for runtime diagnostics
+                            try
+                            {
+                                Debug.Log($"RuleRegistry: appended {res.Changes.Count} changes as group {gid}; board.hash={board.GetHashCode()} ChangeLogCount={board.ChangeLog.Count}");
+                            }
+                            catch { }
 
                             // Move the ChangeLogIndex to the end - next redo would be after the last appended change
                             board.ChangeLogIndex = board.ChangeLog.Count;
-                            Debug.Log($"RuleRegistry: appended {res.Changes.Count} changes as group {gid}; ChangeLogIndex={board.ChangeLogIndex} ChangeLogCount={board.ChangeLog.Count}");
                         }
                         catch (System.Exception ex)
                         {
