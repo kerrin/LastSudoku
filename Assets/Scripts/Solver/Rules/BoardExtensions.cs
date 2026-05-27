@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
+using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules
 {
@@ -8,7 +9,7 @@ namespace Sudoku.Solver.Rules
      * Convenience extension methods for reading and mutating a <see cref="Board"/>.
      * These helpers simplify common unit (row/column/box) iteration and peer lookup.
      */
-    public static class BoardExtensions
+    public static partial class BoardExtensions
     {
         /**
          * Enumerate cells in the specified zero-based row.
@@ -257,6 +258,196 @@ namespace Sudoku.Solver.Rules
             }
 
             return conflicts;
+        }
+
+            /**
+             * Undo the most recent change recorded in `board.ChangeLog`.
+             * Returns true when a change was undone, false when there is nothing to undo.
+             */
+            public static bool UndoLast(this Board board)
+            {
+                if (board == null || board.ChangeLog == null) return false;
+                if (board.ChangeLogIndex <= 0) return false;
+
+                int lastIdx = board.ChangeLogIndex - 1;
+                var last = board.ChangeLog[lastIdx];
+                if (last == null) { board.ChangeLogIndex = lastIdx; return false; }
+
+                int gid = last.GroupId;
+
+                // Find group start
+                int start = lastIdx;
+                while (start >= 0 && board.ChangeLog[start].GroupId == gid) start--;
+                start++;
+
+                    UnityEngine.Debug.Log($"UndoLast: lastIdx={lastIdx} start={start} gid={gid} ChangeLogCount={board.ChangeLog.Count}");
+
+                // Undo entries in reverse order for the group
+                for (int i = lastIdx; i >= start; i--)
+                {
+                    var ch = board.ChangeLog[i];
+                    if (ch == null) continue;
+                    if (ch.Row < 0 || ch.Row >= board.Size || ch.Column < 0 || ch.Column >= board.Size) continue;
+
+                    var cell = board.Cells[ch.Row, ch.Column];
+
+                    // Revert value assignment if present
+                    if (ch.NewValue.HasValue)
+                    {
+                        if (ch.OldValue.HasValue)
+                        {
+                            board.SetValue(cell, ch.OldValue.Value);
+                        }
+                        else
+                        {
+                            // Clear assigned value and attempt to restore candidates from RemovedCandidates
+                            cell.Value = null;
+                            cell.Candidates.Clear();
+                            if (ch.RemovedCandidates != null)
+                            {
+                                foreach (var v in ch.RemovedCandidates) cell.Candidates.Add(v);
+                            }
+                            if (ch.NewValue.HasValue) cell.Candidates.Add(ch.NewValue.Value);
+                        }
+                    }
+
+                    // Restore removed candidates
+                    if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
+                    {
+                        foreach (var v in ch.RemovedCandidates)
+                        {
+                            if (!cell.Candidates.Contains(v)) cell.Candidates.Add(v);
+                        }
+                    }
+                }
+
+                board.ChangeLogIndex = start;
+                UnityEngine.Debug.Log($"UndoLast: new ChangeLogIndex={board.ChangeLogIndex}");
+                return true;
+            }
+
+            /**
+             * Redo the next change at `board.ChangeLogIndex` if available.
+             */
+            public static bool RedoNext(this Board board)
+            {
+                if (board == null || board.ChangeLog == null) return false;
+                if (board.ChangeLogIndex >= board.ChangeLog.Count) return false;
+
+                int idx = board.ChangeLogIndex;
+                var first = board.ChangeLog[idx];
+                if (first == null) return false;
+
+                int gid = first.GroupId;
+
+                UnityEngine.Debug.Log($"RedoNext: idx={idx} gid={gid} ChangeLogCount={board.ChangeLog.Count}");
+
+                // Find group end (exclusive)
+                int end = idx;
+                while (end < board.ChangeLog.Count && board.ChangeLog[end].GroupId == gid) end++;
+
+                // Apply entries in order for the group
+                for (int i = idx; i < end; i++)
+                {
+                    var ch = board.ChangeLog[i];
+                    if (ch == null) continue;
+                    if (ch.Row < 0 || ch.Row >= board.Size || ch.Column < 0 || ch.Column >= board.Size) continue;
+
+                    var cell = board.Cells[ch.Row, ch.Column];
+
+                    if (ch.NewValue.HasValue)
+                    {
+                        board.SetValue(cell, ch.NewValue.Value);
+                    }
+
+                    if (ch.RemovedCandidates != null && ch.RemovedCandidates.Count > 0)
+                    {
+                        foreach (var v in ch.RemovedCandidates)
+                        {
+                            if (cell.Candidates.Contains(v)) cell.Candidates.Remove(v);
+                        }
+                    }
+                }
+
+                board.ChangeLogIndex = end;
+                UnityEngine.Debug.Log($"RedoNext: advanced ChangeLogIndex to {board.ChangeLogIndex}");
+                return true;
+            }
+
+            /**
+             * Undo multiple steps (up to `steps`). Returns number of steps actually undone.
+             */
+            public static int UndoSteps(this Board board, int steps)
+            {
+                int undone = 0;
+                for (int i = 0; i < steps; i++) if (UndoLast(board)) undone++; else break;
+                return undone;
+            }
+
+            /**
+             * Redo multiple steps (up to `steps`). Returns number of steps actually redone.
+             */
+            public static int RedoSteps(this Board board, int steps)
+            {
+                int redone = 0;
+                for (int i = 0; i < steps; i++) if (RedoNext(board)) redone++; else break;
+                return redone;
+            }
+    }
+
+    public static partial class BoardExtensions
+    {
+        /**
+         * Produce a grouped, human-friendly summary of the board's ChangeLog suitable for UI display.
+         */
+        public static List<ChangeLogGroupSummary> GetChangeLogSummary(this Board board)
+        {
+            var groups = new List<ChangeLogGroupSummary>();
+            if (board == null || board.ChangeLog == null) return groups;
+
+            int idx = 0;
+            while (idx < board.ChangeLog.Count)
+            {
+                var first = board.ChangeLog[idx];
+                if (first == null) { idx++; continue; }
+                int gid = first.GroupId;
+                var g = new ChangeLogGroupSummary()
+                {
+                    GroupId = gid,
+                    RuleName = first.SourceRuleName,
+                    StartIndex = idx
+                };
+
+                int valuesAdded = 0;
+                int candRemoved = 0;
+
+                while (idx < board.ChangeLog.Count && board.ChangeLog[idx].GroupId == gid)
+                {
+                    var ch = board.ChangeLog[idx];
+                    if (ch == null) { idx++; continue; }
+                    var entry = new ChangeLogEntrySummary
+                    {
+                        Row = ch.Row,
+                        Column = ch.Column,
+                        OldValue = ch.OldValue,
+                        NewValue = ch.NewValue,
+                        RemovedCandidatesCount = ch.RemovedCandidates != null ? ch.RemovedCandidates.Count : 0
+                    };
+                    g.Entries.Add(entry);
+                    if (ch.NewValue.HasValue) valuesAdded++;
+                    if (ch.RemovedCandidates != null) candRemoved += ch.RemovedCandidates.Count;
+                    idx++;
+                }
+
+                    g.EndIndex = idx;
+                g.ChangesCount = g.Entries.Count;
+                g.ValuesAddedCount = valuesAdded;
+                g.CandidatesRemovedCount = candRemoved;
+                    g.Description = first.SourceRuleDescription;
+                groups.Add(g);
+            }
+
+            return groups;
         }
     }
 }

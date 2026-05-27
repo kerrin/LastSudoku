@@ -25,6 +25,14 @@ namespace Sudoku.Solver.Rules
 
         /** Candidate digits removed from the cell as part of the change. */
         public List<int> RemovedCandidates = new List<int>();
+
+        /** Group identifier used to associate multiple CellChange entries produced
+         *  by a single rule application so undo/redo can operate atomically. */
+        public int GroupId;
+        /** Name of the rule that produced this change (set when copied into the board ChangeLog). */
+        public string SourceRuleName;
+        /** Description text provided by the rule result (set when copied into the board ChangeLog). */
+        public string SourceRuleDescription;
     }
 
     /**

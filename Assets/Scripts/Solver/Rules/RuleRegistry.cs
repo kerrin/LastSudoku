@@ -136,6 +136,17 @@ namespace Sudoku.Solver.Rules
                     RuleResult res = r.CalculateChanges(board);
                     if (res != null && res.Apply)
                     {
+                        // Populate OldValue for each change from the current board state
+                        foreach (var ch in res.Changes)
+                        {
+                            try
+                            {
+                                var cell = board.Cells[ch.Row, ch.Column];
+                                ch.OldValue = cell?.Value;
+                            }
+                            catch { /* ignore invalid indices */ }
+                        }
+
                         if (enactAll)
                         {
                             res.EnactAll(board);
@@ -143,6 +154,51 @@ namespace Sudoku.Solver.Rules
                         else
                         {
                             res.EnactCandidates(board);
+                        }
+
+                        // Append a deep copy of each recorded change to the board's in-memory change log
+                        try
+                        {
+                            if (board.ChangeLog == null) board.ChangeLog = new System.Collections.Generic.List<CellChange>();
+
+                            // If the user previously undid some actions and then a new action occurs,
+                            // clear any redo-history beyond the current ChangeLogIndex so the log
+                            // reflects a linear history.
+                            if (board.ChangeLogIndex < board.ChangeLog.Count)
+                            {
+                                Debug.Log($"RuleRegistry: trimming ChangeLog from index {board.ChangeLogIndex} (count before={board.ChangeLog.Count})");
+                                board.ChangeLog.RemoveRange(board.ChangeLogIndex, board.ChangeLog.Count - board.ChangeLogIndex);
+                                Debug.Log($"RuleRegistry: ChangeLog count after trim={board.ChangeLog.Count}");
+                            }
+
+                            // Assign a new group id for this atomic application of the rule
+                            int gid = board.NextChangeGroupId;
+                            board.NextChangeGroupId++;
+
+                            foreach (var ch in res.Changes)
+                            {
+                                var copy = new CellChange
+                                {
+                                    Row = ch.Row,
+                                    Column = ch.Column,
+                                    OldValue = ch.OldValue,
+                                    NewValue = ch.NewValue,
+                                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                                    GroupId = gid,
+                                    SourceRuleName = r.GetType().Name,
+                                    SourceRuleDescription = res.Description
+                                };
+                                board.ChangeLog.Add(copy);
+                                Debug.Log($"RuleRegistry: appended change -> group={gid} ({copy.Row},{copy.Column}) New={copy.NewValue?.ToString() ?? "null"} Old={copy.OldValue?.ToString() ?? "null"} RemovedCount={copy.RemovedCandidates?.Count}");
+                            }
+
+                            // Move the ChangeLogIndex to the end - next redo would be after the last appended change
+                            board.ChangeLogIndex = board.ChangeLog.Count;
+                            Debug.Log($"RuleRegistry: appended {res.Changes.Count} changes as group {gid}; ChangeLogIndex={board.ChangeLogIndex} ChangeLogCount={board.ChangeLog.Count}");
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Debug.LogWarning($"Failed to append changes to board.ChangeLog: {ex.Message}");
                         }
                         // After enacting changes, validate board consistency. If invalid,
                         // log an error and annotate the returned RuleResult so callers

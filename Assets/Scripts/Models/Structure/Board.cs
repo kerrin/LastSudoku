@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using Sudoku.Solver.Rules;
 
 namespace Sudoku.Models
 {
@@ -16,6 +18,15 @@ namespace Sudoku.Models
 
         // 2D array of cells, indexed as [row, column].
         public Cell[,] Cells;
+
+        /** In-memory chronological log of all changes applied to this board. */
+        public List<CellChange> ChangeLog = new List<CellChange>();
+
+        /** Index into ChangeLog representing the next change to redo. Undo moves this index backwards. */
+        public int ChangeLogIndex = 0;
+
+        /** Next group id to assign when recording a new set of changes as an atomic group. */
+        public int NextChangeGroupId = 1;
 
         public Board() { }
 

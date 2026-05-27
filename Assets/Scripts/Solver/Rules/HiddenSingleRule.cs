@@ -48,18 +48,18 @@ namespace Sudoku.Solver.Rules
         private HiddenSingleResult FindInRows(Board board)
         {
             int size = board.Size;
-            for (int digit = 1; digit <= size; digit++)
+            for (int r = 0; r < size; r++)
             {
-                for (int r = 0; r < size; r++)
+                for (int digit = 1; digit <= size; digit++)
                 {
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetRow(r))
                     {
-                        if (cell.Value.HasValue && cell.Value == digit) break; // Digit already placed in this row, skip to next row.
+                        if (cell.Value.HasValue && cell.Value == digit) { candidates.Clear(); break; } // Digit already placed in this row, skip to next digit.
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
-                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next row.
+                        if (candidates.Count > 1) break; // More than one candidate for this digit in the row, skip to next digit.
                     }
-                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
+                    if (candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Row, UnitIndex = r };
                 }
             }
             return null;
@@ -72,18 +72,18 @@ namespace Sudoku.Solver.Rules
         private HiddenSingleResult FindInColumns(Board board)
         {
             int size = board.Size;
-            for (int digit = 1; digit <= size; digit++)
+            for (int c = 0; c < size; c++)
             {
-                for (int c = 0; c < size; c++)
+                for (int digit = 1; digit <= size; digit++)
                 {
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetColumn(c))
                     {
-                        if (cell.Value.HasValue && cell.Value == digit) break; // Digit already placed in this column, skip to next column.
+                        if (cell.Value.HasValue && cell.Value == digit) { candidates.Clear(); break; } // Digit already placed in this column, skip to next digit.
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
-                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next column.
+                        if (candidates.Count > 1) break; // More than one candidate for this digit in the column, skip to next digit.
                     }
-                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
+                    if (candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Column, UnitIndex = c };
                 }
             }
             return null;
@@ -96,18 +96,18 @@ namespace Sudoku.Solver.Rules
         private HiddenSingleResult FindInBoxes(Board board)
         {
             int size = board.Size;
-            for (int digit = 1; digit <= size; digit++)
+            for (int b = 0; b < size; b++)
             {
-                for (int b = 0; b < size; b++)
+                for (int digit = 1; digit <= size; digit++)
                 {
                     var candidates = new List<Cell>();
                     foreach (Cell cell in board.GetBox(b))
                     {
-                        if(cell.Value.HasValue && cell.Value == digit) break; // If the digit is already placed in the box, skip to next box.
+                        if (cell.Value.HasValue && cell.Value == digit) { candidates.Clear(); break; } // If the digit is already placed in the box, skip to next digit.
                         if (!cell.Value.HasValue && cell.Candidates.Contains(digit)) candidates.Add(cell);
-                        if(candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next box. 
+                        if (candidates.Count > 1) break; // More than one candidate for this digit in the box, skip to next digit. 
                     }
-                    if(candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
+                    if (candidates.Count == 1) return new HiddenSingleResult { Cell = candidates[0], Digit = digit, Unit = UnitKind.Box, UnitIndex = b };
                 }
             }
             return null;
