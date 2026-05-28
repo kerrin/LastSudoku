@@ -71,14 +71,10 @@ public class RuleTogglePanel : MonoBehaviour
         var expectedNames = BuildToggles(togglesParent);
         CleanupExtraToggles(togglesParent, expectedNames);
 
-        LogFirstToggleRowState(togglesParent, "pre-layout");
-
         // Allow layout to settle then finalize horizontal sizing
         yield return null;
         FinalizeLayout(panelRootGO, panelRootRT, rectWidth);
         AlignWithSidePanel(panelRootGO, panelRootRT);
-        ForceLayoutRefresh(togglesParent);
-        LogFirstToggleRowState(togglesParent, "post-layout");
     }
 
     // --- Helper methods ---
@@ -826,68 +822,6 @@ public class RuleTogglePanel : MonoBehaviour
         {
             _applyRulePanel.RefreshList();
         }
-    }
-
-    private void LogFirstToggleRowState(Transform togglesParent, string phase)
-    {
-        if (togglesParent == null) return;
-
-        var firstRow = togglesParent.childCount > 0 ? togglesParent.GetChild(0) : null;
-        if (firstRow == null) return;
-
-        var rowRT = firstRow as RectTransform;
-        var rowImg = firstRow.GetComponent<Image>();
-        var rowBtn = firstRow.GetComponent<Button>();
-        var rowHLG = firstRow.GetComponent<HorizontalLayoutGroup>();
-        var rowLE = firstRow.GetComponent<LayoutElement>();
-        var toggleT = firstRow.Find("Toggle");
-        var labelT = firstRow.Find("Label");
-
-        Debug.Log($"[RuleTogglePanel][{phase}] firstRow={firstRow.name} rowSize={(rowRT != null ? rowRT.rect.size.ToString() : "null")} rowImgRaycast={(rowImg != null && rowImg.raycastTarget)} rowBtn={(rowBtn != null)} rowBtnEnabled={(rowBtn != null && rowBtn.enabled)} rowBtnInteract={(rowBtn != null && rowBtn.interactable)} rowHlgExpand={(rowHLG != null && rowHLG.childForceExpandWidth)} rowLEFlex={(rowLE != null ? rowLE.flexibleWidth : -999)} toggleExists={(toggleT != null)} labelExists={(labelT != null)}");
-
-        if (toggleT != null)
-        {
-            var tRT = toggleT.GetComponent<RectTransform>();
-            var tToggle = toggleT.GetComponent<Toggle>();
-            var tGraphic = toggleT.GetComponent<Graphic>();
-            var tImg = toggleT.GetComponent<Image>();
-            var tLE = toggleT.GetComponent<LayoutElement>();
-            var ckT = toggleT.Find("Checkmark");
-            var ckGraphic = ckT != null ? ckT.GetComponent<Graphic>() : null;
-            var toggleLeState = tLE != null
-                ? $"pw={tLE.preferredWidth} ph={tLE.preferredHeight} fw={tLE.flexibleWidth} fh={tLE.flexibleHeight}"
-                : "null";
-            Debug.Log($"[RuleTogglePanel][{phase}] toggleSize={(tRT != null ? tRT.rect.size.ToString() : "null")} toggleComponent={(tToggle != null)} toggleInteract={(tToggle != null && tToggle.interactable)} toggleGraphicRaycast={(tGraphic != null && tGraphic.raycastTarget)} toggleImgRaycast={(tImg != null && tImg.raycastTarget)} toggleLE={toggleLeState} checkmarkGraphicRaycast={(ckGraphic != null && ckGraphic.raycastTarget)}");
-        }
-
-        if (labelT != null)
-        {
-            var lRT = labelT.GetComponent<RectTransform>();
-            var lGraphic = labelT.GetComponent<Graphic>();
-            var lBtn = labelT.GetComponent<Button>();
-            var lLE = labelT.GetComponent<LayoutElement>();
-            Debug.Log($"[RuleTogglePanel][{phase}] labelSize={(lRT != null ? lRT.rect.size.ToString() : "null")} labelGraphicRaycast={(lGraphic != null && lGraphic.raycastTarget)} labelBtn={(lBtn != null)} labelBtnEnabled={(lBtn != null && lBtn.enabled)} labelBtnInteract={(lBtn != null && lBtn.interactable)} labelLEFlex={(lLE != null ? lLE.flexibleWidth : -999)}");
-        }
-    }
-
-    private void ForceLayoutRefresh(Transform togglesParent)
-    {
-        if (togglesParent == null) return;
-
-        var contentRT = togglesParent as RectTransform;
-        if (contentRT != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRT);
-
-        var scrollArea = togglesParent.parent?.parent as RectTransform;
-        var viewport = togglesParent.parent as RectTransform;
-        var scrollRoot = togglesParent.parent?.parent?.parent as RectTransform;
-
-        if (viewport != null) LayoutRebuilder.ForceRebuildLayoutImmediate(viewport);
-        if (scrollArea != null) LayoutRebuilder.ForceRebuildLayoutImmediate(scrollArea);
-        if (scrollRoot != null) LayoutRebuilder.ForceRebuildLayoutImmediate(scrollRoot);
-
-        Canvas.ForceUpdateCanvases();
-
-        Debug.Log($"[RuleTogglePanel][force] scrollArea={(scrollArea != null ? scrollArea.rect.size.ToString() : "null")} viewport={(viewport != null ? viewport.rect.size.ToString() : "null")} content={(contentRT != null ? contentRT.rect.size.ToString() : "null")}");
     }
 
     private Canvas CreateDefaultCanvas()
