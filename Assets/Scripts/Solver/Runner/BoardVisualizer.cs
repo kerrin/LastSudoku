@@ -99,9 +99,16 @@ namespace Sudoku.Solver
                 // applied. This prevents non-applying status messages from clearing
                 // the stored result and therefore preserves removed-candidate
                 // highlights until the next real rule run.
+                // When LastRuleResult is explicitly cleared (set to null), also clear
+                // _lastSeenRuleResult so stale highlights don't persist (e.g. after
+                // jumping to Initial State).
                 if (Runner != null && Runner.LastRuleResult != null && Runner.LastRuleResult.Apply && Runner.LastRuleResult != _lastSeenRuleResult)
                 {
                     _lastSeenRuleResult = Runner.LastRuleResult;
+                }
+                else if (Runner != null && Runner.LastRuleResult == null)
+                {
+                    _lastSeenRuleResult = null;
                 }
 
                 // Choose which RuleResult to use for display: prefer a hovered
@@ -349,9 +356,9 @@ namespace Sudoku.Solver
                 inspectWithCallback(previewRes, (val) => { if (val && hasCandidate) willBeRemovedByPreview = true; });
 
                 bool wasRemovedByApplied = false;
-                // Similarly, for previously-applied removals only mark them if the
-                // candidate was present in the live board at the time of drawing.
-                inspectWithCallback(appliedRes, (val) => { if (val && hasCandidate) wasRemovedByApplied = true; });
+                // For previously-applied removals, mark them even when the candidate
+                // no longer exists so UI can show what the rule removed when it ran.
+                inspectWithCallback(appliedRes, (val) => { if (val) wasRemovedByApplied = true; });
 
                 bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
                 // Draw a small yellow border around candidates used in deductions so

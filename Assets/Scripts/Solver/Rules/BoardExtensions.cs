@@ -387,6 +387,29 @@ namespace Sudoku.Solver.Rules
                 for (int i = 0; i < steps; i++) if (RedoNext(board)) redone++; else break;
                 return redone;
             }
+
+            /**
+             * Seek the board to an absolute ChangeLog index by repeatedly
+             * undoing or redoing steps until the desired index is reached.
+             * This is deterministic and idempotent: calling it multiple times
+             * with the same index will have no further effect.
+             */
+            public static void SeekChangeLogIndex(this Board board, int targetIndex)
+            {
+                if (board == null || board.ChangeLog == null) return;
+                if (targetIndex < 0) targetIndex = 0;
+                if (targetIndex > board.ChangeLog.Count) targetIndex = board.ChangeLog.Count;
+
+                while (board.ChangeLogIndex < targetIndex)
+                {
+                    if (!RedoNext(board)) break;
+                }
+
+                while (board.ChangeLogIndex > targetIndex)
+                {
+                    if (!UndoLast(board)) break;
+                }
+            }
     }
 
     public static partial class BoardExtensions

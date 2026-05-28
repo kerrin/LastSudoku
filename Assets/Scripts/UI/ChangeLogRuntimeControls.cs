@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.UI;
+using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Scripts.UI
@@ -87,16 +88,92 @@ namespace Sudoku.Scripts.UI
 
             // Ensure buttons exist (idempotent) so edit-mode and play-mode both show them
             EnsureButtonExists(_containerGO.transform, "UndoButton", "Undo", 80, () => {
-                var runner = UnityEngine.Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-                if (runner != null && runner.CurrentBoard != null) runner.CurrentBoard.UndoLast();
+                var runner = UnityEngine.Object.FindAnyObjectByType<SolverRunner>();
+                if (runner != null && runner.CurrentBoard != null)
+                {
+                    runner.CurrentBoard.UndoLast();
+                    UpdateDisplayFromCurrentState(runner);
+                    RefreshPanels();
+                }
             });
             EnsureButtonExists(_containerGO.transform, "ViewChangesButton", "View Changes", 140, () => {
                 ChangeLogPanelRuntime.TogglePanel();
             });
             EnsureButtonExists(_containerGO.transform, "RedoButton", "Redo", 80, () => {
-                var runner = UnityEngine.Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-                if (runner != null && runner.CurrentBoard != null) runner.CurrentBoard.RedoNext();
+                var runner = UnityEngine.Object.FindAnyObjectByType<SolverRunner>();
+                if (runner != null && runner.CurrentBoard != null)
+                {
+                    runner.CurrentBoard.RedoNext();
+                    UpdateDisplayFromCurrentState(runner);
+                    RefreshPanels();
+                }
             });
+
+            // Set initial button state now that controls exist
+            UpdateButtonStates();
+        }
+
+        /**
+         * Enables or disables (fades) Undo/Redo based on the board's current ChangeLog position.
+         */
+        private void UpdateButtonStates()
+        {
+            if (_containerGO == null) return;
+            var runner = UnityEngine.Object.FindAnyObjectByType<SolverRunner>();
+            var board = runner?.CurrentBoard;
+
+            var undoBtn = _containerGO.transform.Find("UndoButton")?.GetComponent<Button>();
+            if (undoBtn != null)
+                undoBtn.interactable = board != null && board.ChangeLogIndex > 0;
+
+            var redoBtn = _containerGO.transform.Find("RedoButton")?.GetComponent<Button>();
+            if (redoBtn != null)
+                redoBtn.interactable = board != null && board.ChangeLog != null && board.ChangeLogIndex < board.ChangeLog.Count;
+        }
+
+        /**
+         * After an undo or redo, updates the board visualizer to show the highlights
+         * that correspond to the group now at the current ChangeLog position.
+         * Clears all highlights when at the initial state (ChangeLogIndex == 0).
+         */
+        private void UpdateDisplayFromCurrentState(SolverRunner runner)
+        {
+            if (runner?.CurrentBoard == null) return;
+            var board = runner.CurrentBoard;
+            var groups = board.GetChangeLogSummary();
+            // Find the group whose applied range contains the current index
+            var activeGroup = groups.Find(g => board.ChangeLogIndex > g.StartIndex && board.ChangeLogIndex <= g.EndIndex);
+            if (activeGroup != null)
+                runner.SetLastRuleResultFromChangeLogRange(activeGroup.StartIndex, activeGroup.EndIndex);
+            else
+            {
+                // At initial state — clear all highlights
+                runner.ClearPreview();
+                runner.SetLastRuleResultFromChangeLogRange(0, 0);
+            }
+        }
+
+        /**
+         * Refreshes the ChangeLog panel (if open) and any Apply Rule panels after a state change.
+         * Also updates Undo/Redo button states so they reflect the new ChangeLog position.
+         */
+        private void RefreshPanels()
+        {
+            var changeLogPanels = UnityEngine.Object.FindObjectsByType<ChangeLogPanelRuntime>();
+            foreach (var p in changeLogPanels) p.Refresh();
+            var applyPanels = UnityEngine.Object.FindObjectsByType<ApplyRulePanel>();
+            foreach (var p in applyPanels) p.RefreshList();
+            UpdateButtonStates();
+        }
+
+        /**
+         * Static helper so external components (Jump buttons, ApplyRulePanel) can trigger
+         * a button-state refresh without taking a direct reference to this instance.
+         */
+        public static void RefreshButtonStates()
+        {
+            foreach (var c in UnityEngine.Object.FindObjectsByType<ChangeLogRuntimeControls>())
+                c.UpdateButtonStates();
         }
 
         private void CreateButton(Transform parent, string text, float width, UnityEngine.Events.UnityAction onClick)

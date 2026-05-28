@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 using Sudoku.Models;
+using Sudoku.Scripts.UI;
 
 /**
  * UI panel that lists all currently enabled rules that can be applied to
@@ -388,6 +389,7 @@ public class ApplyRulePanel : MonoBehaviour
         yield return null;
         Runner.RunRule(rule);
         if (Runner != null) Runner.SuppressPreviewRequests = false;
+        ChangeLogRuntimeControls.RefreshButtonStates();
         BuildList();
     }
 
@@ -402,5 +404,17 @@ public class ApplyRulePanel : MonoBehaviour
             if (r != null) return r;
         }
         return null;
+    }
+
+    /**
+     * Public wrapper to force the panel to rebuild its rule list and
+     * update its cached board reference. Useful for external callers
+     * (e.g. ChangeLog UI) that alter the board state without swapping
+     * the Runner.CurrentBoard reference.
+     */
+    public void RefreshList()
+    {
+        BuildList();
+        _lastBoard = Runner != null ? Runner.CurrentBoard : null;
     }
 }

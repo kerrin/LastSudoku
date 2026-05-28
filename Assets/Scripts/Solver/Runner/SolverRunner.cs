@@ -82,7 +82,7 @@ namespace Sudoku.Solver
             }
 
             // Clear other SolverRunner instances in the scene to avoid conflicting models
-            var runners = Object.FindObjectsByType<SolverRunner>(FindObjectsSortMode.None);
+            var runners = Object.FindObjectsByType<SolverRunner>();
             foreach (var r in runners)
             {
                 if (r == this) continue;
@@ -116,7 +116,7 @@ namespace Sudoku.Solver
                 }
             }
             _board = board;
-            Debug.Log($"SolverRunner.LoadBoardFromRows: runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()}");
+            Debug.Log($"SolverRunner.LoadBoardFromRows: runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()}");
             CandidatesInitialised = false;
         }
 
@@ -146,7 +146,7 @@ namespace Sudoku.Solver
                     }
                 }
                 CandidatesInitialised = true;
-            Debug.Log($"SolverRunner.InitialiseCandidates: runner.InstanceID={this.GetInstanceID()} board.hash={_board?.GetHashCode() ?? 0} candidatesInitialised={CandidatesInitialised}");
+            Debug.Log($"SolverRunner.InitialiseCandidates: runner.EntityId={this.GetEntityId()} board.hash={_board?.GetHashCode() ?? 0} candidatesInitialised={CandidatesInitialised}");
         }
 
         [ContextMenu("Run Next Rule Step")]
@@ -160,10 +160,10 @@ namespace Sudoku.Solver
             LastRuleResult = result;
             if (rule == null || result == null || !result.Apply)
             {
-                Debug.Log($"SolverRunner.RunNextStep: no rule applied. runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()}");
+                Debug.Log($"SolverRunner.RunNextStep: no rule applied. runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()}");
                 return;
             }
-            Debug.Log($"SolverRunner.RunNextStep: applied {rule.GetType().Name} runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} changes={result.Changes?.Count ?? 0}");
+            Debug.Log($"SolverRunner.RunNextStep: applied {rule.GetType().Name} runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} changes={result.Changes?.Count ?? 0}");
         }
 
         /**
@@ -182,10 +182,81 @@ namespace Sudoku.Solver
                 var res = rule.CalculateChanges(_board);
                 PreviewRuleResult = (res != null && res.Apply) ? res : new RuleResult { Apply = false };
             }
-            catch (System.Exception ex)
+            catch (System.Exception)
             {
                 PreviewRuleResult = new RuleResult { Apply = false, Description = "Preview error" };
             }
+        }
+
+        /**
+         * Set the runner's `PreviewRuleResult` from a range of entries already
+         * recorded in the board's ChangeLog. This allows external UIs to show
+         * highlights that correspond exactly to a previously-applied group.
+         */
+        public void SetPreviewFromChangeLogRange(int startIndex, int endIndex)
+        {
+            if (_board == null || _board.ChangeLog == null) { PreviewRuleResult = null; return; }
+            if (startIndex < 0) startIndex = 0;
+            if (endIndex > _board.ChangeLog.Count) endIndex = _board.ChangeLog.Count;
+            if (startIndex >= endIndex) { PreviewRuleResult = null; return; }
+
+            var res = new RuleResult { Apply = true, Description = "ChangeLog group preview" };
+            for (int i = startIndex; i < endIndex; i++)
+            {
+                var ch = _board.ChangeLog[i];
+                if (ch == null) continue;
+                // create a shallow copy to avoid accidental mutation of board.ChangeLog
+                var copy = new CellChange
+                {
+                    Row = ch.Row,
+                    Column = ch.Column,
+                    OldValue = ch.OldValue,
+                    NewValue = ch.NewValue,
+                    GroupId = ch.GroupId,
+                    SourceRuleName = ch.SourceRuleName,
+                    SourceRuleDescription = ch.SourceRuleDescription,
+                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>()
+                };
+                res.Changes.Add(copy);
+            }
+            PreviewRuleResult = res;
+        }
+
+        /**
+         * Set the runner's `LastRuleResult` from a range of entries in the
+         * board's ChangeLog so the visualizer renders applied-style highlights
+         * (including removed-candidate red marks) matching the recorded group.
+         */
+        public void SetLastRuleResultFromChangeLogRange(int startIndex, int endIndex)
+        {
+            if (_board == null || _board.ChangeLog == null) { LastRuleResult = null; return; }
+            if (startIndex < 0) startIndex = 0;
+            if (endIndex > _board.ChangeLog.Count) endIndex = _board.ChangeLog.Count;
+            if (startIndex >= endIndex) { LastRuleResult = null; return; }
+
+            var res = new RuleResult { Apply = true, Description = "ChangeLog group (applied)" };
+            for (int i = startIndex; i < endIndex; i++)
+            {
+                var ch = _board.ChangeLog[i];
+                if (ch == null) continue;
+                var copy = new CellChange
+                {
+                    Row = ch.Row,
+                    Column = ch.Column,
+                    OldValue = ch.OldValue,
+                    NewValue = ch.NewValue,
+                    GroupId = ch.GroupId,
+                    SourceRuleName = ch.SourceRuleName,
+                    SourceRuleDescription = ch.SourceRuleDescription,
+                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>()
+                };
+                res.Changes.Add(copy);
+            }
+
+            // Clear preview so visualizer prefers the applied result path
+            PreviewRuleResult = null;
+            LastRuleResult = res;
+
         }
 
         /** Prepare a lightweight preview for the Initialise Candidates tool.
@@ -281,7 +352,7 @@ namespace Sudoku.Solver
                     };
                     _board.ChangeLog.Add(copy);
                 }
-                Debug.Log($"SolverRunner.RunRule: appended {res.Changes.Count} changes as group {gid}; runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} ChangeLogCount={_board.ChangeLog.Count}");
+                Debug.Log($"SolverRunner.RunRule: appended {res.Changes.Count} changes as group {gid}; runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} ChangeLogCount={_board.ChangeLog.Count}");
                 _board.ChangeLogIndex = _board.ChangeLog.Count;
             }
             catch (System.Exception ex)
@@ -292,7 +363,7 @@ namespace Sudoku.Solver
             LastAppliedRule = rule;
             LastRuleResult = res;
             PreviewRuleResult = null;
-            Debug.Log($"SolverRunner.RunRule: enacted {rule.GetType().Name} runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} changes={res.Changes?.Count ?? 0}");
+            Debug.Log($"SolverRunner.RunRule: enacted {rule.GetType().Name} runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} changes={res.Changes?.Count ?? 0}");
         }
 
         [ContextMenu("Run Solve")]
@@ -314,7 +385,7 @@ namespace Sudoku.Solver
                 LastAppliedRule = null;
                 LastRuleResult = null;
             }
-            Debug.Log($"SolverRunner.RunSolve: runner.InstanceID={this.GetInstanceID()} board.hash={_board.GetHashCode()} steps={steps?.Count ?? 0} solved={solved}");
+            Debug.Log($"SolverRunner.RunSolve: runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} steps={steps?.Count ?? 0} solved={solved}");
         }
 
         [ContextMenu("Reset Candidates for Empty Cells")]

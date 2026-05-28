@@ -178,7 +178,9 @@ namespace Sudoku.Scripts.UI
             scrollRT.anchorMin = new Vector2(0f, 0f);
             scrollRT.anchorMax = new Vector2(1f, 1f);
             scrollRT.offsetMin = new Vector2(12, 48);
-            scrollRT.offsetMax = new Vector2(-12, -12);
+            // offsetMax.y = -50 so the scroll area starts 50px below the panel top,
+            // clearing the title bar (24px tall at -12) and close button (28px tall at -12).
+            scrollRT.offsetMax = new Vector2(-12, -50);
 
             var scrollImg = scrollGO.GetComponent<Image>();
             scrollImg.color = new Color(0.2f, 0.2f, 0.2f, 0.5f);
@@ -232,7 +234,20 @@ namespace Sudoku.Scripts.UI
             rt.sizeDelta = new Vector2(width, 28);
             var img = go.GetComponent<Image>(); img.color = new Color(0.8f, 0.8f, 0.8f, 1f);
             var btn = go.GetComponent<Button>();
-            if (onClick != null) btn.onClick.AddListener(() => onClick());
+            // Prevent the button from appearing to act like a toggle by disabling
+            // selectable transitions and navigation, and clear selection after click.
+            btn.transition = Selectable.Transition.None;
+            var nav = new Navigation(); nav.mode = Navigation.Mode.None; btn.navigation = nav;
+            if (onClick != null)
+            {
+                btn.onClick.AddListener(() => {
+                    try { onClick(); }
+                    finally
+                    {
+                        if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+                    }
+                });
+            }
             var txt = CreateTextChild(go.transform, "Text", text, 14, TextAnchor.MiddleCenter);
             var txtRT = txt.GetComponent<RectTransform>(); txtRT.anchorMin = new Vector2(0f, 0f); txtRT.anchorMax = new Vector2(1f, 1f);
             return go;
@@ -302,8 +317,27 @@ namespace Sudoku.Scripts.UI
                 // Recreate children only when the change log actually changed
                 foreach (Transform child in _contentRT) Destroy(child.gameObject);
 
-                // TODO: Debug Remove..Show a header with current index
-                CreateTextChild(_contentRT, "Header", $"ChangeLog: {board.ChangeLog.Count} entries - Index: {board.ChangeLogIndex}", 14, TextAnchor.MiddleCenter);
+                // Initial State row — always the first entry, jumps back to the puzzle's starting state
+                var initialRow = new GameObject("InitialState", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+                initialRow.transform.SetParent(_contentRT, false);
+                var initialImg = initialRow.GetComponent<Image>(); initialImg.color = new Color(0.15f, 0.15f, 0.15f, 0.6f);
+                var initialLE = initialRow.AddComponent<LayoutElement>(); initialLE.preferredHeight = 44;
+                var initialH = initialRow.AddComponent<HorizontalLayoutGroup>();
+                initialH.childForceExpandHeight = true; initialH.childForceExpandWidth = true; initialH.spacing = 8; initialH.childControlWidth = true; initialH.childControlHeight = true;
+                var initialLabel = CreateTextChild(initialRow.transform, "Label", "[0] Initial State", 14, TextAnchor.MiddleLeft);
+                var initialLabelLE = initialLabel.AddComponent<LayoutElement>(); initialLabelLE.flexibleWidth = 1;
+                CreateButton(initialRow.transform, "Jump", 80, () => {
+                    // Seek to the very beginning — undoes all changes recorded in the ChangeLog
+                    if (runner?.CurrentBoard == null) return;
+                    runner.CurrentBoard.SeekChangeLogIndex(0);
+                    // Clear all visual highlights since there are no changes to display
+                    runner.ClearPreview();
+                    runner.SetLastRuleResultFromChangeLogRange(0, 0);
+                    Refresh();
+                    var panels = FindObjectsByType<ApplyRulePanel>();
+                    foreach (var p in panels) p.RefreshList();
+                    ChangeLogRuntimeControls.RefreshButtonStates();
+                });
 
                 for (int i = 0; i < groups.Count; i++)
                 {
@@ -319,13 +353,22 @@ namespace Sudoku.Scripts.UI
                     var label = CreateTextChild(gRow.transform, "Label", $"[{g.GroupId}] {g.RuleName} ({g.ChangesCount} changes)", 14, TextAnchor.MiddleLeft);
                     var labelLE = label.AddComponent<LayoutElement>(); labelLE.flexibleWidth = 1;
                     var jump = CreateButton(gRow.transform, "Jump", 80, () => {
-                        // Jump the board to the group's end index
+                        // Jump the board to the group's end index (absolute, idempotent)
                         if (runner.CurrentBoard == null) return;
                         int targetIndex = g.EndIndex;
-                        int delta = targetIndex - runner.CurrentBoard.ChangeLogIndex;
-                        if (delta > 0) runner.CurrentBoard.RedoSteps(delta);
-                        else if (delta < 0) runner.CurrentBoard.UndoSteps(-delta);
+                        runner.CurrentBoard.SeekChangeLogIndex(targetIndex);
+                        // Update UI/visuals: set the preview to match the ChangeLog group
+                        try
+                        {
+                            if (runner != null) runner.SetLastRuleResultFromChangeLogRange(g.StartIndex, g.EndIndex);
+                        }
+                        catch (Exception) { if (runner != null) runner.ClearPreview(); }
+
+                        // refresh panels and visuals
                         Refresh();
+                        var panels = FindObjectsByType<ApplyRulePanel>();
+                        foreach (var p in panels) p.RefreshList();
+                        ChangeLogRuntimeControls.RefreshButtonStates();
                     });
 
                     // Show a short description
@@ -343,60 +386,18 @@ namespace Sudoku.Scripts.UI
                 var scrollRect = _contentRT.parent != null && _contentRT.parent.parent != null ? _contentRT.parent.parent.GetComponent<ScrollRect>() : null;
                 if (scrollRect != null) scrollRect.verticalNormalizedPosition = 1f;
 
-                // Diagnostic logging to help trace invisibility issues
-                try
-                {
-                    Debug.Log($"ChangeLogPanelRuntime.Diag: panelCanvas={(_panelCanvas!=null)} renderMode={_panelCanvas?.renderMode} sortingOrder={_panelCanvas?.sortingOrder}");
-                    var panelRT = _panelGO.GetComponent<RectTransform>();
-                    Debug.Log($"ChangeLogPanelRuntime.Diag: panel rect={panelRT.rect} anchoredPosition={panelRT.anchoredPosition} localScale={panelRT.localScale}");
-                    var scrollGO = _contentRT.parent != null ? _contentRT.parent.parent : null;
-                    if (scrollGO != null)
-                    {
-                        var srt = scrollGO.GetComponent<RectTransform>();
-                        Debug.Log($"ChangeLogPanelRuntime.Diag: scroll rect={srt.rect} anchoredPosition={srt.anchoredPosition} localScale={srt.localScale}");
-                    }
-                    var vp = _contentRT.parent; // viewport
-                    if (vp != null)
-                    {
-                        var vpRT = vp.GetComponent<RectTransform>();
-                        Debug.Log($"ChangeLogPanelRuntime.Diag: viewport rect={vpRT.rect} anchoredPosition={vpRT.anchoredPosition} localScale={vpRT.localScale}");
-                    }
-                    Debug.Log($"ChangeLogPanelRuntime.Diag: content childCount={_contentRT.childCount} content rect={_contentRT.rect} anchoredPosition={_contentRT.anchoredPosition} localScale={_contentRT.localScale}");
-                    for (int ci = 0; ci < _contentRT.childCount; ci++)
-                    {
-                        var c = _contentRT.GetChild(ci) as RectTransform;
-                        if (c == null) continue;
-                        Debug.Log($"ChangeLogPanelRuntime.Diag: child[{ci}] name={c.name} rect={c.rect} anchoredPos={c.anchoredPosition} sizeDelta={c.sizeDelta} localScale={c.localScale}");
-                        var img = c.GetComponent<Image>();
-                        if (img != null) Debug.Log($"ChangeLogPanelRuntime.Diag: child[{ci}] image color={img.color} enabled={(img.enabled)}");
-                        var txt = c.GetComponentInChildren<Text>();
-                        if (txt != null) Debug.Log($"ChangeLogPanelRuntime.Diag: child[{ci}] text='{txt.text}' color={txt.color} fontSize={txt.fontSize}");
-                    }
-                    // log ancestor scales
-                    Transform t = _panelGO.transform;
-                    int depth = 0;
-                    while (t != null && depth < 10)
-                    {
-                        Debug.Log($"ChangeLogPanelRuntime.Diag: ancestor[{depth}] name={t.name} localScale={t.localScale}");
-                        t = t.parent;
-                        depth++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.Log($"ChangeLogPanelRuntime.Diag: exception {ex.Message}");
-                }
-            }
-
-            // Ensure header text reflects current index even if we didn't rebuild
-            var header = _contentRT.Find("Header");
-            if (header != null)
-            {
-                var t = header.GetComponent<Text>();
-                if (t != null) t.text = $"ChangeLog: {board.ChangeLog.Count} entries - Index: {board.ChangeLogIndex}";
+                
             }
 
             // Update highlight state for each group row without recreating objects
+            // Highlight the Initial State row when no changes have been applied
+            var initialStateRow = _contentRT.Find("InitialState");
+            if (initialStateRow != null)
+            {
+                var lbl = initialStateRow.Find("Label")?.GetComponent<Text>();
+                if (lbl != null) lbl.color = board.ChangeLogIndex == 0 ? Color.yellow : Color.white;
+            }
+
             for (int i = 0; i < _contentRT.childCount; i++)
             {
                 var child = _contentRT.GetChild(i);
@@ -410,7 +411,9 @@ namespace Sudoku.Scripts.UI
                 // find the group
                 var g = groups.Find(x => x.GroupId == gid);
                 if (g == null) continue;
-                bool active = (board.ChangeLogIndex >= g.StartIndex && board.ChangeLogIndex <= g.EndIndex);
+                // EndIndex is exclusive, so use > StartIndex (not >=) to avoid
+                // simultaneously matching both this group and the one before it.
+                bool active = (board.ChangeLogIndex > g.StartIndex && board.ChangeLogIndex <= g.EndIndex);
                 var lblTxt = label.GetComponent<Text>();
                 if (lblTxt != null) lblTxt.color = active ? Color.yellow : Color.white;
             }
