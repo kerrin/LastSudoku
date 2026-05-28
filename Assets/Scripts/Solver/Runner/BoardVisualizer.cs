@@ -349,11 +349,11 @@ namespace Sudoku.Solver
                 // by either the preview or by prior applied rules; when no preview is
                 // active, draw previously-applied removals in red.
                 bool willBeRemovedByPreview = false;
-                // Only consider a candidate as "will be removed" by the preview if
-                // that candidate actually exists in the cell right now. This avoids
-                // showing red for digits that were never present (e.g. when a rule
-                // records RemovedCandidates for a cell as "all except X").
-                inspectWithCallback(previewRes, (val) => { if (val && hasCandidate) willBeRemovedByPreview = true; });
+                // Mark a candidate as "will be removed" by the preview regardless of
+                // whether it still exists on the board. This ensures that hovering a
+                // past ChangeLog group correctly shows the removed candidates in red,
+                // even though those candidates have already been removed from the board.
+                inspectWithCallback(previewRes, (val) => { if (val) willBeRemovedByPreview = true; });
 
                 bool wasRemovedByApplied = false;
                 // For previously-applied removals, mark them even when the candidate

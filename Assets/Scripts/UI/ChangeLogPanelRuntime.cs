@@ -23,6 +23,11 @@ namespace Sudoku.Scripts.UI
         private int _lastGroupsHash = 0;
         private Canvas _panelCanvas;
 
+        // Hover-seek state: tracks whether a row hover is in progress so the board
+        // can be temporarily seeked to the hovered state and restored on exit.
+        private bool _isHovering = false;
+        private int _savedIndexBeforeHover = -1;
+
         public static void TogglePanel()
         {
             if (_instance == null)
@@ -226,6 +231,77 @@ namespace Sudoku.Scripts.UI
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
         }
 
+        /**
+         * Creates a full-width row in the ChangeLog list. The entire row acts as a button:
+         * clicking it triggers onClick, hovering shows a board preview via onEnter/onExit.
+         *
+         * @param parent      Content RectTransform to parent the row under.
+         * @param name        GameObject name (used for highlight lookup).
+         * @param labelText   Primary label shown in the row.
+         * @param descText    Optional secondary description (shown smaller, grey). Pass null to omit.
+         * @param onClick     Invoked when the row is clicked.
+         * @param onEnter     Invoked when the pointer enters the row (show preview).
+         * @param onExit      Invoked when the pointer exits the row (hide preview).
+         * @returns The created row GameObject.
+         */
+        private GameObject CreateChangeLogRow(Transform parent, string name, string labelText, string descText,
+            Action onClick, Action onEnter, Action onExit)
+        {
+            var row = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            row.transform.SetParent(parent, false);
+
+            var img = row.GetComponent<Image>();
+            var normalColor    = new Color(0.15f, 0.15f, 0.15f, 0.6f);
+            var highlightColor = new Color(0.30f, 0.30f, 0.30f, 0.8f);
+            img.color = normalColor;
+            img.raycastTarget = true;
+
+            // Prefer a taller row when there is description text
+            var le = row.AddComponent<LayoutElement>();
+            le.preferredHeight = string.IsNullOrEmpty(descText) ? 36 : 52;
+
+            // Vertical stack for label + optional description
+            var v = row.AddComponent<VerticalLayoutGroup>();
+            v.childForceExpandHeight = false;
+            v.childForceExpandWidth  = true;
+            v.childControlHeight     = true;
+            v.childControlWidth      = true;
+            v.padding = new RectOffset(10, 8, 6, 6);
+            v.spacing = 2;
+
+            CreateTextChild(row.transform, "Label", labelText, 14, TextAnchor.MiddleLeft);
+
+            if (!string.IsNullOrEmpty(descText))
+            {
+                var descGO  = CreateTextChild(row.transform, "Desc", descText, 12, TextAnchor.UpperLeft);
+                var descTxt = descGO.GetComponent<Text>();
+                if (descTxt != null) descTxt.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+            }
+
+            // EventTrigger handles click, pointer enter, and pointer exit.
+            // Using EventTrigger (rather than Button) avoids the known issue where
+            // adding EventTrigger to a Selectable suppresses its event handling.
+            var trigger = row.AddComponent<EventTrigger>();
+
+            var clickEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerClick };
+            clickEntry.callback.AddListener((_) =>
+            {
+                try { onClick(); }
+                finally { if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null); }
+            });
+            trigger.triggers.Add(clickEntry);
+
+            var enterEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            enterEntry.callback.AddListener((_) => { img.color = highlightColor; onEnter(); });
+            trigger.triggers.Add(enterEntry);
+
+            var exitEntry = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+            exitEntry.callback.AddListener((_) => { img.color = normalColor; onExit(); });
+            trigger.triggers.Add(exitEntry);
+
+            return row;
+        }
+
         private GameObject CreateButton(Transform parent, string text, float width, Action onClick)
         {
             var go = new GameObject(text + "Btn", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
@@ -318,62 +394,53 @@ namespace Sudoku.Scripts.UI
                 foreach (Transform child in _contentRT) Destroy(child.gameObject);
 
                 // Initial State row — always the first entry, jumps back to the puzzle's starting state
-                var initialRow = new GameObject("InitialState", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-                initialRow.transform.SetParent(_contentRT, false);
-                var initialImg = initialRow.GetComponent<Image>(); initialImg.color = new Color(0.15f, 0.15f, 0.15f, 0.6f);
-                var initialLE = initialRow.AddComponent<LayoutElement>(); initialLE.preferredHeight = 44;
-                var initialH = initialRow.AddComponent<HorizontalLayoutGroup>();
-                initialH.childForceExpandHeight = true; initialH.childForceExpandWidth = true; initialH.spacing = 8; initialH.childControlWidth = true; initialH.childControlHeight = true;
-                var initialLabel = CreateTextChild(initialRow.transform, "Label", "[0] Initial State", 14, TextAnchor.MiddleLeft);
-                var initialLabelLE = initialLabel.AddComponent<LayoutElement>(); initialLabelLE.flexibleWidth = 1;
-                CreateButton(initialRow.transform, "Jump", 80, () => {
-                    // Seek to the very beginning — undoes all changes recorded in the ChangeLog
-                    if (runner?.CurrentBoard == null) return;
-                    runner.CurrentBoard.SeekChangeLogIndex(0);
-                    // Clear all visual highlights since there are no changes to display
-                    runner.ClearPreview();
-                    runner.SetLastRuleResultFromChangeLogRange(0, 0);
-                    Refresh();
-                    var panels = FindObjectsByType<ApplyRulePanel>();
-                    foreach (var p in panels) p.RefreshList();
-                    ChangeLogRuntimeControls.RefreshButtonStates();
-                });
+                CreateChangeLogRow(_contentRT, "InitialState", "[0] Initial State", null,
+                    onClick: () =>
+                    {
+                        _isHovering = false; // prevent onExit from restoring after Refresh() destroys the rows
+                        if (runner?.CurrentBoard == null) return;
+                        runner.CurrentBoard.SeekChangeLogIndex(0);
+                        runner.ClearPreview();
+                        runner.SetLastRuleResultFromChangeLogRange(0, 0);
+                        Refresh();
+                        foreach (var p in FindObjectsByType<ApplyRulePanel>()) p.RefreshList();
+                        ChangeLogRuntimeControls.RefreshButtonStates();
+                    },
+                    onEnter: () =>
+                    {
+                        if (runner?.CurrentBoard == null) return;
+                        if (!_isHovering) { _savedIndexBeforeHover = runner.CurrentBoard.ChangeLogIndex; _isHovering = true; }
+                        runner.CurrentBoard.SeekChangeLogIndex(0);
+                        runner.SetLastRuleResultFromChangeLogRange(0, 0);
+                    },
+                    onExit: () => RestoreFromHover(runner));
 
                 for (int i = 0; i < groups.Count; i++)
                 {
                     var g = groups[i];
-                    var gRow = new GameObject($"Group_{g.GroupId}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-                    gRow.transform.SetParent(_contentRT, false);
-                    var img = gRow.GetComponent<Image>(); img.color = new Color(0.15f, 0.15f, 0.15f, 0.6f);
-                    var layoutElement = gRow.AddComponent<LayoutElement>();
-                    layoutElement.preferredHeight = 44;
-                    var h = gRow.AddComponent<HorizontalLayoutGroup>();
-                    h.childForceExpandHeight = true; h.childForceExpandWidth = true; h.spacing = 8; h.childControlWidth = true; h.childControlHeight = true;
-
-                    var label = CreateTextChild(gRow.transform, "Label", $"[{g.GroupId}] {g.RuleName} ({g.ChangesCount} changes)", 14, TextAnchor.MiddleLeft);
-                    var labelLE = label.AddComponent<LayoutElement>(); labelLE.flexibleWidth = 1;
-                    var jump = CreateButton(gRow.transform, "Jump", 80, () => {
-                        // Jump the board to the group's end index (absolute, idempotent)
-                        if (runner.CurrentBoard == null) return;
-                        int targetIndex = g.EndIndex;
-                        runner.CurrentBoard.SeekChangeLogIndex(targetIndex);
-                        // Update UI/visuals: set the preview to match the ChangeLog group
-                        try
+                    CreateChangeLogRow(_contentRT, $"Group_{g.GroupId}",
+                        $"[{g.GroupId}] {g.RuleName} ({g.ChangesCount} changes)",
+                        g.Description,
+                        onClick: () =>
                         {
-                            if (runner != null) runner.SetLastRuleResultFromChangeLogRange(g.StartIndex, g.EndIndex);
-                        }
-                        catch (Exception) { if (runner != null) runner.ClearPreview(); }
-
-                        // refresh panels and visuals
-                        Refresh();
-                        var panels = FindObjectsByType<ApplyRulePanel>();
-                        foreach (var p in panels) p.RefreshList();
-                        ChangeLogRuntimeControls.RefreshButtonStates();
-                    });
-
-                    // Show a short description
-                    var desc = CreateTextChild(gRow.transform, "Desc", g.Description ?? "", 12, TextAnchor.UpperLeft);
-                    var descLE = desc.AddComponent<LayoutElement>(); descLE.flexibleWidth = 1; desc.GetComponent<RectTransform>().sizeDelta = new Vector2(300, 24);
+                            _isHovering = false; // prevent onExit from restoring after Refresh() destroys the rows
+                            if (runner?.CurrentBoard == null) return;
+                            runner.CurrentBoard.SeekChangeLogIndex(g.EndIndex);
+                            try { runner.SetLastRuleResultFromChangeLogRange(g.StartIndex, g.EndIndex); }
+                            catch (Exception) { runner?.ClearPreview(); }
+                            Refresh();
+                            foreach (var p in FindObjectsByType<ApplyRulePanel>()) p.RefreshList();
+                            ChangeLogRuntimeControls.RefreshButtonStates();
+                        },
+                        onEnter: () =>
+                        {
+                            if (runner?.CurrentBoard == null) return;
+                            if (!_isHovering) { _savedIndexBeforeHover = runner.CurrentBoard.ChangeLogIndex; _isHovering = true; }
+                            runner.CurrentBoard.SeekChangeLogIndex(g.EndIndex);
+                            try { runner.SetLastRuleResultFromChangeLogRange(g.StartIndex, g.EndIndex); }
+                            catch (Exception) { runner?.ClearPreview(); }
+                        },
+                        onExit: () => RestoreFromHover(runner));
                 }
 
                 _lastChangeLogCount = board.ChangeLog.Count;
@@ -422,9 +489,34 @@ namespace Sudoku.Scripts.UI
         private float _lastRefreshTime = 0f;
         private const float _refreshInterval = 0.5f; // seconds
 
+        /**
+         * Seeks the board back to the index saved when the hover started, restores the
+         * appropriate rule-result highlights, and clears the hover flag. Safe to call
+         * even when no hover is active (early-returns immediately).
+         *
+         * @param runner The active SolverRunner.
+         */
+        private void RestoreFromHover(SolverRunner runner)
+        {
+            if (!_isHovering) return;
+            _isHovering = false;
+            if (runner?.CurrentBoard == null || _savedIndexBeforeHover < 0) return;
+            runner.CurrentBoard.SeekChangeLogIndex(_savedIndexBeforeHover);
+            // Restore highlight to match the committed board state
+            var gs = runner.CurrentBoard.GetChangeLogSummary();
+            var committed = gs.Find(g => runner.CurrentBoard.ChangeLogIndex > g.StartIndex
+                                      && runner.CurrentBoard.ChangeLogIndex <= g.EndIndex);
+            if (committed != null)
+                runner.SetLastRuleResultFromChangeLogRange(committed.StartIndex, committed.EndIndex);
+            else
+                runner.SetLastRuleResultFromChangeLogRange(0, 0);
+            runner.ClearPreview();
+        }
+
         private void Update()
         {
             if (_panelGO == null || !_panelGO.activeSelf) return;
+            if (_isHovering) return; // don't rebuild rows while a hover seek is active
             if (Time.unscaledTime - _lastRefreshTime < _refreshInterval) return;
             _lastRefreshTime = Time.unscaledTime;
             Refresh();

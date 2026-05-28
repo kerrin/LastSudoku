@@ -289,6 +289,17 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Sets an active but empty preview so the board renders with no highlights.
+         * Using a non-null Apply=true result with no changes puts the visualizer into
+         * previewActive mode while drawing nothing, which correctly hides stale
+         * _lastSeenRuleResult highlights (e.g. when hovering the Initial State row).
+         */
+        public void SetEmptyPreview()
+        {
+            PreviewRuleResult = new RuleResult { Apply = true, Description = "Empty preview" };
+        }
+
+        /**
          * Execute a specific rule against the current board (if applicable and enabled).
          */
         public void RunRule(ISudokuRule rule)
