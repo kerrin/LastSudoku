@@ -109,6 +109,9 @@ public class ApplyRulePanel : MonoBehaviour
         // The viewport should not block raycasts to the rule rows/buttons;
         // leave it non-raycastable so pointer events reach the child rows.
         vpImg.raycastTarget = false;
+        // RectMask2D clips children to the viewport rect without requiring a visible Image.
+        if (viewportGO.GetComponent<RectMask2D>() == null)
+            viewportGO.AddComponent<RectMask2D>();
 
         // Content (prefer existing descendant named "Content")
         Transform contentTrans = null;
@@ -131,8 +134,49 @@ public class ApplyRulePanel : MonoBehaviour
         var csf = contentGO.GetComponent<ContentSizeFitter>();
         csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-        scroll.content = contentRT;
-        scroll.viewport = vpRT;
+        scroll.content           = contentRT;
+        scroll.viewport          = vpRT;
+        scroll.horizontal        = false;
+        scroll.scrollSensitivity = 30f;
+
+        // Vertical scrollbar — anchored to the right edge of the scroll container.
+        var apScrollbarGO = new GameObject("VerticalScrollbar",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar));
+        apScrollbarGO.transform.SetParent(scrollGO.transform, false);
+        var apScrollbarRT = apScrollbarGO.GetComponent<RectTransform>();
+        apScrollbarRT.anchorMin        = new Vector2(1f, 0f);
+        apScrollbarRT.anchorMax        = new Vector2(1f, 1f);
+        apScrollbarRT.pivot            = new Vector2(1f, 0.5f);
+        apScrollbarRT.sizeDelta        = new Vector2(12f, 0f);
+        apScrollbarRT.anchoredPosition = Vector2.zero;
+        apScrollbarGO.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
+
+        var apSlidingAreaGO = new GameObject("SlidingArea", typeof(RectTransform));
+        apSlidingAreaGO.transform.SetParent(apScrollbarGO.transform, false);
+        var apSlidingAreaRT = apSlidingAreaGO.GetComponent<RectTransform>();
+        apSlidingAreaRT.anchorMin = Vector2.zero;
+        apSlidingAreaRT.anchorMax = Vector2.one;
+        apSlidingAreaRT.offsetMin = new Vector2(2f, 6f);
+        apSlidingAreaRT.offsetMax = new Vector2(-2f, -6f);
+
+        var apHandleGO = new GameObject("Handle",
+            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        apHandleGO.transform.SetParent(apSlidingAreaGO.transform, false);
+        var apHandleRT = apHandleGO.GetComponent<RectTransform>();
+        apHandleRT.anchorMin = Vector2.zero;
+        apHandleRT.anchorMax = Vector2.one;
+        apHandleRT.offsetMin = Vector2.zero;
+        apHandleRT.offsetMax = Vector2.zero;
+        var apHandleImg = apHandleGO.GetComponent<Image>();
+        apHandleImg.color = new Color(0.6f, 0.6f, 0.6f, 1f);
+
+        var apScrollbarComp = apScrollbarGO.GetComponent<Scrollbar>();
+        apScrollbarComp.handleRect    = apHandleRT;
+        apScrollbarComp.direction     = Scrollbar.Direction.BottomToTop;
+        apScrollbarComp.targetGraphic = apHandleImg;
+
+        scroll.verticalScrollbar           = apScrollbarComp;
+        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
 
         _contentRoot = contentGO.transform;
 
@@ -240,7 +284,7 @@ public class ApplyRulePanel : MonoBehaviour
         // If we have a description preview, increase the preferred height so the
         // description fits inside the same row instead of spilling underneath.
         var le = ruleGO.AddComponent<LayoutElement>();
-        le.preferredHeight = 28f;
+        le.preferredHeight = 36f;
 
         var btnImg = ruleGO.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
@@ -252,7 +296,7 @@ public class ApplyRulePanel : MonoBehaviour
         var label = labelGO.AddComponent<Text>();
         label.text = rule.Name;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.fontSize = 14;
+        label.fontSize = 16;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();
@@ -290,7 +334,7 @@ public class ApplyRulePanel : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 1f);
         var le = ruleGO.AddComponent<LayoutElement>();
-        le.preferredHeight = 28f;
+        le.preferredHeight = 36f;
 
         var btnImg = ruleGO.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
@@ -302,7 +346,7 @@ public class ApplyRulePanel : MonoBehaviour
         var label = labelGO.AddComponent<Text>();
         label.text = "Initialise Candidates";
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.fontSize = 14;
+        label.fontSize = 16;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();
@@ -339,7 +383,7 @@ public class ApplyRulePanel : MonoBehaviour
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0.5f, 1f);
         var le = ruleGO.AddComponent<LayoutElement>();
-        le.preferredHeight = 28f;
+        le.preferredHeight = 36f;
 
         var btnImg = ruleGO.AddComponent<Image>();
         btnImg.color = new Color(1f, 1f, 1f, 0.02f);
@@ -351,7 +395,7 @@ public class ApplyRulePanel : MonoBehaviour
         var label = labelGO.AddComponent<Text>();
         label.text = "Validate Board";
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        label.fontSize = 14;
+        label.fontSize = 16;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();

@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using Sudoku.Scripts.UI;
 
 /** 
  * Runtime UI panel that creates a toggle for each registered rule so the
@@ -20,7 +21,13 @@ public class RuleTogglePanel : MonoBehaviour
     public float MaxHeight = 400f;
 
     [Tooltip("Optional: maximum width before the panel becomes scrollable")]
-    public float MaxWidth = 200f;
+    public float MaxWidth = 280f;
+
+    /** When true, the parent layout group (e.g. an HLG in BoardSidePanel) controls
+     *  this panel's width. FinalizeLayout will not impose a fixed minWidth so the
+     *  panel can flex-fill its column correctly. Set by BoardSidePanel at runtime. */
+    [HideInInspector]
+    public bool FlexFillParent = false;
 
     [Tooltip("Padding in pixels to inset the panel when hosted inside the SidePanel")]
     public float Padding = 8f;
@@ -29,6 +36,7 @@ public class RuleTogglePanel : MonoBehaviour
     public Vector2 SidePanelOffset = Vector2.zero;
 
     private RuleRegistry _registry;
+    private ApplyRulePanel _applyRulePanel;
 
     /**
      * Simplified Start: Validate runner/registry, build panel, then finalize layout.
@@ -45,6 +53,7 @@ public class RuleTogglePanel : MonoBehaviour
         ConfigureAppearance(panelRootGO, rectHeight, rectWidth);
 
         var togglesParent = EnsureTogglesContainer(panelRootGO);
+        SetupScrollRect(togglesParent);
 
         // Remove designer-time objects under any Viewport child (keep Content)
         var viewport = FindChildRecursive(panelRootGO.transform, "Viewport");
@@ -62,13 +71,136 @@ public class RuleTogglePanel : MonoBehaviour
         var expectedNames = BuildToggles(togglesParent);
         CleanupExtraToggles(togglesParent, expectedNames);
 
+        LogFirstToggleRowState(togglesParent, "pre-layout");
+
         // Allow layout to settle then finalize horizontal sizing
         yield return null;
         FinalizeLayout(panelRootGO, panelRootRT, rectWidth);
         AlignWithSidePanel(panelRootGO, panelRootRT);
+        ForceLayoutRefresh(togglesParent);
+        LogFirstToggleRowState(togglesParent, "post-layout");
     }
 
     // --- Helper methods ---
+
+    /**
+     * Ensures the ScrollArea -> ViewPort -> Content hierarchy is fully wired up:
+     * adds a ScrollRect to ScrollArea if missing, adds RectMask2D to ViewPort for
+     * content clipping, and builds a vertical scrollbar that auto-hides when content
+     * fits entirely within the panel.
+     *
+     * @param contentTransform The Content RectTransform returned by EnsureTogglesContainer.
+     */
+    private void SetupScrollRect(Transform contentTransform)
+    {
+        // Navigate upward from Content to reach ViewPort then ScrollArea.
+        var vpTransform     = contentTransform?.parent;
+        var scrollTransform = vpTransform?.parent;
+        if (vpTransform == null || scrollTransform == null) return;
+
+        var viewportGO = vpTransform.gameObject;
+        var scrollGO   = scrollTransform.gameObject;
+
+        // Viewport: transparent image (required by RectMask2D) + clipping mask.
+        var vpImg = viewportGO.GetComponent<Image>();
+        if (vpImg == null) vpImg = viewportGO.AddComponent<Image>();
+        vpImg.color = new Color(0f, 0f, 0f, 0f);
+        vpImg.raycastTarget = false;
+        if (viewportGO.GetComponent<RectMask2D>() == null)
+            viewportGO.AddComponent<RectMask2D>();
+
+        // Ensure both rects fill their containers.
+        // NOTE: ScrollArea is a direct child of RuleToggles, which has its own VerticalLayoutGroup.
+        // That layout group controls ScrollArea's height via ILayoutElement, not via anchors.
+        // Add a LayoutElement with flexibleHeight so ScrollArea takes all remaining space.
+        var scrollLE = scrollGO.GetComponent<LayoutElement>();
+        if (scrollLE == null) scrollLE = scrollGO.AddComponent<LayoutElement>();
+        // Neutralize any designer-time fixed sizing so runtime layout remains stable.
+        scrollLE.minHeight = 0f;
+        scrollLE.preferredHeight = -1f;
+        scrollLE.flexibleHeight = 1f;
+        scrollLE.preferredWidth = -1f;
+        scrollLE.flexibleWidth = 1f;
+
+        var scrollRT = scrollGO.GetComponent<RectTransform>();
+        scrollRT.anchorMin = Vector2.zero;
+        scrollRT.anchorMax = Vector2.one;
+        scrollRT.offsetMin = Vector2.zero;
+        scrollRT.offsetMax = Vector2.zero;
+
+        var vpRT = viewportGO.GetComponent<RectTransform>();
+        if (vpRT == null) vpRT = viewportGO.AddComponent<RectTransform>();
+        vpRT.anchorMin = Vector2.zero;
+        vpRT.anchorMax = Vector2.one;
+        vpRT.offsetMin = Vector2.zero;
+        vpRT.offsetMax = Vector2.zero;
+
+        // Add ScrollRect to ScrollArea if the designer left it out.
+        var scrollRect = scrollGO.GetComponent<ScrollRect>();
+        if (scrollRect == null) scrollRect = scrollGO.AddComponent<ScrollRect>();
+        scrollRect.horizontal        = false;
+        scrollRect.scrollSensitivity = 30f;
+        scrollRect.content           = contentTransform.GetComponent<RectTransform>();
+        scrollRect.viewport          = vpRT;
+
+        // Fix Content so it spans the viewport width. The rows are laid out
+        // inside this RectTransform, so if it keeps a zero width then every row
+        // collapses to the toggle child only.
+        var contentRT = contentTransform.GetComponent<RectTransform>();
+        contentRT.pivot            = new Vector2(0.5f, 1f);
+        contentRT.anchorMin        = new Vector2(0f, 1f);
+        contentRT.anchorMax        = new Vector2(1f, 1f);
+        contentRT.anchoredPosition = Vector2.zero;
+        contentRT.offsetMin        = Vector2.zero;
+        contentRT.offsetMax        = Vector2.zero;
+
+        // Vertical scrollbar — create once, reuse if it already exists.
+        var existingSb    = scrollGO.transform.Find("VerticalScrollbar");
+        var scrollbarGO   = existingSb != null
+            ? existingSb.gameObject
+            : new GameObject("VerticalScrollbar",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar));
+        if (existingSb == null) scrollbarGO.transform.SetParent(scrollGO.transform, false);
+        var scrollbarRT = scrollbarGO.GetComponent<RectTransform>();
+        scrollbarRT.anchorMin        = new Vector2(1f, 0f);
+        scrollbarRT.anchorMax        = new Vector2(1f, 1f);
+        scrollbarRT.pivot            = new Vector2(1f, 0.5f);
+        scrollbarRT.sizeDelta        = new Vector2(12f, 0f);
+        scrollbarRT.anchoredPosition = Vector2.zero;
+        scrollbarGO.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
+
+        var existingSa    = scrollbarGO.transform.Find("SlidingArea");
+        var slidingAreaGO = existingSa != null
+            ? existingSa.gameObject
+            : new GameObject("SlidingArea", typeof(RectTransform));
+        if (existingSa == null) slidingAreaGO.transform.SetParent(scrollbarGO.transform, false);
+        var slidingAreaRT = slidingAreaGO.GetComponent<RectTransform>();
+        slidingAreaRT.anchorMin = Vector2.zero;
+        slidingAreaRT.anchorMax = Vector2.one;
+        slidingAreaRT.offsetMin = new Vector2(2f, 6f);
+        slidingAreaRT.offsetMax = new Vector2(-2f, -6f);
+
+        var existingH = slidingAreaGO.transform.Find("Handle");
+        var handleGO  = existingH != null
+            ? existingH.gameObject
+            : new GameObject("Handle", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        if (existingH == null) handleGO.transform.SetParent(slidingAreaGO.transform, false);
+        var handleRT = handleGO.GetComponent<RectTransform>();
+        handleRT.anchorMin = Vector2.zero;
+        handleRT.anchorMax = Vector2.one;
+        handleRT.offsetMin = Vector2.zero;
+        handleRT.offsetMax = Vector2.zero;
+        var handleImg = handleGO.GetComponent<Image>();
+        handleImg.color = new Color(0.6f, 0.6f, 0.6f, 1f);
+
+        var scrollbarComp = scrollbarGO.GetComponent<Scrollbar>();
+        scrollbarComp.handleRect    = handleRT;
+        scrollbarComp.direction     = Scrollbar.Direction.BottomToTop;
+        scrollbarComp.targetGraphic = handleImg;
+
+        scrollRect.verticalScrollbar           = scrollbarComp;
+        scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
+    }
 
     private bool InitRunnerAndRegistry()
     {
@@ -94,10 +226,15 @@ public class RuleTogglePanel : MonoBehaviour
     {
         var rt = go.GetComponent<RectTransform>();
         if (rt == null) rt = go.AddComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0f, 1f);
-        rt.anchorMax = new Vector2(0f, 1f);
-        rt.pivot = new Vector2(0f, 1f);
-        rt.anchoredPosition = new Vector2(Padding, -Padding);
+        // When hosted in a 2-column HLG the parent controls position and size;
+        // setting a fixed anchor here would fight the layout system.
+        if (!FlexFillParent)
+        {
+            rt.anchorMin = new Vector2(0f, 1f);
+            rt.anchorMax = new Vector2(0f, 1f);
+            rt.pivot = new Vector2(0f, 1f);
+            rt.anchoredPosition = new Vector2(Padding, -Padding);
+        }
         return rt;
     }
 
@@ -105,11 +242,13 @@ public class RuleTogglePanel : MonoBehaviour
     {
         int count = 0;
         try { count = _registry.GetRulesWithStatus().Count; } catch { count = 0; }
-        float CalculatedHeight = 26f + 4f + (28f + 2f) * count + 4f;
+        float CalculatedHeight = 34f + 4f + (36f + 2f) * count + 4f;
         rectHeight = Mathf.Min(MaxHeight, CalculatedHeight);
         rectWidth = MaxWidth;
         panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, rectHeight);
-        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
+        // When FlexFillParent is true the parent HLG controls horizontal size; don't fight it.
+        if (!FlexFillParent)
+            panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
     }
 
     private void ConfigureAppearance(GameObject panelRootGO, float rectHeight, float rectWidth)
@@ -126,15 +265,16 @@ public class RuleTogglePanel : MonoBehaviour
         var rootLE = panelRootGO.GetComponent<LayoutElement>();
         if (rootLE == null) rootLE = panelRootGO.AddComponent<LayoutElement>();
         rootLE.preferredHeight = rectHeight;
-        rootLE.preferredWidth = rectWidth;
-        rootLE.flexibleWidth = 0f;
+        rootLE.preferredWidth = FlexFillParent ? -1f : rectWidth;
+        rootLE.flexibleWidth = FlexFillParent ? 1f : 0f;
 
         var rootLayout = panelRootGO.GetComponent<VerticalLayoutGroup>();
         if (rootLayout == null) rootLayout = panelRootGO.AddComponent<VerticalLayoutGroup>();
         rootLayout.childControlHeight = true;
         rootLayout.childControlWidth = true;
         rootLayout.childForceExpandHeight = false;
-        rootLayout.childForceExpandWidth = false;
+        // Always expand children to fill the panel width, whether fixed or flex.
+        rootLayout.childForceExpandWidth = true;
         rootLayout.childAlignment = TextAnchor.UpperLeft;
         rootLayout.spacing = 4;
         rootLayout.padding = new RectOffset(4, 4, 4, 4);
@@ -176,6 +316,7 @@ public class RuleTogglePanel : MonoBehaviour
             contentVlg.childForceExpandHeight = false;
             contentVlg.childControlHeight = true;
             contentVlg.childControlWidth = true;
+            contentVlg.childForceExpandWidth = true;
             contentVlg.childAlignment = TextAnchor.UpperLeft;
             contentVlg.spacing = 2f;
             contentVlg.padding = new RectOffset(0,0,0,0);
@@ -194,6 +335,7 @@ public class RuleTogglePanel : MonoBehaviour
             existingVlg.childForceExpandHeight = false;
             existingVlg.childControlHeight = true;
             existingVlg.childControlWidth = true;
+            existingVlg.childForceExpandWidth = true;
             existingVlg.childAlignment = TextAnchor.UpperLeft;
             existingVlg.spacing = 2f;
             existingVlg.padding = new RectOffset(0,0,0,0);
@@ -228,6 +370,82 @@ public class RuleTogglePanel : MonoBehaviour
             var existing = togglesParent.Find(toggleName);
             if (existing != null)
             {
+                // Sync designer-provided row to the current size/font settings so
+                // that runtime and designer-mode rows look identical.
+                var rowLE = existing.GetComponent<LayoutElement>();
+                if (rowLE != null)
+                {
+                    rowLE.minWidth = 0f;
+                    rowLE.preferredWidth = -1f;
+                    rowLE.flexibleWidth = 1f;
+                    rowLE.preferredHeight = 36f;
+                }
+
+                var rowHLG = existing.GetComponent<HorizontalLayoutGroup>();
+                if (rowHLG != null)
+                {
+                    rowHLG.childControlWidth = true;
+                    rowHLG.childControlHeight = true;
+                    rowHLG.childForceExpandWidth = false;
+                    rowHLG.childForceExpandHeight = false;
+                    rowHLG.childAlignment = TextAnchor.MiddleLeft;
+                    rowHLG.spacing = 6f;
+                }
+                var rowRT = existing.GetComponent<RectTransform>();
+                if (rowRT != null)
+                {
+                    rowRT.anchorMin = new Vector2(0f, 1f);
+                    rowRT.anchorMax = new Vector2(1f, 1f);
+                    rowRT.pivot = new Vector2(0.5f, 1f);
+                    rowRT.offsetMin = Vector2.zero;
+                    rowRT.offsetMax = Vector2.zero;
+                }
+
+                var existingToggleGO = existing.transform.Find("Toggle");
+                if (existingToggleGO != null)
+                {
+                    var tRT = existingToggleGO.GetComponent<RectTransform>();
+                    var tLE = existingToggleGO.GetComponent<LayoutElement>();
+                    var tImg = existingToggleGO.GetComponent<Image>();
+                    if (tRT != null) tRT.sizeDelta = new Vector2(30f, 30f);
+                    if (tLE != null)
+                    {
+                        tLE.minWidth = 30f;
+                        tLE.minHeight = 30f;
+                        tLE.preferredWidth = 30f;
+                        tLE.preferredHeight = 30f;
+                        tLE.flexibleWidth = 0f;
+                        tLE.flexibleHeight = 0f;
+                    }
+                    if (tImg != null)
+                    {
+                        tImg.color = new Color(1f, 1f, 1f, 0.06f);
+                        tImg.raycastTarget = true;
+                    }
+                    var ckGO = existingToggleGO.transform.Find("Checkmark");
+                    if (ckGO != null)
+                    {
+                        var ckTxt = ckGO.GetComponent<Text>();
+                        if (ckTxt != null)
+                        {
+                            ckTxt.fontSize = 18;
+                            ckTxt.resizeTextForBestFit = false;
+                            // Keep toggle graphic visible but don't block row-level clicks.
+                            ckTxt.raycastTarget = false;
+                        }
+                        // Must match the font size — scene saves 18x18 but fontSize 18 needs more room.
+                        var ckRT = ckGO.GetComponent<RectTransform>();
+                        if (ckRT != null)
+                        {
+                            ckRT.anchorMin = new Vector2(0.5f, 0.5f);
+                            ckRT.anchorMax = new Vector2(0.5f, 0.5f);
+                            ckRT.pivot = new Vector2(0.5f, 0.5f);
+                            ckRT.anchoredPosition = Vector2.zero;
+                            ckRT.sizeDelta = new Vector2(22f, 22f);
+                        }
+                    }
+                }
+
                 // reuse designer-provided row when possible
                 var toggleTransform = existing.transform.Find("Toggle");
                 Toggle toggle = null;
@@ -245,9 +463,32 @@ public class RuleTogglePanel : MonoBehaviour
                     var txt = SplitPascalCase(entry.rule.Name ?? "");
                     if (string.IsNullOrEmpty(txt)) txt = ruleTypeName;
                     label.text = txt;
+                    label.fontSize = 16;
+                    label.resizeTextMinSize = 10;
+                    label.resizeTextMaxSize = 16;
                     label.horizontalOverflow = HorizontalWrapMode.Overflow;
                     label.verticalOverflow = VerticalWrapMode.Truncate;
                     label.resizeTextForBestFit = true;
+                    // Let the row Button own clicks; labels should not intercept them.
+                    label.raycastTarget = false;
+
+                    var labelRT = label.GetComponent<RectTransform>();
+                    if (labelRT != null)
+                    {
+                        labelRT.anchorMin = new Vector2(0f, 0f);
+                        labelRT.anchorMax = new Vector2(1f, 1f);
+                        labelRT.pivot = new Vector2(0.5f, 0.5f);
+                        labelRT.offsetMin = new Vector2(8f, 2f);
+                        labelRT.offsetMax = new Vector2(-8f, -2f);
+                    }
+
+                    var lblLE = label.GetComponent<LayoutElement>();
+                    if (lblLE != null)
+                    {
+                        lblLE.minWidth = 0f;
+                        lblLE.preferredWidth = -1f;
+                        lblLE.flexibleWidth = 1f;
+                    }
                 }
                 else if (tmpLabel != null) {
                     var ttxt = SplitPascalCase(entry.rule.Name ?? "");
@@ -256,26 +497,75 @@ public class RuleTogglePanel : MonoBehaviour
                     tmpLabel.textWrappingMode = TMPro.TextWrappingModes.NoWrap;
                     tmpLabel.enableAutoSizing = true;
                     tmpLabel.fontSizeMin = 10;
-                    tmpLabel.fontSizeMax = 14;
+                    tmpLabel.fontSizeMax = 16;
+                    // Let the row Button own clicks; labels should not intercept them.
+                    tmpLabel.raycastTarget = false;
+
+                    var tmpLabelRT = tmpLabel.GetComponent<RectTransform>();
+                    if (tmpLabelRT != null)
+                    {
+                        tmpLabelRT.anchorMin = new Vector2(0f, 0f);
+                        tmpLabelRT.anchorMax = new Vector2(1f, 1f);
+                        tmpLabelRT.pivot = new Vector2(0.5f, 0.5f);
+                        tmpLabelRT.offsetMin = new Vector2(8f, 2f);
+                        tmpLabelRT.offsetMax = new Vector2(-8f, -2f);
+                    }
+
+                    var tmpLE = tmpLabel.GetComponent<LayoutElement>();
+                    if (tmpLE != null)
+                    {
+                        tmpLE.minWidth = 0f;
+                        tmpLE.preferredWidth = -1f;
+                        tmpLE.flexibleWidth = 1f;
+                    }
                 }
 
                 if (toggle != null)
                 {
+                    // Use None transition so PlayEffect never starts a fade coroutine that
+                    // can conflict with our direct colour management below.
+                    toggle.toggleTransition = Toggle.ToggleTransition.None;
+                    // Ensure direct click handling is always available in Play mode.
+                    toggle.interactable = true;
                     toggle.onValueChanged.RemoveAllListeners();
                     toggle.isOn = entry.enabled;
                     string capturedName = ruleTypeName;
                     toggle.onValueChanged.AddListener((val) =>
                     {
                         _registry.SetEnabled(capturedName, val);
-                        if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
+                        RefreshApplyRulesPanel();
+                        // Keep the GO always active; control visibility via alpha so
+                        // there is no risk of StartCoroutine failing on an inactive GO.
+                        if (toggle.graphic != null)
+                        {
+                            toggle.graphic.gameObject.SetActive(true);
+                            toggle.graphic.color = new Color(1f, 1f, 1f, val ? 1f : 0f);
+                        }
                     });
                     var rowButton = existing.GetComponent<Button>();
                     if (rowButton != null)
                     {
+                        var rowBg = existing.GetComponent<Image>();
+                        if (rowBg != null)
+                        {
+                            // Keep an effectively transparent but raycastable row target.
+                            rowBg.color = new Color(0f, 0f, 0f, 0.001f);
+                            rowBg.raycastTarget = true;
+                            rowButton.targetGraphic = rowBg;
+                        }
+
+                        rowButton.transition = Selectable.Transition.None;
+
                         rowButton.onClick.RemoveAllListeners();
                         rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
                     }
-                    if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(entry.enabled);
+
+                    // Force the correct visual state immediately via direct colour assignment.
+                    if (toggle.graphic != null)
+                    {
+                        toggle.graphic.gameObject.SetActive(true);
+                        toggle.graphic.color = new Color(1f, 1f, 1f, entry.enabled ? 1f : 0f);
+                    }
                 }
                 else
                 {
@@ -307,8 +597,25 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void FinalizeLayout(GameObject panelRootGO, RectTransform panelRootRT, float rectWidth)
     {
-        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
+        // In FlexFillParent mode the parent HLG controls our width; do not impose a
+        // fixed width or minWidth that would fight the layout system.
+        // Also re-apply the full flex LE in case ConfigureAppearance ran before
+        // FlexFillParent was set to true by the host (BoardSidePanel).
         var rootLE = panelRootGO.GetComponent<LayoutElement>();
+        if (FlexFillParent)
+        {
+            if (rootLE != null)
+            {
+                rootLE.preferredWidth  = -1f;
+                rootLE.preferredHeight = -1f;
+                rootLE.flexibleWidth   = 1f;
+                rootLE.flexibleHeight  = 1f;
+                rootLE.minWidth        = -1f;
+            }
+            return;
+        }
+
+        panelRootRT.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, rectWidth);
         if (rootLE != null)
         {
             rootLE.preferredWidth = rectWidth;
@@ -363,7 +670,10 @@ public class RuleTogglePanel : MonoBehaviour
         ruleGO.transform.SetParent(parent, false);
 
         var le = ruleGO.AddComponent<LayoutElement>();
-        le.preferredHeight = 28f;
+        le.minWidth = 0f;
+        le.preferredWidth = -1f;
+        le.flexibleWidth = 1f;
+        le.preferredHeight = 36f;
 
         var h = ruleGO.AddComponent<HorizontalLayoutGroup>();
         h.childForceExpandHeight = false;
@@ -371,35 +681,39 @@ public class RuleTogglePanel : MonoBehaviour
         h.childForceExpandWidth = false;
         h.spacing = 6f;
         var rowBg = ruleGO.AddComponent<Image>();
-        rowBg.color = new Color(0f, 0f, 0f, 0f);
+        // Keep effectively transparent but still raycastable so row click works reliably.
+        rowBg.color = new Color(0f, 0f, 0f, 0.001f);
+        rowBg.raycastTarget = true;
         var rowButton = ruleGO.AddComponent<Button>();
         rowButton.targetGraphic = rowBg;
+        rowButton.transition = Selectable.Transition.None;
 
         var toggleGO = new GameObject("Toggle", typeof(RectTransform));
         toggleGO.transform.SetParent(ruleGO.transform, false);
         var toggle = toggleGO.AddComponent<Toggle>();
         var bgImg = toggleGO.AddComponent<Image>();
         var toggleRect = toggleGO.GetComponent<RectTransform>();
-        toggleRect.sizeDelta = new Vector2(26f, 26f);
+        toggleRect.sizeDelta = new Vector2(30f, 30f);
         var toggleLE = toggleGO.AddComponent<LayoutElement>();
-        toggleLE.preferredWidth = 26f;
-        toggleLE.preferredHeight = 26f;
+        toggleLE.preferredWidth = 30f;
+        toggleLE.preferredHeight = 30f;
         bgImg.color = new Color(1f, 1f, 1f, 0.06f);
         toggle.targetGraphic = bgImg;
-        toggle.interactable = false;
-        bgImg.raycastTarget = false;
+        // Allow direct clicking on the toggle; row click remains enabled too.
+        toggle.interactable = true;
+        bgImg.raycastTarget = true;
 
         var checkMarkGO = new GameObject("Checkmark", typeof(RectTransform));
         checkMarkGO.transform.SetParent(toggleGO.transform, false);
         var ckText = checkMarkGO.AddComponent<Text>();
         ckText.text = "✓";
         ckText.font = GetSafeBuiltinFont("Arial.ttf");
-        ckText.fontSize = 14;
+        ckText.fontSize = 18;
         ckText.color = Color.white;
         ckText.alignment = TextAnchor.MiddleCenter;
         ckText.raycastTarget = false;
         var ckRect = checkMarkGO.GetComponent<RectTransform>();
-        ckRect.sizeDelta = new Vector2(18f, 18f);
+        ckRect.sizeDelta = new Vector2(22f, 22f);
         toggle.graphic = ckText;
 
         var labelGO = new GameObject("Label", typeof(RectTransform));
@@ -409,27 +723,47 @@ public class RuleTogglePanel : MonoBehaviour
         if (string.IsNullOrEmpty(lblTxt)) lblTxt = rule.GetType().Name;
         label.text = lblTxt;
         label.font = GetSafeBuiltinFont("Arial.ttf");
-        label.fontSize = 14;
+        label.fontSize = 16;
         label.color = Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         label.horizontalOverflow = HorizontalWrapMode.Overflow;
         label.verticalOverflow = VerticalWrapMode.Truncate;
         label.resizeTextForBestFit = true;
         label.resizeTextMinSize = 10;
-        label.resizeTextMaxSize = 14;
-        label.raycastTarget = false;
+        label.resizeTextMaxSize = 16;
+        label.raycastTarget = true;
+        var labelRTRuntime = labelGO.GetComponent<RectTransform>();
+        labelRTRuntime.anchorMin = new Vector2(0f, 0f);
+        labelRTRuntime.anchorMax = new Vector2(1f, 1f);
+        labelRTRuntime.pivot = new Vector2(0.5f, 0.5f);
+        labelRTRuntime.offsetMin = new Vector2(8f, 2f);
+        labelRTRuntime.offsetMax = new Vector2(-8f, -2f);
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
+        // Use None transition so PlayEffect never starts a fade coroutine that can
+        // conflict with our direct colour management below.
+        toggle.toggleTransition = Toggle.ToggleTransition.None;
         toggle.isOn = enabled;
         string ruleTypeName = rule.GetType().Name;
         toggle.onValueChanged.AddListener((val) =>
         {
             _registry.SetEnabled(ruleTypeName, val);
-            if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(val);
+            RefreshApplyRulesPanel();
+            // Keep the GO always active; control visibility via alpha.
+            if (toggle.graphic != null)
+            {
+                toggle.graphic.gameObject.SetActive(true);
+                toggle.graphic.color = new Color(1f, 1f, 1f, val ? 1f : 0f);
+            }
         });
         rowButton.onClick.AddListener(() => { toggle.isOn = !toggle.isOn; });
-        if (toggle.graphic != null) toggle.graphic.gameObject.SetActive(enabled);
+        // Force the correct visual state immediately via direct colour assignment.
+        if (toggle.graphic != null)
+        {
+            toggle.graphic.gameObject.SetActive(true);
+            toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
+        }
     }
 
     private string SplitPascalCase(string input)
@@ -479,6 +813,81 @@ public class RuleTogglePanel : MonoBehaviour
 
         if (f == null) Debug.LogWarning($"No builtin or OS font available for '{preferred}'. UI text may be invisible.");
         return f;
+    }
+
+    private void RefreshApplyRulesPanel()
+    {
+        if (_applyRulePanel == null)
+        {
+            _applyRulePanel = FindAnyObjectByType<ApplyRulePanel>();
+        }
+
+        if (_applyRulePanel != null)
+        {
+            _applyRulePanel.RefreshList();
+        }
+    }
+
+    private void LogFirstToggleRowState(Transform togglesParent, string phase)
+    {
+        if (togglesParent == null) return;
+
+        var firstRow = togglesParent.childCount > 0 ? togglesParent.GetChild(0) : null;
+        if (firstRow == null) return;
+
+        var rowRT = firstRow as RectTransform;
+        var rowImg = firstRow.GetComponent<Image>();
+        var rowBtn = firstRow.GetComponent<Button>();
+        var rowHLG = firstRow.GetComponent<HorizontalLayoutGroup>();
+        var rowLE = firstRow.GetComponent<LayoutElement>();
+        var toggleT = firstRow.Find("Toggle");
+        var labelT = firstRow.Find("Label");
+
+        Debug.Log($"[RuleTogglePanel][{phase}] firstRow={firstRow.name} rowSize={(rowRT != null ? rowRT.rect.size.ToString() : "null")} rowImgRaycast={(rowImg != null && rowImg.raycastTarget)} rowBtn={(rowBtn != null)} rowBtnEnabled={(rowBtn != null && rowBtn.enabled)} rowBtnInteract={(rowBtn != null && rowBtn.interactable)} rowHlgExpand={(rowHLG != null && rowHLG.childForceExpandWidth)} rowLEFlex={(rowLE != null ? rowLE.flexibleWidth : -999)} toggleExists={(toggleT != null)} labelExists={(labelT != null)}");
+
+        if (toggleT != null)
+        {
+            var tRT = toggleT.GetComponent<RectTransform>();
+            var tToggle = toggleT.GetComponent<Toggle>();
+            var tGraphic = toggleT.GetComponent<Graphic>();
+            var tImg = toggleT.GetComponent<Image>();
+            var tLE = toggleT.GetComponent<LayoutElement>();
+            var ckT = toggleT.Find("Checkmark");
+            var ckGraphic = ckT != null ? ckT.GetComponent<Graphic>() : null;
+            var toggleLeState = tLE != null
+                ? $"pw={tLE.preferredWidth} ph={tLE.preferredHeight} fw={tLE.flexibleWidth} fh={tLE.flexibleHeight}"
+                : "null";
+            Debug.Log($"[RuleTogglePanel][{phase}] toggleSize={(tRT != null ? tRT.rect.size.ToString() : "null")} toggleComponent={(tToggle != null)} toggleInteract={(tToggle != null && tToggle.interactable)} toggleGraphicRaycast={(tGraphic != null && tGraphic.raycastTarget)} toggleImgRaycast={(tImg != null && tImg.raycastTarget)} toggleLE={toggleLeState} checkmarkGraphicRaycast={(ckGraphic != null && ckGraphic.raycastTarget)}");
+        }
+
+        if (labelT != null)
+        {
+            var lRT = labelT.GetComponent<RectTransform>();
+            var lGraphic = labelT.GetComponent<Graphic>();
+            var lBtn = labelT.GetComponent<Button>();
+            var lLE = labelT.GetComponent<LayoutElement>();
+            Debug.Log($"[RuleTogglePanel][{phase}] labelSize={(lRT != null ? lRT.rect.size.ToString() : "null")} labelGraphicRaycast={(lGraphic != null && lGraphic.raycastTarget)} labelBtn={(lBtn != null)} labelBtnEnabled={(lBtn != null && lBtn.enabled)} labelBtnInteract={(lBtn != null && lBtn.interactable)} labelLEFlex={(lLE != null ? lLE.flexibleWidth : -999)}");
+        }
+    }
+
+    private void ForceLayoutRefresh(Transform togglesParent)
+    {
+        if (togglesParent == null) return;
+
+        var contentRT = togglesParent as RectTransform;
+        if (contentRT != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRT);
+
+        var scrollArea = togglesParent.parent?.parent as RectTransform;
+        var viewport = togglesParent.parent as RectTransform;
+        var scrollRoot = togglesParent.parent?.parent?.parent as RectTransform;
+
+        if (viewport != null) LayoutRebuilder.ForceRebuildLayoutImmediate(viewport);
+        if (scrollArea != null) LayoutRebuilder.ForceRebuildLayoutImmediate(scrollArea);
+        if (scrollRoot != null) LayoutRebuilder.ForceRebuildLayoutImmediate(scrollRoot);
+
+        Canvas.ForceUpdateCanvases();
+
+        Debug.Log($"[RuleTogglePanel][force] scrollArea={(scrollArea != null ? scrollArea.rect.size.ToString() : "null")} viewport={(viewport != null ? viewport.rect.size.ToString() : "null")} content={(contentRT != null ? contentRT.rect.size.ToString() : "null")}");
     }
 
     private Canvas CreateDefaultCanvas()
