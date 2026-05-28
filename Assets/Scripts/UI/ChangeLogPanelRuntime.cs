@@ -302,8 +302,8 @@ namespace Sudoku.Scripts.UI
                 // Recreate children only when the change log actually changed
                 foreach (Transform child in _contentRT) Destroy(child.gameObject);
 
-                // Show a header with current index
-                CreateTextChild(_contentRT, "Header", $"ChangeLog: {board.ChangeLog.Count} entries - Index: {board.ChangeLogIndex}", 14, TextAnchor.UpperLeft);
+                // TODO: Debug Remove..Show a header with current index
+                CreateTextChild(_contentRT, "Header", $"ChangeLog: {board.ChangeLog.Count} entries - Index: {board.ChangeLogIndex}", 14, TextAnchor.MiddleCenter);
 
                 for (int i = 0; i < groups.Count; i++)
                 {
