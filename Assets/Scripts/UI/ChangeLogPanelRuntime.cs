@@ -198,10 +198,10 @@ namespace Sudoku.Scripts.UI
             vpRT.offsetMin = Vector2.zero;
             vpRT.offsetMax = Vector2.zero;
             var vpImg = viewportGO.GetComponent<Image>(); vpImg.color = new Color(0, 0, 0, 0.0f);
-            // Do not add a Mask here — an Image with alpha=0 combined with Mask
-            // would create an empty mask (invisible). Make the viewport image
-            // non-raycastable so pointer events reach child rows instead.
             vpImg.raycastTarget = false;
+            // RectMask2D clips children by the viewport rect without requiring a visible Image,
+            // which makes it the correct choice here (Mask requires a non-transparent graphic).
+            viewportGO.AddComponent<RectMask2D>();
 
             var contentGO = new GameObject("Content", typeof(RectTransform));
             contentGO.transform.SetParent(viewportGO.transform, false);
@@ -216,6 +216,51 @@ namespace Sudoku.Scripts.UI
             scrollRect.content = _contentRT;
             scrollRect.viewport = vpRT;
             scrollRect.horizontal = false;
+            scrollRect.scrollSensitivity = 30f;
+
+            // Vertical scrollbar: anchored to the right edge of the scroll container.
+            var scrollbarGO = new GameObject("VerticalScrollbar",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar));
+            scrollbarGO.transform.SetParent(scrollGO.transform, false);
+            var scrollbarRT = scrollbarGO.GetComponent<RectTransform>();
+            scrollbarRT.anchorMin        = new Vector2(1f, 0f);
+            scrollbarRT.anchorMax        = new Vector2(1f, 1f);
+            scrollbarRT.pivot            = new Vector2(1f, 0.5f);
+            scrollbarRT.sizeDelta        = new Vector2(12f, 0f);
+            scrollbarRT.anchoredPosition = Vector2.zero;
+            var scrollbarImg = scrollbarGO.GetComponent<Image>();
+            scrollbarImg.color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
+
+            // The SlidingArea constrains the handle travel range.
+            var slidingAreaGO = new GameObject("SlidingArea", typeof(RectTransform));
+            slidingAreaGO.transform.SetParent(scrollbarGO.transform, false);
+            var slidingAreaRT = slidingAreaGO.GetComponent<RectTransform>();
+            slidingAreaRT.anchorMin = Vector2.zero;
+            slidingAreaRT.anchorMax = Vector2.one;
+            slidingAreaRT.offsetMin = new Vector2(2f, 6f);
+            slidingAreaRT.offsetMax = new Vector2(-2f, -6f);
+
+            // Handle — the draggable thumb inside the scrollbar.
+            var handleGO = new GameObject("Handle",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            handleGO.transform.SetParent(slidingAreaGO.transform, false);
+            var handleRT = handleGO.GetComponent<RectTransform>();
+            handleRT.anchorMin = Vector2.zero;
+            handleRT.anchorMax = Vector2.one;
+            handleRT.offsetMin = Vector2.zero;
+            handleRT.offsetMax = Vector2.zero;
+            var handleImg = handleGO.GetComponent<Image>();
+            handleImg.color = new Color(0.6f, 0.6f, 0.6f, 1f);
+
+            var scrollbarComp = scrollbarGO.GetComponent<Scrollbar>();
+            scrollbarComp.handleRect    = handleRT;
+            scrollbarComp.direction     = Scrollbar.Direction.BottomToTop;
+            scrollbarComp.targetGraphic = handleImg;
+
+            // Wire the scrollbar to the ScrollRect; it will auto-hide and expand the viewport
+            // when content fits entirely within the panel.
+            scrollRect.verticalScrollbar           = scrollbarComp;
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
 
             // Ensure the close button is above the scroll area so it receives clicks
             if (closeBtn != null) closeBtn.transform.SetAsLastSibling();
@@ -449,9 +494,51 @@ namespace Sudoku.Scripts.UI
                 // Force layout rebuild so the VerticalLayoutGroup / ContentSizeFitter compute sizes immediately
                 UnityEngine.Canvas.ForceUpdateCanvases();
                 UnityEngine.UI.LayoutRebuilder.ForceRebuildLayoutImmediate(_contentRT);
-                // Reset scroll to top so new content is visible
+
+                // Scroll to show the currently active row centred in the viewport.
                 var scrollRect = _contentRT.parent != null && _contentRT.parent.parent != null ? _contentRT.parent.parent.GetComponent<ScrollRect>() : null;
-                if (scrollRect != null) scrollRect.verticalNormalizedPosition = 1f;
+                if (scrollRect != null)
+                {
+                    // Locate the active row by the current change-log index.
+                    Transform activeRow = null;
+                    if (board.ChangeLogIndex == 0)
+                    {
+                        activeRow = _contentRT.Find("InitialState");
+                    }
+                    else
+                    {
+                        var activeGroup = groups.Find(g => board.ChangeLogIndex > g.StartIndex
+                                                        && board.ChangeLogIndex <= g.EndIndex);
+                        if (activeGroup != null)
+                            activeRow = _contentRT.Find($"Group_{activeGroup.GroupId}");
+                    }
+
+                    if (activeRow is RectTransform activeRT)
+                    {
+                        float contentH   = _contentRT.rect.height;
+                        float viewportH  = scrollRect.viewport != null
+                            ? scrollRect.viewport.rect.height
+                            : scrollRect.GetComponent<RectTransform>().rect.height;
+                        float scrollable = contentH - viewportH;
+
+                        if (scrollable > 0f)
+                        {
+                            // anchoredPosition.y is negative (rows go downward from the content top).
+                            float rowTop       = -activeRT.anchoredPosition.y;
+                            float targetOffset = rowTop - (viewportH - activeRT.rect.height) * 0.5f;
+                            targetOffset = Mathf.Clamp(targetOffset, 0f, scrollable);
+                            scrollRect.verticalNormalizedPosition = 1f - (targetOffset / scrollable);
+                        }
+                        else
+                        {
+                            scrollRect.verticalNormalizedPosition = 1f;
+                        }
+                    }
+                    else
+                    {
+                        scrollRect.verticalNormalizedPosition = 1f; // fallback: scroll to top
+                    }
+                }
 
                 
             }
