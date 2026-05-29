@@ -1,5 +1,3 @@
-The full plan can be read in temp_radial_menu_plan.md if you need more context.
-
 Stage 1: Manual Edit Core (no UI)
 Goal: Add domain-level actions for set value, add candidate, remove candidate, and smart action resolution scaffold, all with proper changelog grouping and undo/redo compatibility.
 
@@ -27,6 +25,7 @@ Requirements:
 * Add safe handling for pointer leaving board and early release.
 * Keep behavior disabled for invalid or missing board state.
 Do not build radial visuals yet.
+The full plan can be read in temp_radial_menu_plan.md if you need more context.
 
 
 Stage 3: Radial Menu Shell
@@ -41,6 +40,7 @@ Requirements:
 * Segment hover or highlight state while pointer moves.
 * On release, return selected segment identity without applying board edits yet.
 Keep this stage focused on visuals, layout, and selection plumbing.
+The full plan can be read in temp_radial_menu_plan.md if you need more context.
 
 
 Stage 4: Numeric Segment Actions
@@ -55,6 +55,7 @@ Requirements:
 * Prevent edits on given cells and show a clear no-op outcome.
 * Refresh affected runtime UI state after edits.
 Do not expand Smart action logic beyond placeholder behavior yet.
+The full plan can be read in temp_radial_menu_plan.md if you need more context.
 
 
 Stage 5: Smart Center Action
@@ -69,6 +70,7 @@ Requirements:
 * Ensure smart edits use the same changelog grouping path as manual numeric actions.
 * Add tests for smart action success and no-op cases.
 Keep smart logic intentionally small and reliable for now.
+The full plan can be read in temp_radial_menu_plan.md if you need more context.
 
 
 Stage 6: Validation and Polish
@@ -83,6 +85,8 @@ Requirements:
 * Confirm interaction edge cases: release outside menu, cancel path, missing board state, given cells.
 * Apply small UX polish only after behavior is stable.
 Do not add new major features in this stage.
+The full plan can be read in temp_radial_menu_plan.md if you need more context.
+
 
 Scope Boundaries for This Plan
 * Included: manual cell edits, candidate edits, hold-to-open radial, smart center action MVP.

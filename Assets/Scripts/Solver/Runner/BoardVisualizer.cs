@@ -31,9 +31,26 @@ namespace Sudoku.Solver
         [Tooltip("Top-left screen position for the rendered board")]
         public Vector2 Offset = new Vector2(20, 20);
 
+        [Tooltip("Seconds to hold before the board requests a radial open intent")]
+        public float HoldOpenThresholdSeconds = 0.35f;
+
+        public enum HoldPhase
+        {
+            Idle = 0,
+            Holding = 1,
+            Armed = 2
+        }
+
         private GUIStyle _centerStyle;
         private GUIStyle _candidateStyle;
         private int _lastComputedCellSize = -1;
+        private float _holdStartedAt = -1f;
+        private Vector2 _holdStartedPointerPosition;
+        private bool _radialOpenIntentRequested;
+        public HoldPhase CurrentHoldPhase { get; private set; } = HoldPhase.Idle;
+        public int SelectedHoldRow { get; private set; } = -1;
+        public int SelectedHoldColumn { get; private set; } = -1;
+        public bool RadialOpenIntentRequested => _radialOpenIntentRequested;
         // Track the last seen RuleResult so we can render removed candidates
         // in red until a new rule result is produced.
         private Sudoku.Solver.Rules.RuleResult _lastSeenRuleResult;
@@ -68,6 +85,167 @@ namespace Sudoku.Solver
                 cellSize = Mathf.Max(MinCellSize, Mathf.FloorToInt(availableHeight / size));
             }
             return cellSize;
+        }
+
+        /**
+         * Return the board rectangle in GUI coordinates using the same geometry as OnGUI.
+         *
+         * @param rect Computed board rectangle when the board geometry is available.
+         * @returns True when the board geometry could be resolved.
+         */
+        public bool TryGetBoardRect(out Rect rect)
+        {
+            rect = default;
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.Cells == null) return false;
+
+            int size = Runner.CurrentBoard.Size;
+            if (size <= 0) return false;
+
+            int cellSize = GetComputedCellSize();
+            if (cellSize <= 0) return false;
+
+            rect = new Rect(Offset.x, Offset.y, size * cellSize, size * cellSize);
+            return true;
+        }
+
+        /**
+         * Map a GUI pointer position to a board cell using the board's current geometry.
+         *
+         * @param screenPosition Pointer position in GUI coordinates.
+         * @param row Resolved zero-based row index.
+         * @param column Resolved zero-based column index.
+         * @returns True when the pointer is inside the rendered board.
+         */
+        public bool TryGetCellFromScreenPosition(Vector2 screenPosition, out int row, out int column)
+        {
+            row = -1;
+            column = -1;
+
+            if (!TryGetBoardRect(out var boardRect)) return false;
+            if (!boardRect.Contains(screenPosition)) return false;
+
+            int cellSize = GetComputedCellSize();
+            if (cellSize <= 0) return false;
+
+            column = Mathf.FloorToInt((screenPosition.x - boardRect.x) / cellSize);
+            row = Mathf.FloorToInt((screenPosition.y - boardRect.y) / cellSize);
+
+            if (Runner.CurrentBoard == null) return false;
+            if (row < 0 || column < 0 || row >= Runner.CurrentBoard.Size || column >= Runner.CurrentBoard.Size)
+            {
+                row = -1;
+                column = -1;
+                return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * Begin a new hold interaction for a specific cell.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param pointerPosition Pointer position where the hold started.
+         */
+        public void BeginCellHold(int row, int column, Vector2 pointerPosition)
+        {
+            if (!IsBoardInteractionAvailable())
+            {
+                CancelCellHold();
+                return;
+            }
+
+            SelectedHoldRow = row;
+            SelectedHoldColumn = column;
+            _holdStartedPointerPosition = pointerPosition;
+            _holdStartedAt = Time.realtimeSinceStartup;
+            CurrentHoldPhase = HoldPhase.Holding;
+            _radialOpenIntentRequested = false;
+        }
+
+        /**
+         * Advance an active hold interaction and arm the radial open intent when the threshold is reached.
+         *
+         * @param pointerPosition Current pointer position in GUI coordinates.
+         */
+        public void UpdateCellHold(Vector2 pointerPosition)
+        {
+            if (CurrentHoldPhase == HoldPhase.Idle) return;
+            if (!IsBoardInteractionAvailable())
+            {
+                CancelCellHold();
+                return;
+            }
+
+            _holdStartedPointerPosition = pointerPosition;
+
+            if (!TryGetCellFromScreenPosition(pointerPosition, out int row, out int column) || row != SelectedHoldRow || column != SelectedHoldColumn)
+            {
+                CancelCellHold();
+                return;
+            }
+
+            if (CurrentHoldPhase == HoldPhase.Holding && _holdStartedAt >= 0f && Time.realtimeSinceStartup - _holdStartedAt >= HoldOpenThresholdSeconds)
+            {
+                CurrentHoldPhase = HoldPhase.Armed;
+                _radialOpenIntentRequested = true;
+            }
+        }
+
+        /**
+         * End the current hold interaction without preserving intent.
+         */
+        public void CancelCellHold()
+        {
+            CurrentHoldPhase = HoldPhase.Idle;
+            SelectedHoldRow = -1;
+            SelectedHoldColumn = -1;
+            _holdStartedAt = -1f;
+            _holdStartedPointerPosition = default;
+            _radialOpenIntentRequested = false;
+        }
+
+        /**
+         * Clear the current hold interaction after the pointer is released.
+         * If the radial open intent has already been armed, the intent flag is preserved
+         * until an outer controller consumes it.
+         */
+        public void ReleaseCellHold()
+        {
+            if (CurrentHoldPhase == HoldPhase.Armed)
+            {
+                CurrentHoldPhase = HoldPhase.Idle;
+                SelectedHoldRow = -1;
+                SelectedHoldColumn = -1;
+                _holdStartedAt = -1f;
+                _holdStartedPointerPosition = default;
+                return;
+            }
+
+            CancelCellHold();
+        }
+
+        /**
+         * Consume a pending radial-open intent, clearing the armed state.
+         *
+         * @returns True if there was an intent to consume.
+         */
+        public bool ConsumeRadialOpenIntent()
+        {
+            if (!_radialOpenIntentRequested) return false;
+            _radialOpenIntentRequested = false;
+            return true;
+        }
+
+        /**
+         * Returns whether the board has enough state to accept hold interactions.
+         *
+         * @returns True when the board and its backing cells are ready.
+         */
+        public bool IsBoardInteractionAvailable()
+        {
+            return Runner != null && Runner.CurrentBoard != null && Runner.CurrentBoard.Cells != null && Runner.CurrentBoard.Size > 0;
         }
 
         private void OnValidate()
@@ -224,12 +402,91 @@ namespace Sudoku.Solver
                 // nothing else to do here; visibility is controlled by `_lastSeenRuleResult`
             }
             HandlesEndGUI();
+
+                if (Application.isPlaying)
+                {
+                    HandlePointerInput();
+                    PollHoldTimer();
+                }
             }
             catch (System.Exception ex)
             {
                 Debug.LogException(ex);
                 return;
             }
+        }
+
+        private void HandlePointerInput()
+        {
+            if (!IsBoardInteractionAvailable())
+            {
+                CancelCellHold();
+                return;
+            }
+
+            var evt = Event.current;
+            if (evt == null) return;
+
+            if (evt.type == EventType.MouseDown && evt.button == 0)
+            {
+                if (TryGetCellFromScreenPosition(evt.mousePosition, out int row, out int column))
+                {
+                    BeginCellHold(row, column, evt.mousePosition);
+                    evt.Use();
+                }
+                else
+                {
+                    CancelCellHold();
+                }
+                return;
+            }
+
+            if (CurrentHoldPhase == HoldPhase.Idle) return;
+
+            if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove)
+            {
+                UpdateCellHold(evt.mousePosition);
+                return;
+            }
+
+            if (evt.type == EventType.MouseUp && evt.button == 0)
+            {
+                if (TryGetCellFromScreenPosition(evt.mousePosition, out int row, out int column) && row == SelectedHoldRow && column == SelectedHoldColumn)
+                {
+                    ReleaseCellHold();
+                }
+                else
+                {
+                    CancelCellHold();
+                }
+                evt.Use();
+            }
+            else if (evt.type == EventType.MouseLeaveWindow)
+            {
+                CancelCellHold();
+            }
+        }
+
+        private void PollHoldTimer()
+        {
+            if (CurrentHoldPhase != HoldPhase.Holding) return;
+            if (!IsBoardInteractionAvailable())
+            {
+                CancelCellHold();
+                return;
+            }
+
+            if (_holdStartedAt < 0f) return;
+            if (Time.realtimeSinceStartup - _holdStartedAt < HoldOpenThresholdSeconds) return;
+
+            if (!TryGetCellFromScreenPosition(_holdStartedPointerPosition, out int row, out int column) || row != SelectedHoldRow || column != SelectedHoldColumn)
+            {
+                CancelCellHold();
+                return;
+            }
+
+            CurrentHoldPhase = HoldPhase.Armed;
+            _radialOpenIntentRequested = true;
         }
 
         private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.HashSet<int> highlightDigits)
