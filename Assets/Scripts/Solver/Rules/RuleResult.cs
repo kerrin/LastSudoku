@@ -26,6 +26,9 @@ namespace Sudoku.Solver.Rules
         /** Candidate digits removed from the cell as part of the change. */
         public List<int> RemovedCandidates = new List<int>();
 
+        /** Candidate digits added to the cell as part of the change. */
+        public List<int> AddedCandidates = new List<int>();
+
         /** Group identifier used to associate multiple CellChange entries produced
          *  by a single rule application so undo/redo can operate atomically. */
         public int GroupId;
@@ -66,9 +69,16 @@ namespace Sudoku.Solver.Rules
         {
             foreach (var change in Changes)
             {
-                if (change.RemovedCandidates == null || change.RemovedCandidates.Count == 0) continue;
                 var cell = board.Cells[change.Row, change.Column];
-                foreach (int v in change.RemovedCandidates) cell.Candidates.Remove(v);
+                if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
+                {
+                    foreach (int v in change.RemovedCandidates) cell.Candidates.Remove(v);
+                }
+
+                if (change.AddedCandidates != null && change.AddedCandidates.Count > 0)
+                {
+                    foreach (int v in change.AddedCandidates) cell.Candidates.Add(v);
+                }
             }
         }
 
@@ -109,6 +119,14 @@ namespace Sudoku.Solver.Rules
                         {
                             cell.Candidates.Remove(v);
                         }
+                    }
+                }
+
+                if (change.AddedCandidates != null && change.AddedCandidates.Count > 0)
+                {
+                    foreach (int v in change.AddedCandidates)
+                    {
+                        cell.Candidates.Add(v);
                     }
                 }
             }

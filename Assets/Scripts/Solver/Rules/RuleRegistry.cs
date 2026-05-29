@@ -179,6 +179,7 @@ namespace Sudoku.Solver.Rules
                                     OldValue = ch.OldValue,
                                     NewValue = ch.NewValue,
                                     RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                                    AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
                                     GroupId = gid,
                                     SourceRuleName = r.GetType().Name,
                                     SourceRuleDescription = res.Description

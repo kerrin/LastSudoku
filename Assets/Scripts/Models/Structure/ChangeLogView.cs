@@ -10,6 +10,7 @@ namespace Sudoku.Models
         public int? OldValue;
         public int? NewValue;
         public int RemovedCandidatesCount;
+        public int AddedCandidatesCount;
     }
 
     /** Group-level summary for an atomic rule application recorded in the ChangeLog. */
@@ -21,6 +22,7 @@ namespace Sudoku.Models
         public int ChangesCount;
         public int ValuesAddedCount;
         public int CandidatesRemovedCount;
+        public int CandidatesAddedCount;
         public int StartIndex;
         public int EndIndex; // exclusive
         public List<ChangeLogEntrySummary> Entries = new List<ChangeLogEntrySummary>();

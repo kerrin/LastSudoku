@@ -215,7 +215,8 @@ namespace Sudoku.Solver
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
-                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>()
+                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                    AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>()
                 };
                 res.Changes.Add(copy);
             }
@@ -248,7 +249,8 @@ namespace Sudoku.Solver
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
-                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>()
+                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                    AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>()
                 };
                 res.Changes.Add(copy);
             }
@@ -297,6 +299,73 @@ namespace Sudoku.Solver
         public void SetEmptyPreview()
         {
             PreviewRuleResult = new RuleResult { Apply = true, Description = "Empty preview" };
+        }
+
+        /**
+         * Resolve Smart action metadata for a target cell without mutating board state.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @returns Smart action scaffold result used by higher-level interaction layers.
+         */
+        public SmartActionResolution ResolveSmartAction(int row, int column)
+        {
+            if (_board == null) LoadBoardFromRows();
+            return ManualCellEditCore.ResolveSmartAction(_board, row, column);
+        }
+
+        /**
+         * Apply manual SetValue action to the board and record one atomic changelog group.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param value Value to place.
+         * @returns True when the action changed board state.
+         */
+        public bool ManualSetValue(int row, int column, int value)
+        {
+            if (_board == null) LoadBoardFromRows();
+            var execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            return execution.Applied;
+        }
+
+        /**
+         * Apply manual AddCandidate action to the board and record one atomic changelog group.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param candidate Candidate to add.
+         * @returns True when the action changed board state.
+         */
+        public bool ManualAddCandidate(int row, int column, int candidate)
+        {
+            if (_board == null) LoadBoardFromRows();
+            var execution = ManualCellEditCore.ApplyAddCandidate(_board, row, column, candidate);
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            return execution.Applied;
+        }
+
+        /**
+         * Apply manual RemoveCandidate action to the board and record one atomic changelog group.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param candidate Candidate to remove.
+         * @returns True when the action changed board state.
+         */
+        public bool ManualRemoveCandidate(int row, int column, int candidate)
+        {
+            if (_board == null) LoadBoardFromRows();
+            var execution = ManualCellEditCore.ApplyRemoveCandidate(_board, row, column, candidate);
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            return execution.Applied;
         }
 
         /**
@@ -357,6 +426,7 @@ namespace Sudoku.Solver
                         OldValue = ch.OldValue,
                         NewValue = ch.NewValue,
                         RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
+                        AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
                         GroupId = gid,
                         SourceRuleName = rule.GetType().Name,
                         SourceRuleDescription = res.Description

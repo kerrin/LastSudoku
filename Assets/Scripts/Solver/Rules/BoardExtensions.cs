@@ -317,6 +317,15 @@ namespace Sudoku.Solver.Rules
                             if (!cell.Candidates.Contains(v)) cell.Candidates.Add(v);
                         }
                     }
+
+                    // Revert manually-added candidates.
+                    if (ch.AddedCandidates != null && ch.AddedCandidates.Count > 0)
+                    {
+                        foreach (var v in ch.AddedCandidates)
+                        {
+                            if (cell.Candidates.Contains(v)) cell.Candidates.Remove(v);
+                        }
+                    }
                 }
 
                 board.ChangeLogIndex = start;
@@ -360,6 +369,14 @@ namespace Sudoku.Solver.Rules
                         foreach (var v in ch.RemovedCandidates)
                         {
                             if (cell.Candidates.Contains(v)) cell.Candidates.Remove(v);
+                        }
+                    }
+
+                    if (ch.AddedCandidates != null && ch.AddedCandidates.Count > 0)
+                    {
+                        foreach (var v in ch.AddedCandidates)
+                        {
+                            if (!cell.Candidates.Contains(v)) cell.Candidates.Add(v);
                         }
                     }
                 }
@@ -448,11 +465,13 @@ namespace Sudoku.Solver.Rules
                         Column = ch.Column,
                         OldValue = ch.OldValue,
                         NewValue = ch.NewValue,
-                        RemovedCandidatesCount = ch.RemovedCandidates != null ? ch.RemovedCandidates.Count : 0
+                        RemovedCandidatesCount = ch.RemovedCandidates != null ? ch.RemovedCandidates.Count : 0,
+                        AddedCandidatesCount = ch.AddedCandidates != null ? ch.AddedCandidates.Count : 0
                     };
                     g.Entries.Add(entry);
                     if (ch.NewValue.HasValue) valuesAdded++;
                     if (ch.RemovedCandidates != null) candRemoved += ch.RemovedCandidates.Count;
+                    if (ch.AddedCandidates != null) g.CandidatesAddedCount += ch.AddedCandidates.Count;
                     idx++;
                 }
 

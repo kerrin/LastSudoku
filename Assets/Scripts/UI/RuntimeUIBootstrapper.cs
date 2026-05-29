@@ -11,7 +11,7 @@ namespace Sudoku.Scripts.UI
             if (!Application.isPlaying) return;
 
             // If an instance already exists, do nothing
-            var existing = Object.FindObjectOfType<ChangeLogRuntimeControls>();
+            var existing = Object.FindAnyObjectByType<ChangeLogRuntimeControls>();
             if (existing != null) return;
 
             // Create a new GameObject in the scene to host the controls
