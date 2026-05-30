@@ -1,9 +1,11 @@
 using System.Text;
 using UnityEngine;
+using UnityEngine.UI;
 using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
+using Sudoku.Scripts.UI;
 
 namespace Sudoku.Solver
 {
@@ -34,6 +36,9 @@ namespace Sudoku.Solver
         [Tooltip("Seconds to hold before the board requests a radial open intent")]
         public float HoldOpenThresholdSeconds = 0.35f;
 
+        [Tooltip("Write verbose hold/radial interaction diagnostics to the Console")]
+        public bool EnableHoldDebugLogs = true;
+
         public enum HoldPhase
         {
             Idle = 0,
@@ -47,9 +52,12 @@ namespace Sudoku.Solver
         private float _holdStartedAt = -1f;
         private Vector2 _holdStartedPointerPosition;
         private bool _radialOpenIntentRequested;
+        private RadialMenuRuntime _radialMenu;
         public HoldPhase CurrentHoldPhase { get; private set; } = HoldPhase.Idle;
         public int SelectedHoldRow { get; private set; } = -1;
         public int SelectedHoldColumn { get; private set; } = -1;
+        public RadialMenuSelection LastRadialSelection { get; private set; }
+        public RadialMenuRuntime RadialMenu => _radialMenu;
         public bool RadialOpenIntentRequested => _radialOpenIntentRequested;
         // Track the last seen RuleResult so we can render removed candidates
         // in red until a new rule result is produced.
@@ -142,6 +150,28 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Compute the center of a board cell in GUI coordinates.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param center Cell center in GUI coordinates.
+         * @returns True when the board geometry is available and the cell is valid.
+         */
+        public bool TryGetCellCenter(int row, int column, out Vector2 center)
+        {
+            center = default;
+            if (!TryGetBoardRect(out var boardRect)) return false;
+            if (Runner == null || Runner.CurrentBoard == null) return false;
+
+            int cellSize = GetComputedCellSize();
+            if (cellSize <= 0) return false;
+            if (row < 0 || column < 0 || row >= Runner.CurrentBoard.Size || column >= Runner.CurrentBoard.Size) return false;
+
+            center = new Vector2(boardRect.x + (column + 0.5f) * cellSize, boardRect.y + (row + 0.5f) * cellSize);
+            return true;
+        }
+
+        /**
          * Begin a new hold interaction for a specific cell.
          *
          * @param row Zero-based row index.
@@ -152,7 +182,8 @@ namespace Sudoku.Solver
         {
             if (!IsBoardInteractionAvailable())
             {
-                CancelCellHold();
+                LogHoldDebug($"BeginCellHold rejected: board unavailable at {pointerPosition}");
+                CancelCellHold("board unavailable");
                 return;
             }
 
@@ -162,6 +193,8 @@ namespace Sudoku.Solver
             _holdStartedAt = Time.realtimeSinceStartup;
             CurrentHoldPhase = HoldPhase.Holding;
             _radialOpenIntentRequested = false;
+            LastRadialSelection = null;
+            LogHoldDebug($"BeginCellHold row={row} col={column} pointer={pointerPosition} threshold={HoldOpenThresholdSeconds:0.000}s");
         }
 
         /**
@@ -174,15 +207,26 @@ namespace Sudoku.Solver
             if (CurrentHoldPhase == HoldPhase.Idle) return;
             if (!IsBoardInteractionAvailable())
             {
-                CancelCellHold();
+                LogHoldDebug("UpdateCellHold cancelled: board unavailable");
+                CancelCellHold("board unavailable");
                 return;
             }
 
             _holdStartedPointerPosition = pointerPosition;
 
+            if (CurrentHoldPhase == HoldPhase.Armed)
+            {
+                if (_radialMenu != null && _radialMenu.IsOpen)
+                {
+                    _radialMenu.UpdatePointer(pointerPosition);
+                }
+                return;
+            }
+
             if (!TryGetCellFromScreenPosition(pointerPosition, out int row, out int column) || row != SelectedHoldRow || column != SelectedHoldColumn)
             {
-                CancelCellHold();
+                LogHoldDebug($"UpdateCellHold cancelled: pointer left cell. pointer={pointerPosition} selected=r{SelectedHoldRow}c{SelectedHoldColumn}");
+                CancelCellHold("pointer left cell");
                 return;
             }
 
@@ -190,17 +234,25 @@ namespace Sudoku.Solver
             {
                 CurrentHoldPhase = HoldPhase.Armed;
                 _radialOpenIntentRequested = true;
+                LogHoldDebug($"Hold armed after {(Time.realtimeSinceStartup - _holdStartedAt):0.000}s at r{SelectedHoldRow}c{SelectedHoldColumn}");
+                OpenRadialMenu();
             }
         }
 
         /**
          * End the current hold interaction without preserving intent.
          */
-        public void CancelCellHold()
+        public void CancelCellHold(string reason = null)
         {
+            if (_radialMenu != null)
+            {
+                _radialMenu.Close();
+            }
+            if (!string.IsNullOrEmpty(reason)) LogHoldDebug($"CancelCellHold: {reason}");
             CurrentHoldPhase = HoldPhase.Idle;
             SelectedHoldRow = -1;
             SelectedHoldColumn = -1;
+            LastRadialSelection = null;
             _holdStartedAt = -1f;
             _holdStartedPointerPosition = default;
             _radialOpenIntentRequested = false;
@@ -211,8 +263,13 @@ namespace Sudoku.Solver
          * If the radial open intent has already been armed, the intent flag is preserved
          * until an outer controller consumes it.
          */
-        public void ReleaseCellHold()
+        public void ReleaseCellHold(string reason = null)
         {
+            if (_radialMenu != null)
+            {
+                _radialMenu.Close();
+            }
+            if (!string.IsNullOrEmpty(reason)) LogHoldDebug($"ReleaseCellHold: {reason}");
             if (CurrentHoldPhase == HoldPhase.Armed)
             {
                 CurrentHoldPhase = HoldPhase.Idle;
@@ -246,6 +303,69 @@ namespace Sudoku.Solver
         public bool IsBoardInteractionAvailable()
         {
             return Runner != null && Runner.CurrentBoard != null && Runner.CurrentBoard.Cells != null && Runner.CurrentBoard.Size > 0;
+        }
+
+        private void LogHoldDebug(string message)
+        {
+            if (!EnableHoldDebugLogs) return;
+            Debug.Log($"[BoardVisualizer Hold] {message}", this);
+        }
+
+        private RadialMenuRuntime EnsureRadialMenu()
+        {
+            if (_radialMenu != null) return _radialMenu;
+
+            _radialMenu = Object.FindAnyObjectByType<RadialMenuRuntime>();
+            if (_radialMenu != null) return _radialMenu;
+
+            var canvas = Object.FindAnyObjectByType<Canvas>();
+            if (canvas == null)
+            {
+                var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+                canvas = canvasGO.GetComponent<Canvas>();
+                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            }
+
+            var host = new GameObject("RadialMenuRuntimeHost", typeof(RectTransform));
+            host.transform.SetParent(canvas.transform, false);
+            _radialMenu = host.AddComponent<RadialMenuRuntime>();
+            return _radialMenu;
+        }
+
+        private void OpenRadialMenu()
+        {
+            if (!TryGetCellCenter(SelectedHoldRow, SelectedHoldColumn, out var center)) return;
+
+            var menu = EnsureRadialMenu();
+            LogHoldDebug($"OpenRadialMenu at {center} using label='{GetSmartActionLabel()}' menu={(menu != null ? menu.name : "(null)")}");
+            menu.Open(center, GetSmartActionLabel());
+            menu.UpdatePointer(center);
+        }
+
+        private void Update()
+        {
+            if (!Application.isPlaying) return;
+            PollHoldTimer();
+        }
+
+        private string GetSmartActionLabel()
+        {
+            if (Runner == null || Runner.CurrentBoard == null) return "Smart";
+
+            try
+            {
+                var resolution = ManualCellEditCore.ResolveSmartAction(Runner.CurrentBoard, SelectedHoldRow, SelectedHoldColumn);
+                if (resolution != null)
+                {
+                    if (!string.IsNullOrWhiteSpace(resolution.Label)) return resolution.Label;
+                    if (!string.IsNullOrWhiteSpace(resolution.Description)) return resolution.Description;
+                }
+            }
+            catch
+            {
+            }
+
+            return "Smart";
         }
 
         private void OnValidate()
@@ -403,10 +523,16 @@ namespace Sudoku.Solver
             }
             HandlesEndGUI();
 
+                if (_radialMenu != null && _radialMenu.IsOpen)
+                {
+                    // Draw after the board in the same IMGUI pass to guarantee front-most layering.
+                    _radialMenu.RenderOverlayOnGUI();
+                }
+
                 if (Application.isPlaying)
                 {
-                    HandlePointerInput();
                     PollHoldTimer();
+                    HandlePointerInput();
                 }
             }
             catch (System.Exception ex)
@@ -427,21 +553,63 @@ namespace Sudoku.Solver
             var evt = Event.current;
             if (evt == null) return;
 
+            if (_radialMenu != null && _radialMenu.IsOpen)
+            {
+                if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove)
+                {
+                    LogHoldDebug($"Pointer moved over open radial at {evt.mousePosition}");
+                    _radialMenu.UpdatePointer(evt.mousePosition);
+                    evt.Use();
+                    return;
+                }
+
+                if (evt.type == EventType.MouseUp && evt.button == 0)
+                {
+                    LogHoldDebug($"Pointer released over open radial at {evt.mousePosition}");
+                    LastRadialSelection = _radialMenu.ReleasePointer(evt.mousePosition);
+                    LogHoldDebug($"Radial selection result: segment={LastRadialSelection?.SegmentId} digit={LastRadialSelection?.Digit?.ToString() ?? "(none)"} label='{LastRadialSelection?.Label ?? "(null)"}'");
+                    ConsumeRadialOpenIntent();
+                    ReleaseCellHold("radial selection committed");
+                    evt.Use();
+                    return;
+                }
+
+                if (evt.type == EventType.MouseLeaveWindow)
+                {
+                    LogHoldDebug("Pointer left window while radial was open");
+                    LastRadialSelection = null;
+                    CancelCellHold("pointer left window while radial open");
+                    return;
+                }
+            }
+
             if (evt.type == EventType.MouseDown && evt.button == 0)
             {
+                LogHoldDebug($"MouseDown at {evt.mousePosition}");
                 if (TryGetCellFromScreenPosition(evt.mousePosition, out int row, out int column))
                 {
+                    LogHoldDebug($"MouseDown hit r{row}c{column}");
                     BeginCellHold(row, column, evt.mousePosition);
                     evt.Use();
                 }
                 else
                 {
-                    CancelCellHold();
+                    LogHoldDebug($"MouseDown missed board at {evt.mousePosition}");
+                    CancelCellHold("mouse down missed board");
                 }
                 return;
             }
 
             if (CurrentHoldPhase == HoldPhase.Idle) return;
+
+            if (CurrentHoldPhase == HoldPhase.Armed)
+            {
+                if (_radialMenu != null && _radialMenu.IsOpen)
+                {
+                    _radialMenu.UpdatePointer(evt.mousePosition);
+                }
+                return;
+            }
 
             if (evt.type == EventType.MouseDrag || evt.type == EventType.MouseMove)
             {
@@ -453,17 +621,20 @@ namespace Sudoku.Solver
             {
                 if (TryGetCellFromScreenPosition(evt.mousePosition, out int row, out int column) && row == SelectedHoldRow && column == SelectedHoldColumn)
                 {
-                    ReleaseCellHold();
+                    LogHoldDebug($"MouseUp on selected cell r{row}c{column} before radial opened");
+                    ReleaseCellHold("released before radial opened");
                 }
                 else
                 {
-                    CancelCellHold();
+                    LogHoldDebug($"MouseUp cancelled hold at {evt.mousePosition}");
+                    CancelCellHold("mouse up outside selected cell");
                 }
                 evt.Use();
             }
             else if (evt.type == EventType.MouseLeaveWindow)
             {
-                CancelCellHold();
+                LogHoldDebug("Pointer left window before radial opened");
+                CancelCellHold("pointer left window before radial opened");
             }
         }
 
@@ -477,16 +648,20 @@ namespace Sudoku.Solver
             }
 
             if (_holdStartedAt < 0f) return;
-            if (Time.realtimeSinceStartup - _holdStartedAt < HoldOpenThresholdSeconds) return;
+            float elapsed = Time.realtimeSinceStartup - _holdStartedAt;
+            if (elapsed < HoldOpenThresholdSeconds) return;
 
             if (!TryGetCellFromScreenPosition(_holdStartedPointerPosition, out int row, out int column) || row != SelectedHoldRow || column != SelectedHoldColumn)
             {
-                CancelCellHold();
+                LogHoldDebug($"PollHoldTimer failed: pointer no longer on selected cell at {_holdStartedPointerPosition}");
+                CancelCellHold("poll found pointer off cell");
                 return;
             }
 
             CurrentHoldPhase = HoldPhase.Armed;
             _radialOpenIntentRequested = true;
+            LogHoldDebug($"PollHoldTimer armed radial after {elapsed:0.000}s at r{SelectedHoldRow}c{SelectedHoldColumn}");
+            OpenRadialMenu();
         }
 
         private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.HashSet<int> highlightDigits)

@@ -63,6 +63,29 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
+        public void HoldLifecycle_ArmsAndOpensRadialMenu_WithDynamicCenterLabel()
+        {
+            var visualizer = CreateVisualizer(out var runner, out var root);
+            try
+            {
+                visualizer.HoldOpenThresholdSeconds = 0f;
+
+                var boardCenter = new Vector2(60f, 60f);
+                visualizer.BeginCellHold(1, 1, boardCenter);
+                visualizer.UpdateCellHold(boardCenter);
+
+                Assert.AreEqual(BoardVisualizer.HoldPhase.Armed, visualizer.CurrentHoldPhase);
+                Assert.IsNotNull(visualizer.RadialMenu);
+                Assert.IsTrue(visualizer.RadialMenu.IsOpen);
+                Assert.IsNotEmpty(visualizer.RadialMenu.CenterLabel);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public void MissingBoard_DisablesInteraction()
         {
             var root = new GameObject("VisualizerRoot_MissingBoard");
