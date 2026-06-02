@@ -23,6 +23,12 @@ namespace Sudoku.Solver.Rules
         /** New value assigned by the rule (null if none). */
         public int? NewValue;
 
+        /** True when the cell value should be explicitly cleared to null. */
+        public bool ClearValue;
+
+        /** True when value placement should bypass peer-conflict safety guards. */
+        public bool ForceSetValue;
+
         /** Candidate digits removed from the cell as part of the change. */
         public List<int> RemovedCandidates = new List<int>();
 
@@ -90,8 +96,19 @@ namespace Sudoku.Solver.Rules
             foreach (var change in Changes)
             {
                 var cell = board.Cells[change.Row, change.Column];
+                if (change.ClearValue)
+                {
+                    cell.Value = null;
+                }
+
                 if (change.NewValue.HasValue)
                 {
+                    if (change.ForceSetValue)
+                    {
+                        board.SetValue(cell, change.NewValue.Value);
+                        continue;
+                    }
+
                     // Safety check: avoid applying a new value that would immediately
                     // create a duplicate in the cell's peers. If such a conflict is
                     // detected, skip applying the value and log a warning so the

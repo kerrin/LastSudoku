@@ -16,6 +16,14 @@ namespace Sudoku.Solver
     [ExecuteInEditMode]
     public class BoardVisualizer : MonoBehaviour
     {
+        public enum NumericRadialActionMode
+        {
+            SetValue = 0,
+            RemoveCandidate = 1,
+            AddCandidate = 2,
+            ModifierDriven = 3
+        }
+
         public SolverRunner Runner;
 
         [Tooltip("Pixel size of each cell")]
@@ -39,6 +47,9 @@ namespace Sudoku.Solver
         [Tooltip("Write verbose hold/radial interaction diagnostics to the Console")]
         public bool EnableHoldDebugLogs = true;
 
+        [Tooltip("Default operation for digit segments. In ModifierDriven mode: Shift=RemoveCandidate, Ctrl/Cmd=AddCandidate, otherwise SetValue.")]
+        public NumericRadialActionMode DigitActionMode = NumericRadialActionMode.ModifierDriven;
+
         public enum HoldPhase
         {
             Idle = 0,
@@ -47,6 +58,7 @@ namespace Sudoku.Solver
         }
 
         private GUIStyle _centerStyle;
+        private GUIStyle _givenCenterStyle;
         private GUIStyle _candidateStyle;
         private int _lastComputedCellSize = -1;
         private float _holdStartedAt = -1f;
@@ -57,6 +69,7 @@ namespace Sudoku.Solver
         public int SelectedHoldRow { get; private set; } = -1;
         public int SelectedHoldColumn { get; private set; } = -1;
         public RadialMenuSelection LastRadialSelection { get; private set; }
+        public string LastRadialOutcomeMessage { get; private set; }
         public RadialMenuRuntime RadialMenu => _radialMenu;
         public bool RadialOpenIntentRequested => _radialOpenIntentRequested;
         // Track the last seen RuleResult so we can render removed candidates
@@ -72,6 +85,7 @@ namespace Sudoku.Solver
             _lastComputedCellSize = cellSize;
             var baseLabel = GUI.skin != null ? GUI.skin.label : new GUIStyle();
             _centerStyle = new GUIStyle(baseLabel) { alignment = TextAnchor.MiddleCenter, fontSize = Mathf.Max(12, cellSize / 2) };
+            _givenCenterStyle = new GUIStyle(_centerStyle) { fontStyle = FontStyle.Bold };
             _candidateStyle = new GUIStyle(baseLabel)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -194,6 +208,7 @@ namespace Sudoku.Solver
             CurrentHoldPhase = HoldPhase.Holding;
             _radialOpenIntentRequested = false;
             LastRadialSelection = null;
+            LastRadialOutcomeMessage = string.Empty;
             LogHoldDebug($"BeginCellHold row={row} col={column} pointer={pointerPosition} threshold={HoldOpenThresholdSeconds:0.000}s");
         }
 
@@ -253,6 +268,7 @@ namespace Sudoku.Solver
             SelectedHoldRow = -1;
             SelectedHoldColumn = -1;
             LastRadialSelection = null;
+            LastRadialOutcomeMessage = string.Empty;
             _holdStartedAt = -1f;
             _holdStartedPointerPosition = default;
             _radialOpenIntentRequested = false;
@@ -337,8 +353,15 @@ namespace Sudoku.Solver
             if (!TryGetCellCenter(SelectedHoldRow, SelectedHoldColumn, out var center)) return;
 
             var menu = EnsureRadialMenu();
-            LogHoldDebug($"OpenRadialMenu at {center} using label='{GetSmartActionLabel()}' menu={(menu != null ? menu.name : "(null)")}");
-            menu.Open(center, GetSmartActionLabel());
+            if (Runner != null && Runner.CurrentBoard != null &&
+                SelectedHoldRow >= 0 && SelectedHoldColumn >= 0 &&
+                SelectedHoldRow < Runner.CurrentBoard.Size && SelectedHoldColumn < Runner.CurrentBoard.Size)
+            {
+                var cell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
+                menu.SetCellContext(cell?.Value, cell?.Candidates, cell != null && cell.IsGiven);
+            }
+            LogHoldDebug($"OpenRadialMenu at {center} using label='No Action' menu={(menu != null ? menu.name : "(null)")}");
+            menu.Open(center, "No Action");
             menu.UpdatePointer(center);
         }
 
@@ -494,7 +517,7 @@ namespace Sudoku.Solver
                     if (cell.Value.HasValue)
                     {
                         // draw solved digit centered
-                        GUI.Label(cellRect, cell.Value.Value.ToString(), _centerStyle);
+                        GUI.Label(cellRect, cell.Value.Value.ToString(), cell.IsGiven ? _givenCenterStyle : _centerStyle);
                     }
                     else if (ShowCandidates)
                     {
@@ -567,7 +590,7 @@ namespace Sudoku.Solver
                 {
                     LogHoldDebug($"Pointer released over open radial at {evt.mousePosition}");
                     LastRadialSelection = _radialMenu.ReleasePointer(evt.mousePosition);
-                    LogHoldDebug($"Radial selection result: segment={LastRadialSelection?.SegmentId} digit={LastRadialSelection?.Digit?.ToString() ?? "(none)"} label='{LastRadialSelection?.Label ?? "(null)"}'");
+                    ApplyRadialSelection(LastRadialSelection, evt.modifiers);
                     ConsumeRadialOpenIntent();
                     ReleaseCellHold("radial selection committed");
                     evt.Use();
@@ -636,6 +659,176 @@ namespace Sudoku.Solver
                 LogHoldDebug("Pointer left window before radial opened");
                 CancelCellHold("pointer left window before radial opened");
             }
+        }
+
+        /**
+         * Execute the selected radial action against the currently held cell.
+         *
+         * @param selection Final radial selection captured on release.
+         * @param modifiers Active keyboard modifiers at release time.
+         */
+        public void ApplyRadialSelection(RadialMenuSelection selection, EventModifiers modifiers)
+        {
+            LastRadialSelection = selection;
+
+            if (Runner == null || Runner.CurrentBoard == null)
+            {
+                LastRadialOutcomeMessage = "Board interaction is unavailable.";
+                LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (SelectedHoldRow < 0 || SelectedHoldColumn < 0)
+            {
+                LastRadialOutcomeMessage = "No selected cell for radial action.";
+                Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (selection == null || selection.SegmentId == RadialMenuSegmentId.None)
+            {
+                LastRadialOutcomeMessage = "No action selected.";
+                Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (selection.SegmentId == RadialMenuSegmentId.TopNoAction)
+            {
+                // Remove the current cell's value from all peers in its row, column, and box
+                var cellValue = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn].Value;
+                if (!cellValue.HasValue || cellValue.Value == 0)
+                {
+                    LastRadialOutcomeMessage = "Cell has no value to remove from peers.";
+                    Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                    LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                    return;
+                }
+
+                int valueToRemove = cellValue.Value;
+                bool addToUnsolvedCells = (modifiers & EventModifiers.Shift) != 0;
+                var topNoActionExecution = Runner.ExecuteManualUnitCandidateAction(SelectedHoldRow, SelectedHoldColumn, valueToRemove, addToUnsolvedCells);
+                LastRadialOutcomeMessage = topNoActionExecution != null && !string.IsNullOrWhiteSpace(topNoActionExecution.Description)
+                    ? topNoActionExecution.Description
+                    : (topNoActionExecution != null && topNoActionExecution.Applied ? "Manual edit applied." : "No manual edit applied.");
+
+                if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+                {
+                    _lastSeenRuleResult = Runner.LastRuleResult;
+                }
+
+                LogHoldDebug($"Radial action completed: operation=RemoveValueFromPeers digit={valueToRemove} applied={(topNoActionExecution != null && topNoActionExecution.Applied)} outcome='{LastRadialOutcomeMessage}'");
+                return;
+            }
+
+            var selectedCell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
+            if (selectedCell != null && selectedCell.IsGiven)
+            {
+                LastRadialOutcomeMessage = "Given cells only allow removing seen-cell candidates.";
+                Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (selection.SegmentId == RadialMenuSegmentId.SmartCenter)
+            {
+                LastRadialOutcomeMessage = "No action selected.";
+                Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                LogHoldDebug($"Radial center no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (!selection.Digit.HasValue)
+            {
+                LastRadialOutcomeMessage = "Selected segment does not map to a digit.";
+                Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (selection.DigitActionType == RadialDigitActionType.ClearValue)
+            {
+                var clearExecution = Runner.ExecuteManualClearValue(SelectedHoldRow, SelectedHoldColumn);
+                LastRadialOutcomeMessage = clearExecution != null && !string.IsNullOrWhiteSpace(clearExecution.Description)
+                    ? clearExecution.Description
+                    : (clearExecution != null && clearExecution.Applied ? "Manual edit applied." : "No manual edit applied.");
+
+                if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+                {
+                    _lastSeenRuleResult = Runner.LastRuleResult;
+                }
+
+                LogHoldDebug($"Radial action completed: operation=ClearValue digit={selection.Digit.Value} applied={(clearExecution != null && clearExecution.Applied)} outcome='{LastRadialOutcomeMessage}'");
+                return;
+            }
+
+            var operation = ResolveDigitOperation(modifiers);
+            if (selection.DigitActionType == RadialDigitActionType.RemoveCandidate)
+            {
+                operation = ManualCellEditOperation.RemoveCandidate;
+            }
+            else if (selection.DigitActionType == RadialDigitActionType.AddCandidate)
+            {
+                operation = ManualCellEditOperation.AddCandidate;
+            }
+
+            ManualEditExecutionResult execution;
+            if (selection.DigitActionType == RadialDigitActionType.UnitCandidateAction)
+            {
+                bool addToUnsolvedCells = (modifiers & EventModifiers.Shift) != 0;
+                execution = Runner.ExecuteManualUnitCandidateAction(SelectedHoldRow, SelectedHoldColumn, selection.Digit.Value, addToUnsolvedCells);
+                operation = addToUnsolvedCells ? ManualCellEditOperation.AddCandidate : ManualCellEditOperation.RemoveCandidate;
+            }
+            else switch (operation)
+            {
+                case ManualCellEditOperation.RemoveCandidate:
+                    execution = Runner.ExecuteManualRemoveCandidate(SelectedHoldRow, SelectedHoldColumn, selection.Digit.Value);
+                    break;
+                case ManualCellEditOperation.AddCandidate:
+                    execution = Runner.ExecuteManualAddCandidate(SelectedHoldRow, SelectedHoldColumn, selection.Digit.Value);
+                    break;
+                case ManualCellEditOperation.SetValue:
+                default:
+                    execution = Runner.ExecuteManualSetValue(SelectedHoldRow, SelectedHoldColumn, selection.Digit.Value);
+                    break;
+            }
+
+            LastRadialOutcomeMessage = execution != null && !string.IsNullOrWhiteSpace(execution.Description)
+                ? execution.Description
+                : (execution != null && execution.Applied ? "Manual edit applied." : "No manual edit applied.");
+
+            if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+            {
+                _lastSeenRuleResult = Runner.LastRuleResult;
+            }
+
+            LogHoldDebug($"Radial action completed: operation={operation} digit={selection.Digit.Value} applied={(execution != null && execution.Applied)} outcome='{LastRadialOutcomeMessage}'");
+        }
+
+        /**
+         * Resolve which numeric manual operation should run for a selected digit.
+         *
+         * @param modifiers Active keyboard modifiers at release time.
+         * @returns The manual operation to execute.
+         */
+        public ManualCellEditOperation ResolveDigitOperation(EventModifiers modifiers)
+        {
+            if (DigitActionMode == NumericRadialActionMode.SetValue) return ManualCellEditOperation.SetValue;
+            if (DigitActionMode == NumericRadialActionMode.RemoveCandidate) return ManualCellEditOperation.RemoveCandidate;
+            if (DigitActionMode == NumericRadialActionMode.AddCandidate) return ManualCellEditOperation.AddCandidate;
+
+            if ((modifiers & EventModifiers.Shift) != 0)
+            {
+                return ManualCellEditOperation.RemoveCandidate;
+            }
+
+            if ((modifiers & EventModifiers.Control) != 0 || (modifiers & EventModifiers.Command) != 0)
+            {
+                return ManualCellEditOperation.AddCandidate;
+            }
+
+            return ManualCellEditOperation.SetValue;
         }
 
         private void PollHoldTimer()

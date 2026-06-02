@@ -19,9 +19,65 @@ namespace Sudoku.Tests.Editor
                 Assert.IsTrue(menu.IsOpen);
                 Assert.AreEqual(11, menu.SegmentOrder.Count);
                 Assert.AreEqual(10, menu.OuterSegmentOrder.Count);
-                Assert.AreEqual("Dynamic Smart", menu.CenterLabel);
-                Assert.AreEqual("Dynamic Smart", menu.GetLabel(RadialMenuSegmentId.SmartCenter));
+                Assert.AreEqual("No Action", menu.CenterLabel);
+                Assert.AreEqual("No Action", menu.GetLabel(RadialMenuSegmentId.SmartCenter));
                 Assert.AreEqual("No Action", menu.GetLabel(RadialMenuSegmentId.TopNoAction));
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void ReleasePointer_OnSubActionButtons_ReturnsExpectedDigitActionType()
+        {
+            var canvas = CreateCanvas("RadialMenuCanvas_E");
+            try
+            {
+                var menu = CreateMenu(canvas);
+                menu.Open(new Vector2(200f, 200f), "Smart");
+                menu.SetCellContext(null, new[] { 1 });
+
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit1, RadialDigitActionType.RemoveCandidate, out var removePointer));
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit1, RadialDigitActionType.AddCandidate, out var addPointer));
+
+                var removeSelection = menu.ReleasePointer(removePointer);
+                Assert.AreEqual(RadialMenuSegmentId.Digit1, removeSelection.SegmentId);
+                Assert.AreEqual(RadialDigitActionType.RemoveCandidate, removeSelection.DigitActionType);
+
+                menu.Open(new Vector2(200f, 200f), "Smart");
+                menu.SetCellContext(null, new[] { 1 });
+                var addSelection = menu.ReleasePointer(addPointer);
+                Assert.AreEqual(RadialMenuSegmentId.None, addSelection.SegmentId, "Disabled sub-action should commit no selection.");
+                Assert.AreEqual(RadialDigitActionType.DefaultDigit, addSelection.DigitActionType, "Add sub-action should be disabled when candidate already exists.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void DigitSubActionButtons_AreAlignedOutwardFromCenter()
+        {
+            var canvas = CreateCanvas("RadialMenuCanvas_F");
+            try
+            {
+                var menu = CreateMenu(canvas);
+                menu.Open(new Vector2(220f, 220f), "Smart");
+
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit1, out var digitCenter));
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit1, RadialDigitActionType.RemoveCandidate, out var removePos));
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit1, RadialDigitActionType.AddCandidate, out var addPos));
+
+                var outward = (digitCenter - menu.DisplayGuiPosition).normalized;
+                var removeVec = (removePos - digitCenter);
+                var addVec = (addPos - digitCenter);
+
+                Assert.Greater(Vector2.Dot(removeVec.normalized, outward), 0.95f);
+                Assert.Greater(Vector2.Dot(addVec.normalized, outward), 0.95f);
+                Assert.Greater(addVec.magnitude, removeVec.magnitude);
             }
             finally
             {
@@ -38,11 +94,16 @@ namespace Sudoku.Tests.Editor
                 var menu = CreateMenu(canvas);
                 menu.Open(new Vector2(200f, 200f), "Smart");
 
-                Assert.AreEqual(RadialMenuSegmentId.SmartCenter, menu.ResolveSegment(new Vector2(200f, 200f)));
-                Assert.AreEqual(RadialMenuSegmentId.TopNoAction, menu.ResolveSegment(new Vector2(200f, 120f)));
-                Assert.AreEqual(RadialMenuSegmentId.Digit1, menu.ResolveSegment(new Vector2(255f, 145f)));
-                Assert.AreEqual(RadialMenuSegmentId.Digit3, menu.ResolveSegment(new Vector2(290f, 200f)));
-                Assert.AreEqual(RadialMenuSegmentId.None, menu.ResolveSegment(new Vector2(200f, 20f)));
+                var center = menu.DisplayGuiPosition;
+                Assert.AreEqual(RadialMenuSegmentId.SmartCenter, menu.ResolveSegment(center));
+                Assert.AreEqual(RadialMenuSegmentId.TopNoAction, menu.ResolveSegment(center + new Vector2(0f, -menu.OuterSegmentRadius)));
+
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit1, out var digit1Pos));
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit3, out var digit3Pos));
+                Assert.AreEqual(RadialMenuSegmentId.Digit1, menu.ResolveSegment(digit1Pos));
+                Assert.AreEqual(RadialMenuSegmentId.Digit3, menu.ResolveSegment(digit3Pos));
+
+                Assert.AreEqual(RadialMenuSegmentId.None, menu.ResolveSegment(center + new Vector2(0f, -(menu.OuterSegmentRadius + menu.OuterSegmentDiameter * 1.25f))));
             }
             finally
             {
@@ -83,16 +144,42 @@ namespace Sudoku.Tests.Editor
                 var menu = CreateMenu(canvas);
                 menu.Open(new Vector2(200f, 200f), "Smart");
 
-                menu.UpdatePointer(new Vector2(255f, 145f));
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit1, out var digit1Pos));
+
+                menu.UpdatePointer(digit1Pos);
                 Assert.AreEqual(RadialMenuSegmentId.Digit1, menu.HoveredSegmentId);
 
-                var selection = menu.ReleasePointer(new Vector2(255f, 145f));
+                var selection = menu.ReleasePointer(digit1Pos);
                 Assert.IsNotNull(selection);
                 Assert.AreEqual(RadialMenuSegmentId.Digit1, selection.SegmentId);
                 Assert.AreEqual(1, selection.Digit);
                 Assert.AreEqual("1", selection.Label);
                 Assert.IsFalse(menu.IsOpen);
                 Assert.AreEqual(RadialMenuSegmentId.None, menu.HoveredSegmentId);
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void CurrentValueDigit_ChangesLabelAndActionToClear()
+        {
+            var canvas = CreateCanvas("RadialMenuCanvas_H");
+            try
+            {
+                var menu = CreateMenu(canvas);
+                menu.Open(new Vector2(220f, 220f), "Smart");
+                menu.SetCellContext(5, new[] { 1, 2, 3, 4, 5 });
+
+                Assert.AreEqual("Clear", menu.GetLabel(RadialMenuSegmentId.Digit5));
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit5, out var digit5Pos));
+
+                var selection = menu.ReleasePointer(digit5Pos);
+                Assert.AreEqual(RadialMenuSegmentId.Digit5, selection.SegmentId);
+                Assert.AreEqual(RadialDigitActionType.ClearValue, selection.DigitActionType);
+                Assert.AreEqual("Clear", selection.Label);
             }
             finally
             {

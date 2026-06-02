@@ -290,7 +290,7 @@ namespace Sudoku.Solver.Rules
                     var cell = board.Cells[ch.Row, ch.Column];
 
                     // Revert value assignment if present
-                    if (ch.NewValue.HasValue)
+                    if (ch.NewValue.HasValue || ch.ClearValue)
                     {
                         if (ch.OldValue.HasValue)
                         {
@@ -358,6 +358,11 @@ namespace Sudoku.Solver.Rules
                     if (ch.Row < 0 || ch.Row >= board.Size || ch.Column < 0 || ch.Column >= board.Size) continue;
 
                     var cell = board.Cells[ch.Row, ch.Column];
+
+                    if (ch.ClearValue)
+                    {
+                        cell.Value = null;
+                    }
 
                     if (ch.NewValue.HasValue)
                     {

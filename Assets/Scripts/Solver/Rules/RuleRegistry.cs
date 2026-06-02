@@ -178,6 +178,8 @@ namespace Sudoku.Solver.Rules
                                     Column = ch.Column,
                                     OldValue = ch.OldValue,
                                     NewValue = ch.NewValue,
+                                    ClearValue = ch.ClearValue,
+                                    ForceSetValue = ch.ForceSetValue,
                                     RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
                                     AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
                                     GroupId = gid,

@@ -47,6 +47,40 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
+        public void ApplySetValue_WithPeerConflict_StillSetsValueAndClearsCandidates()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            board.Cells[0, 1].Value = 5;
+            board.Cells[0, 1].Candidates.Clear();
+            var target = board.Cells[0, 0];
+
+            var execution = ManualCellEditCore.ApplySetValue(board, target.Row, target.Column, 5);
+
+            Assert.IsTrue(execution.Applied);
+            Assert.AreEqual(5, target.Value);
+            Assert.IsEmpty(target.Candidates);
+        }
+
+        [Test]
+        public void ApplySetValue_WhenCellAlreadyHasDifferentValue_ReplacesValue()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var target = board.Cells[0, 0];
+            board.SetValue(target, 4);
+
+            Assert.IsFalse(board.Cells[0, 1].Candidates.Contains(4));
+            Assert.IsTrue(board.Cells[0, 1].Candidates.Contains(6));
+
+            var execution = ManualCellEditCore.ApplySetValue(board, target.Row, target.Column, 6);
+
+            Assert.IsTrue(execution.Applied);
+            Assert.AreEqual(6, target.Value);
+            Assert.IsEmpty(target.Candidates);
+            Assert.IsTrue(board.Cells[0, 1].Candidates.Contains(4), "Old value should be restored to eligible peers.");
+            Assert.IsFalse(board.Cells[0, 1].Candidates.Contains(6), "New value should be removed from peers.");
+        }
+
+        [Test]
         public void ApplyAddCandidate_RecordsChangeAndUndoRedo()
         {
             var board = TestHelpers.CreateEmptyBoard();
@@ -68,6 +102,64 @@ namespace Sudoku.Tests.Editor
 
             Assert.IsTrue(board.RedoNext());
             Assert.IsTrue(cell.Candidates.Contains(7));
+        }
+
+        [Test]
+        public void ApplyAddCandidate_OnSolvedCell_ClearsValueAndAddsCandidate()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var cell = board.Cells[1, 1];
+            board.SetValue(cell, 4);
+
+            var execution = ManualCellEditCore.ApplyAddCandidate(board, 1, 1, 4);
+
+            Assert.IsTrue(execution.Applied);
+            Assert.IsNull(cell.Value);
+            Assert.IsTrue(cell.Candidates.Contains(4));
+            Assert.AreEqual(1, board.ChangeLog.Count);
+            Assert.IsTrue(board.ChangeLog[0].ClearValue);
+            Assert.IsTrue(board.ChangeLog[0].AddedCandidates.Contains(4));
+
+            Assert.IsTrue(board.UndoLast());
+            Assert.AreEqual(4, cell.Value);
+
+            Assert.IsTrue(board.RedoNext());
+            Assert.IsNull(cell.Value);
+            Assert.IsTrue(cell.Candidates.Contains(4));
+        }
+
+        [Test]
+        public void ApplyUnitCandidateAction_RemovesAndAddsAcrossRowColumnAndBox()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var anchor = board.Cells[4, 4];
+
+            var removal = ManualCellEditCore.ApplyUnitCandidateAction(board, anchor.Row, anchor.Column, 3, addToUnsolvedCells: false);
+            Assert.IsTrue(removal.Applied);
+            Assert.IsFalse(board.Cells[4, 0].Candidates.Contains(3));
+            Assert.IsFalse(board.Cells[0, 4].Candidates.Contains(3));
+            Assert.IsFalse(board.Cells[3, 3].Candidates.Contains(3));
+
+            var add = ManualCellEditCore.ApplyUnitCandidateAction(board, anchor.Row, anchor.Column, 3, addToUnsolvedCells: true);
+            Assert.IsTrue(add.Applied);
+            Assert.IsTrue(board.Cells[4, 0].Candidates.Contains(3));
+            Assert.IsTrue(board.Cells[0, 4].Candidates.Contains(3));
+            Assert.IsTrue(board.Cells[3, 3].Candidates.Contains(3));
+        }
+
+        [Test]
+        public void ApplyUnitCandidateAction_AllowsGivenAnchorCell()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var anchor = board.Cells[4, 4];
+            anchor.IsGiven = true;
+            anchor.Value = 7;
+            anchor.Candidates.Clear();
+
+            var removal = ManualCellEditCore.ApplyUnitCandidateAction(board, anchor.Row, anchor.Column, 3, addToUnsolvedCells: false);
+
+            Assert.IsTrue(removal.Applied);
+            Assert.IsFalse(board.Cells[4, 0].Candidates.Contains(3));
         }
 
         [Test]

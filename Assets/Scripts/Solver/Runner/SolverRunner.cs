@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
+using Sudoku.Scripts.UI;
 
 namespace Sudoku.Solver
 {
@@ -212,6 +213,8 @@ namespace Sudoku.Solver
                     Column = ch.Column,
                     OldValue = ch.OldValue,
                     NewValue = ch.NewValue,
+                    ClearValue = ch.ClearValue,
+                    ForceSetValue = ch.ForceSetValue,
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
@@ -246,6 +249,8 @@ namespace Sudoku.Solver
                     Column = ch.Column,
                     OldValue = ch.OldValue,
                     NewValue = ch.NewValue,
+                    ClearValue = ch.ClearValue,
+                    ForceSetValue = ch.ForceSetValue,
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
@@ -324,12 +329,27 @@ namespace Sudoku.Solver
          */
         public bool ManualSetValue(int row, int column, int value)
         {
+            var execution = ExecuteManualSetValue(row, column, value);
+            return execution != null && execution.Applied;
+        }
+
+        /**
+         * Apply manual SetValue action and return the full execution outcome.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param value Value to place.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualSetValue(int row, int column, int value)
+        {
             if (_board == null) LoadBoardFromRows();
             var execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            return execution.Applied;
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            return execution;
         }
 
         /**
@@ -342,12 +362,45 @@ namespace Sudoku.Solver
          */
         public bool ManualAddCandidate(int row, int column, int candidate)
         {
+            var execution = ExecuteManualAddCandidate(row, column, candidate);
+            return execution != null && execution.Applied;
+        }
+
+        /**
+         * Apply manual AddCandidate action and return the full execution outcome.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param candidate Candidate to add.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualAddCandidate(int row, int column, int candidate)
+        {
             if (_board == null) LoadBoardFromRows();
             var execution = ManualCellEditCore.ApplyAddCandidate(_board, row, column, candidate);
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            return execution.Applied;
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            return execution;
+        }
+
+        /**
+         * Clear a solved cell and restore its candidates.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualClearValue(int row, int column)
+        {
+            if (_board == null) LoadBoardFromRows();
+            var execution = ManualCellEditCore.ApplyClearValue(_board, row, column);
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            return execution;
         }
 
         /**
@@ -360,12 +413,78 @@ namespace Sudoku.Solver
          */
         public bool ManualRemoveCandidate(int row, int column, int candidate)
         {
+            var execution = ExecuteManualRemoveCandidate(row, column, candidate);
+            return execution != null && execution.Applied;
+        }
+
+        /**
+         * Apply manual RemoveCandidate action and return the full execution outcome.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param candidate Candidate to remove.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualRemoveCandidate(int row, int column, int candidate)
+        {
             if (_board == null) LoadBoardFromRows();
             var execution = ManualCellEditCore.ApplyRemoveCandidate(_board, row, column, candidate);
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            return execution.Applied;
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            return execution;
+        }
+
+        /**
+         * Apply a row/column/box candidate action anchored to one cell.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param candidate Candidate to add/remove.
+         * @param addToUnsolvedCells True to add candidate to unsolved editable unit cells; false to remove candidate from editable unit cells.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualUnitCandidateAction(int row, int column, int candidate, bool addToUnsolvedCells)
+        {
+            if (_board == null) LoadBoardFromRows();
+            var execution = ManualCellEditCore.ApplyUnitCandidateAction(_board, row, column, candidate, addToUnsolvedCells);
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            return execution;
+        }
+
+        /**
+         * Publish a non-mutating manual outcome so runtime UI can show a clear no-op result.
+         *
+         * @param description Outcome text that explains why no edit was applied.
+         */
+        public void PublishManualNoOpOutcome(string description)
+        {
+            LastAppliedRule = null;
+            LastRuleResult = new RuleResult
+            {
+                Apply = false,
+                Description = string.IsNullOrWhiteSpace(description) ? "No manual action applied." : description
+            };
+            PreviewRuleResult = null;
+        }
+
+        /**
+         * Refresh runtime undo/redo controls after a manual edit changes the changelog.
+         *
+         * @param execution Manual edit execution result to inspect for side effects.
+         */
+        private static void RefreshRuntimeControlsAfterManualEdit(ManualEditExecutionResult execution)
+        {
+            if (execution == null || !execution.Applied)
+            {
+                return;
+            }
+
+            ChangeLogRuntimeControls.RefreshButtonStates();
         }
 
         /**
@@ -425,6 +544,8 @@ namespace Sudoku.Solver
                         Column = ch.Column,
                         OldValue = ch.OldValue,
                         NewValue = ch.NewValue,
+                        ClearValue = ch.ClearValue,
+                        ForceSetValue = ch.ForceSetValue,
                         RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
                         AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
                         GroupId = gid,

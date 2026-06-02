@@ -21,10 +21,20 @@ namespace Sudoku.Scripts.UI
         SmartCenter = 11
     }
 
+    public enum RadialDigitActionType
+    {
+        DefaultDigit = 0,
+        RemoveCandidate = 1,
+        AddCandidate = 2,
+        UnitCandidateAction = 3,
+        ClearValue = 4
+    }
+
     public class RadialMenuSelection
     {
         public RadialMenuSegmentId SegmentId;
         public int? Digit;
+        public RadialDigitActionType DigitActionType = RadialDigitActionType.DefaultDigit;
         public string Label;
     }
 
@@ -65,21 +75,33 @@ namespace Sudoku.Scripts.UI
         [Tooltip("Diameter of the radial shell in pixels")]
         public float ShellDiameter = 250f;
 
-        [Tooltip("Diameter of the center Smart segment")]
-        public float CenterDiameter = 88f;
+        [Tooltip("Diameter of the center segment")]
+        public float CenterDiameter = 104f;
 
         [Tooltip("Diameter of each outer segment")]
-        public float OuterSegmentDiameter = 52f;
+        public float OuterSegmentDiameter = 68f;
 
         [Tooltip("Radius from center to outer segment centers")]
         public float OuterSegmentRadius = 88f;
 
         public Color BackgroundColor = new Color(0.12f, 0.13f, 0.16f, 0.94f);
         public Color SegmentColor = new Color(0.22f, 0.24f, 0.29f, 0.96f);
+        public Color DigitSegmentColor = new Color(0.08f, 0.09f, 0.12f, 0.98f);
         public Color HoverColor = new Color(0.85f, 0.76f, 0.28f, 1f);
+        public Color ActiveDigitColor = new Color(0.08f, 0.09f, 0.12f, 0.98f);
+        public Color DisabledSegmentColor = new Color(0.15f, 0.15f, 0.18f, 0.72f);
         public Color CenterColor = new Color(0.16f, 0.36f, 0.54f, 0.98f);
         public Color TextColor = Color.white;
         public Color TextHoverColor = Color.black;
+        public Color SubActionColor = new Color(0.14f, 0.16f, 0.2f, 0.96f);
+        public Color SubActionHoverColor = new Color(0.98f, 0.84f, 0.35f, 1f);
+        public Color SubActionDisabledColor = new Color(0.24f, 0.26f, 0.3f, 1f);
+        public Color SubActionTextColor = Color.white;
+        public Color SubActionHoverTextColor = Color.black;
+        public float SubActionButtonDiameter = 44f;
+        // Keep sub-actions near the digit while avoiding overlap that steals main-button clicks.
+        public float SubActionOutwardGap = 6f;
+        public float SubActionLineSpacing = 2f;
 
         public bool IsOpen { get; private set; }
         public RadialMenuSegmentId HoveredSegmentId { get; private set; } = RadialMenuSegmentId.None;
@@ -87,7 +109,7 @@ namespace Sudoku.Scripts.UI
         public Vector2 OpenScreenPosition { get; private set; }
         public Vector2 DisplayScreenPosition { get; private set; }
         public Vector2 DisplayGuiPosition { get; private set; }
-        public string CenterLabel { get; private set; } = "Smart";
+        public string CenterLabel { get; private set; } = "No Action";
         public IReadOnlyList<RadialMenuSegmentId> SegmentOrder => DisplayOrder;
         public IReadOnlyList<RadialMenuSegmentId> OuterSegmentOrder => OuterOrder;
 
@@ -103,6 +125,10 @@ namespace Sudoku.Scripts.UI
         private bool _built;
         private RadialMenuSegmentId _lastLoggedHover = RadialMenuSegmentId.None;
         private Texture2D _pixelTexture;
+        private readonly bool[] _digitCandidatePresent = new bool[10];
+        private int? _currentCellValue;
+        private bool _isGivenCell;
+        private RadialDigitActionType _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
 
         private void OnEnable()
         {
@@ -139,7 +165,8 @@ namespace Sudoku.Scripts.UI
         {
             EnsureBuilt();
             OpenScreenPosition = screenPosition;
-            CenterLabel = string.IsNullOrWhiteSpace(centerLabel) ? "Smart" : centerLabel;
+            // Center is intentionally static and acts as an explicit no-op action.
+            CenterLabel = "No Action";
             IsOpen = true;
             HoveredSegmentId = RadialMenuSegmentId.None;
             SelectedSegmentId = RadialMenuSegmentId.None;
@@ -157,6 +184,7 @@ namespace Sudoku.Scripts.UI
             IsOpen = false;
             HoveredSegmentId = RadialMenuSegmentId.None;
             SelectedSegmentId = RadialMenuSegmentId.None;
+            _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
             ApplyVisibility(false);
             RefreshVisuals();
             _lastLoggedHover = RadialMenuSegmentId.None;
@@ -165,7 +193,16 @@ namespace Sudoku.Scripts.UI
         public void UpdatePointer(Vector2 screenPosition)
         {
             if (!IsOpen) return;
-            HoveredSegmentId = ResolveSegment(screenPosition);
+            if (TryResolveSubActionHit(screenPosition, out var subSegmentId, out var subActionType))
+            {
+                HoveredSegmentId = subSegmentId;
+                _hoveredDigitActionType = subActionType;
+            }
+            else
+            {
+                HoveredSegmentId = ResolveSegment(screenPosition);
+                _hoveredDigitActionType = ResolveDigitActionType(screenPosition, HoveredSegmentId);
+            }
             if (HoveredSegmentId != _lastLoggedHover)
             {
                 Debug.Log($"[RadialMenuRuntime] Hover segment={HoveredSegmentId} pointer={screenPosition}", this);
@@ -178,11 +215,20 @@ namespace Sudoku.Scripts.UI
         {
             if (!IsOpen) return new RadialMenuSelection { SegmentId = RadialMenuSegmentId.None, Label = string.Empty };
 
-            HoveredSegmentId = ResolveSegment(screenPosition);
+            if (TryResolveSubActionHit(screenPosition, out var subSegmentId, out var subActionType))
+            {
+                HoveredSegmentId = subSegmentId;
+                _hoveredDigitActionType = subActionType;
+            }
+            else
+            {
+                HoveredSegmentId = ResolveSegment(screenPosition);
+                _hoveredDigitActionType = ResolveDigitActionType(screenPosition, HoveredSegmentId);
+            }
             SelectedSegmentId = HoveredSegmentId;
-            var result = BuildSelection(SelectedSegmentId);
+            var result = BuildSelection(SelectedSegmentId, _hoveredDigitActionType);
             SelectionCommitted?.Invoke(result);
-            Debug.Log($"[RadialMenuRuntime] Release segment={result.SegmentId} digit={(result.Digit.HasValue ? result.Digit.Value.ToString() : "(none)")} label='{result.Label}' pointer={screenPosition}", this);
+            Debug.Log($"[RadialMenuRuntime] Release segment={result.SegmentId} digit={(result.Digit.HasValue ? result.Digit.Value.ToString() : "(none)")} action={result.DigitActionType} label='{result.Label}' pointer={screenPosition}", this);
             Close();
             return result;
         }
@@ -236,21 +282,80 @@ namespace Sudoku.Scripts.UI
             return true;
         }
 
-        public RadialMenuSelection BuildSelection(RadialMenuSegmentId segmentId)
+        public bool TryGetDigitActionButtonPosition(RadialMenuSegmentId segmentId, RadialDigitActionType actionType, out Vector2 position)
+        {
+            position = default;
+            if (!IsOpen) return false;
+            if (!IsDigitSegment(segmentId)) return false;
+            if (!TryGetSegmentScreenPosition(segmentId, out var segmentPosition)) return false;
+
+            int slotIndex;
+            switch (actionType)
+            {
+                case RadialDigitActionType.RemoveCandidate:
+                    slotIndex = 0;
+                    break;
+                case RadialDigitActionType.AddCandidate:
+                    slotIndex = 1;
+                    break;
+                default:
+                    return false;
+            }
+
+            if (!TryGetDigitSubActionRect(segmentId, segmentPosition, slotIndex, out var rect)) return false;
+            position = rect.center;
+            return true;
+        }
+
+        public RadialMenuSelection BuildSelection(RadialMenuSegmentId segmentId, RadialDigitActionType actionType = RadialDigitActionType.DefaultDigit)
         {
             return new RadialMenuSelection
             {
                 SegmentId = segmentId,
                 Digit = SegmentIdToDigit(segmentId),
+                DigitActionType = actionType,
                 Label = GetLabel(segmentId)
             };
         }
 
+        public void SetCellContext(int? cellValue, IReadOnlyCollection<int> candidates, bool isGivenCell = false)
+        {
+            _currentCellValue = cellValue;
+            _isGivenCell = isGivenCell;
+            for (int i = 0; i < _digitCandidatePresent.Length; i++) _digitCandidatePresent[i] = false;
+
+            if (candidates == null)
+            {
+                return;
+            }
+
+            foreach (var candidate in candidates)
+            {
+                if (candidate >= 1 && candidate <= 9)
+                {
+                    _digitCandidatePresent[candidate] = true;
+                }
+            }
+        }
+
         public string GetLabel(RadialMenuSegmentId segmentId)
         {
+            if (IsDigitSegment(segmentId) && _currentCellValue.HasValue)
+            {
+                int? digit = SegmentIdToDigit(segmentId);
+                if (digit.HasValue && digit.Value == _currentCellValue.Value)
+                {
+                    return "Clear";
+                }
+            }
+
             switch (segmentId)
             {
                 case RadialMenuSegmentId.TopNoAction:
+                    if (_currentCellValue.HasValue)
+                    {
+                        return $"Remove {_currentCellValue.Value}";
+                    }
                     return "No Action";
                 case RadialMenuSegmentId.Digit1:
                     return "1";
@@ -271,7 +376,7 @@ namespace Sudoku.Scripts.UI
                 case RadialMenuSegmentId.Digit9:
                     return "9";
                 case RadialMenuSegmentId.SmartCenter:
-                    return CenterLabel;
+                    return "No Action";
                 default:
                     return string.Empty;
             }
@@ -330,9 +435,18 @@ namespace Sudoku.Scripts.UI
                 float diameter = segmentId == RadialMenuSegmentId.SmartCenter ? CenterDiameter : OuterSegmentDiameter;
                 var rect = new Rect(position.x - diameter * 0.5f, position.y - diameter * 0.5f, diameter, diameter);
 
-                bool hovered = HoveredSegmentId == segmentId;
+                bool enabled = IsSegmentEnabled(segmentId);
+                bool canHover = enabled && segmentId != RadialMenuSegmentId.SmartCenter;
+                bool hovered = canHover && HoveredSegmentId == segmentId;
                 var fill = GetBaseColor(segmentId, hovered);
-                var labelColor = hovered ? TextHoverColor : TextColor;
+                var labelColor = !enabled
+                    ? new Color(TextColor.r, TextColor.g, TextColor.b, 0.65f)
+                    : (hovered ? TextHoverColor : TextColor);
+                if (segmentId == RadialMenuSegmentId.SmartCenter)
+                {
+                    // Center No Action label should stay visually stable.
+                    labelColor = TextColor;
+                }
                 DrawRoundedSegment(rect, fill);
 
                 var label = GetLabel(segmentId);
@@ -340,10 +454,195 @@ namespace Sudoku.Scripts.UI
                 {
                     alignment = TextAnchor.MiddleCenter,
                     normal = { textColor = labelColor },
-                    fontSize = segmentId == RadialMenuSegmentId.SmartCenter ? 16 : 14
+                    fontSize = segmentId == RadialMenuSegmentId.SmartCenter ? 18 : 14,
+                    wordWrap = false,
+                    clipping = TextClipping.Clip
                 };
                 GUI.Label(rect, label, style);
+
+                if (!IsDigitSegment(segmentId))
+                {
+                    continue;
+                }
+
+                if (!enabled)
+                {
+                    continue;
+                }
+
+                DrawDigitSubAction(segmentId, position, RadialDigitActionType.RemoveCandidate, "-", 0);
+                DrawDigitSubAction(segmentId, position, RadialDigitActionType.AddCandidate, "+", 1);
             }
+        }
+
+        private void DrawDigitSubAction(RadialMenuSegmentId segmentId, Vector2 segmentPosition, RadialDigitActionType actionType, string label, int slotIndex)
+        {
+            if (!TryGetDigitSubActionRect(segmentId, segmentPosition, slotIndex, out var rect))
+            {
+                return;
+            }
+
+            bool enabled = IsDigitSubActionEnabled(segmentId, actionType);
+            bool hovered = enabled && HoveredSegmentId == segmentId && _hoveredDigitActionType == actionType;
+            var fill = enabled ? (hovered ? SubActionHoverColor : SubActionColor) : SubActionDisabledColor;
+            var labelColor = hovered ? SubActionHoverTextColor : SubActionTextColor;
+            if (!enabled)
+            {
+                labelColor = new Color(SubActionTextColor.r, SubActionTextColor.g, SubActionTextColor.b, 0.9f);
+            }
+
+            // Draw an opaque border first so disabled buttons remain clearly above the board.
+            var borderRect = new Rect(rect.x - 2f, rect.y - 2f, rect.width + 4f, rect.height + 4f);
+            DrawRoundedSegment(borderRect, new Color(0.02f, 0.02f, 0.03f, 0.96f));
+            DrawRoundedSegment(rect, fill);
+
+            var style = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = labelColor },
+                fontSize = 9,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            GUI.Label(rect, label, style);
+        }
+
+        private bool TryGetDigitSubActionRect(RadialMenuSegmentId segmentId, Vector2 segmentPosition, int slotIndex, out Rect rect)
+        {
+            rect = default;
+            if (!IsDigitSegment(segmentId)) return false;
+            if (slotIndex < 0 || slotIndex > 1) return false;
+
+            var radialDirection = (segmentPosition - DisplayGuiPosition).normalized;
+            if (radialDirection.sqrMagnitude < 0.0001f)
+            {
+                radialDirection = Vector2.up;
+            }
+
+            float stepDistance = SubActionButtonDiameter + SubActionLineSpacing;
+            float outwardDistance = (OuterSegmentDiameter * 0.5f) + SubActionOutwardGap + (slotIndex + 1) * stepDistance;
+            Vector2 center = segmentPosition + radialDirection * outwardDistance;
+
+            rect = new Rect(
+                center.x - SubActionButtonDiameter * 0.5f,
+                center.y - SubActionButtonDiameter * 0.5f,
+                SubActionButtonDiameter,
+                SubActionButtonDiameter);
+            return true;
+        }
+
+        private RadialDigitActionType ResolveDigitActionType(Vector2 screenPosition, RadialMenuSegmentId segmentId)
+        {
+            if (!IsDigitSegment(segmentId)) return RadialDigitActionType.DefaultDigit;
+            if (_isGivenCell) return RadialDigitActionType.DefaultDigit;
+
+            if (TryGetSegmentScreenPosition(segmentId, out var segmentPosition))
+            {
+                for (int i = 0; i < 2; i++)
+                {
+                    if (!TryGetDigitSubActionRect(segmentId, segmentPosition, i, out var rect)) continue;
+                    if (!rect.Contains(screenPosition)) continue;
+
+                    RadialDigitActionType candidateType = i == 0
+                        ? RadialDigitActionType.RemoveCandidate
+                        : RadialDigitActionType.AddCandidate;
+
+                    if (IsDigitSubActionEnabled(segmentId, candidateType))
+                    {
+                        return candidateType;
+                    }
+
+                    return RadialDigitActionType.DefaultDigit;
+                }
+            }
+
+            if (_currentCellValue.HasValue)
+            {
+                int? digit = SegmentIdToDigit(segmentId);
+                if (digit.HasValue && digit.Value == _currentCellValue.Value)
+                {
+                    return RadialDigitActionType.ClearValue;
+                }
+            }
+
+            return RadialDigitActionType.DefaultDigit;
+        }
+
+        private bool IsDigitSubActionEnabled(RadialMenuSegmentId segmentId, RadialDigitActionType actionType)
+        {
+            if (_isGivenCell) return false;
+
+            var digit = SegmentIdToDigit(segmentId);
+            if (!digit.HasValue) return false;
+
+            switch (actionType)
+            {
+                case RadialDigitActionType.RemoveCandidate:
+                    return _digitCandidatePresent[digit.Value];
+                case RadialDigitActionType.AddCandidate:
+                    return !_digitCandidatePresent[digit.Value] || _currentCellValue.HasValue;
+                case RadialDigitActionType.UnitCandidateAction:
+                    return false;
+                default:
+                    return true;
+            }
+        }
+
+        private static bool IsDigitSegment(RadialMenuSegmentId segmentId)
+        {
+            return segmentId >= RadialMenuSegmentId.Digit1 && segmentId <= RadialMenuSegmentId.Digit9;
+        }
+
+        private bool TryResolveSubActionHit(Vector2 screenPosition, out RadialMenuSegmentId segmentId, out RadialDigitActionType actionType)
+        {
+            segmentId = RadialMenuSegmentId.None;
+            actionType = RadialDigitActionType.DefaultDigit;
+
+            for (int i = 0; i < OuterOrder.Length; i++)
+            {
+                var candidateSegment = OuterOrder[i];
+                if (!IsDigitSegment(candidateSegment))
+                {
+                    continue;
+                }
+
+                if (!TryGetSegmentScreenPosition(candidateSegment, out var segmentPosition))
+                {
+                    continue;
+                }
+
+                for (int slot = 0; slot < 2; slot++)
+                {
+                    if (!TryGetDigitSubActionRect(candidateSegment, segmentPosition, slot, out var rect))
+                    {
+                        continue;
+                    }
+
+                    if (!rect.Contains(screenPosition))
+                    {
+                        continue;
+                    }
+
+                    var candidateAction = slot == 0
+                        ? RadialDigitActionType.RemoveCandidate
+                        : RadialDigitActionType.AddCandidate;
+
+                    if (!IsDigitSubActionEnabled(candidateSegment, candidateAction))
+                    {
+                        // Disabled sub-action clicks should be consumed as no-op,
+                        // not fall through to the parent digit Set/Clear action.
+                        segmentId = RadialMenuSegmentId.None;
+                        actionType = RadialDigitActionType.DefaultDigit;
+                        return true;
+                    }
+
+                    segmentId = candidateSegment;
+                    actionType = candidateAction;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private void EnsurePixelTexture()
@@ -425,7 +724,7 @@ namespace Sudoku.Scripts.UI
 
         private void UpdateDisplayPosition(Vector2 requestedGuiPosition)
         {
-            float radius = Mathf.Max(ShellDiameter * 0.5f, OuterSegmentRadius + OuterSegmentDiameter * 0.5f);
+            float radius = GetMaxVisualRadius();
             float screenX = requestedGuiPosition.x;
             float screenY = Screen.height - requestedGuiPosition.y;
 
@@ -434,6 +733,34 @@ namespace Sudoku.Scripts.UI
 
             DisplayScreenPosition = new Vector2(screenX, screenY);
             DisplayGuiPosition = new Vector2(screenX, Screen.height - screenY);
+        }
+
+        private float GetMaxVisualRadius()
+        {
+            float radius = Mathf.Max(ShellDiameter * 0.5f, OuterSegmentRadius + OuterSegmentDiameter * 0.5f);
+            radius = Mathf.Max(radius, GetMaxSubActionExtentRadius());
+            return radius;
+        }
+
+        private float GetMaxSubActionExtentRadius()
+        {
+            float maxCenterOffsetFromSegment = float.MinValue;
+            float stepDistance = SubActionButtonDiameter + SubActionLineSpacing;
+            for (int slotIndex = 0; slotIndex < 2; slotIndex++)
+            {
+                float centerOffset = (OuterSegmentDiameter * 0.5f) + SubActionOutwardGap + (slotIndex + 1) * stepDistance;
+                if (centerOffset > maxCenterOffsetFromSegment)
+                {
+                    maxCenterOffsetFromSegment = centerOffset;
+                }
+            }
+
+            if (maxCenterOffsetFromSegment < 0f)
+            {
+                maxCenterOffsetFromSegment = 0f;
+            }
+
+            return OuterSegmentRadius + maxCenterOffsetFromSegment + SubActionButtonDiameter * 0.5f;
         }
 
         private void ApplyVisibility(bool visible)
@@ -449,7 +776,9 @@ namespace Sudoku.Scripts.UI
 
             foreach (var kvp in _segmentImages)
             {
-                bool hovered = HoveredSegmentId == kvp.Key;
+                bool enabled = IsSegmentEnabled(kvp.Key);
+                bool canHover = enabled && kvp.Key != RadialMenuSegmentId.SmartCenter;
+                bool hovered = canHover && HoveredSegmentId == kvp.Key;
                 kvp.Value.color = GetBaseColor(kvp.Key, hovered);
             }
 
@@ -461,12 +790,55 @@ namespace Sudoku.Scripts.UI
 
         private Color GetBaseColor(RadialMenuSegmentId segmentId, bool hovered)
         {
+            if (!IsSegmentEnabled(segmentId))
+            {
+                return DisabledSegmentColor;
+            }
+
             if (segmentId == RadialMenuSegmentId.SmartCenter)
             {
-                return hovered ? HoverColor : CenterColor;
+                // Center No Action should remain neutral regardless of board state or hover.
+                return DisabledSegmentColor;
+            }
+
+            if (segmentId == RadialMenuSegmentId.TopNoAction)
+            {
+                if (_currentCellValue.HasValue)
+                {
+                    return hovered ? HoverColor : DigitSegmentColor;
+                }
+
+                return DisabledSegmentColor;
+            }
+
+            // Current-value digit should look active, but only look hovered when actually hovered.
+            if (IsDigitSegment(segmentId) && _currentCellValue.HasValue)
+            {
+                int? digit = SegmentIdToDigit(segmentId);
+                if (digit.HasValue && digit.Value == _currentCellValue.Value)
+                {
+                    return hovered ? HoverColor : ActiveDigitColor;
+                }
+            }
+
+            if (IsDigitSegment(segmentId))
+            {
+                return hovered ? HoverColor : DigitSegmentColor;
             }
 
             return hovered ? HoverColor : SegmentColor;
+        }
+
+        private bool IsSegmentEnabled(RadialMenuSegmentId segmentId)
+        {
+            if (segmentId == RadialMenuSegmentId.TopNoAction)
+            {
+                return _currentCellValue.HasValue;
+            }
+
+            if (!_isGivenCell) return true;
+
+            return false;
         }
 
         private static float GetClockwiseAngleFromTop(Vector2 delta)
