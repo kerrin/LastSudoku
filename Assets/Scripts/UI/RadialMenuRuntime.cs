@@ -436,15 +436,7 @@ namespace Sudoku.Scripts.UI
                     var rect = new Rect(centerPosition.x - CenterDiameter * 0.5f, centerPosition.y - CenterDiameter * 0.5f, CenterDiameter, CenterDiameter);
                     var fill = GetBaseColor(segmentId, false);
                     DrawFilledCircle(centerPosition, CenterDiameter * 0.5f, fill, 40);
-                    var style = new GUIStyle(GUI.skin.label)
-                    {
-                        alignment = TextAnchor.MiddleCenter,
-                        normal = { textColor = TextColor },
-                        fontSize = 18,
-                        wordWrap = false,
-                        clipping = TextClipping.Clip
-                    };
-                    GUI.Label(rect, GetLabel(segmentId), style);
+                    DrawNoActionX(rect, new Color(0.92f, 0.23f, 0.23f, 1f));
                 }
                 else if (segmentId == RadialMenuSegmentId.TopNoAction)
                 {
@@ -670,16 +662,15 @@ namespace Sudoku.Scripts.UI
             DrawFilledSectorBand(innerRadius, outerRadius, startAngle, endAngle, GetBaseColor(RadialMenuSegmentId.TopNoAction, hovered), 28);
 
             var labelCenter = DisplayGuiPosition + DirectionFromAngle(90f) * GetTopActionLabelRadius();
-            var labelRect = new Rect(labelCenter.x - 38f, labelCenter.y - 12f, 76f, 24f);
-            var style = new GUIStyle(GUI.skin.label)
+            var iconRect = new Rect(labelCenter.x - 16f, labelCenter.y - 16f, 32f, 32f);
+
+            if (!_currentCellValue.HasValue || !enabled)
             {
-                alignment = TextAnchor.MiddleCenter,
-                normal = { textColor = enabled ? (hovered ? TextHoverColor : TextColor) : new Color(TextColor.r, TextColor.g, TextColor.b, 0.65f) },
-                fontSize = 12,
-                wordWrap = false,
-                clipping = TextClipping.Clip
-            };
-            GUI.Label(labelRect, GetLabel(RadialMenuSegmentId.TopNoAction), style);
+                DrawNoActionX(iconRect, new Color(0.92f, 0.23f, 0.23f, enabled ? 1f : 0.75f));
+                return;
+            }
+
+            DrawSeenCellsIcon(iconRect, hovered);
         }
 
         private static Vector2 DirectionFromAngle(float angleDegrees)
@@ -795,6 +786,51 @@ namespace Sudoku.Scripts.UI
             var tmp = a;
             a = b;
             b = tmp;
+        }
+
+        private void DrawNoActionX(Rect rect, Color color)
+        {
+            float inset = Mathf.Min(rect.width, rect.height) * 0.24f;
+            float thickness = Mathf.Max(2f, Mathf.Min(rect.width, rect.height) * 0.11f);
+            Vector2 a0 = new Vector2(rect.x + inset, rect.y + inset);
+            Vector2 a1 = new Vector2(rect.xMax - inset, rect.yMax - inset);
+            Vector2 b0 = new Vector2(rect.xMax - inset, rect.y + inset);
+            Vector2 b1 = new Vector2(rect.x + inset, rect.yMax - inset);
+
+            DrawLineSegment(a0, a1, thickness, color);
+            DrawLineSegment(b0, b1, thickness, color);
+        }
+
+        private void DrawSeenCellsIcon(Rect rect, bool hovered)
+        {
+            // A tiny 5x5 map: red marks affected peers, green is the selected center cell.
+            int size = 5;
+            float pad = 2f;
+            float cellSize = (Mathf.Min(rect.width, rect.height) - pad * 2f) / size;
+            var frame = new Rect(rect.x + pad, rect.y + pad, cellSize * size, cellSize * size);
+
+            DrawRoundedSegment(new Rect(frame.x - 1f, frame.y - 1f, frame.width + 2f, frame.height + 2f), new Color(0f, 0f, 0f, 0.55f));
+
+            Color peerColor = hovered ? new Color(1f, 0.28f, 0.28f, 1f) : new Color(0.92f, 0.23f, 0.23f, 0.95f);
+            Color centerColor = hovered ? new Color(0.35f, 1f, 0.45f, 1f) : new Color(0.24f, 0.9f, 0.35f, 0.95f);
+            Color offColor = new Color(1f, 1f, 1f, 0.06f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    bool inRowCol = x == 2 || y == 2;
+                    bool inBox = x >= 1 && x <= 3 && y >= 1 && y <= 3;
+                    bool center = x == 2 && y == 2;
+
+                    Color c = offColor;
+                    if (inRowCol || inBox) c = peerColor;
+                    if (center) c = centerColor;
+
+                    var r = new Rect(frame.x + x * cellSize, frame.y + y * cellSize, cellSize - 0.75f, cellSize - 0.75f);
+                    DrawRoundedSegment(r, c);
+                }
+            }
         }
 
         private void DrawLineSegment(Vector2 start, Vector2 end, float width, Color color)
