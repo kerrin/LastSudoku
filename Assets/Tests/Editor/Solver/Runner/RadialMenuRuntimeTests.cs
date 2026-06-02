@@ -77,7 +77,7 @@ namespace Sudoku.Tests.Editor
 
                 Assert.Greater(Vector2.Dot(removeVec.normalized, outward), 0.95f);
                 Assert.Greater(Vector2.Dot(addVec.normalized, outward), 0.95f);
-                Assert.Greater(addVec.magnitude, removeVec.magnitude);
+                Assert.Greater(removeVec.magnitude, addVec.magnitude);
             }
             finally
             {

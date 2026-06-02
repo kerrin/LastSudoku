@@ -244,7 +244,7 @@ namespace Sudoku.Scripts.UI
                 return RadialMenuSegmentId.SmartCenter;
             }
 
-            float outerRadius = OuterSegmentRadius + OuterSegmentDiameter * 0.5f;
+            float outerRadius = GetOuterActionRadius();
             if (distance > outerRadius)
             {
                 return RadialMenuSegmentId.None;
@@ -272,6 +272,19 @@ namespace Sudoku.Scripts.UI
                 return true;
             }
 
+            if (segmentId == RadialMenuSegmentId.TopNoAction)
+            {
+                position = DisplayGuiPosition + DirectionFromAngle(90f) * GetTopActionLabelRadius();
+                return true;
+            }
+
+            if (IsDigitSegment(segmentId))
+            {
+                float centerAngle = GetSegmentCenterAngle(segmentId);
+                position = DisplayGuiPosition + DirectionFromAngle(centerAngle) * GetDigitBandCenterRadius(0);
+                return true;
+            }
+
             int index = Array.IndexOf(DisplayOrder, segmentId);
             if (index < 0 || index >= 10) return false;
 
@@ -287,23 +300,7 @@ namespace Sudoku.Scripts.UI
             position = default;
             if (!IsOpen) return false;
             if (!IsDigitSegment(segmentId)) return false;
-            if (!TryGetSegmentScreenPosition(segmentId, out var segmentPosition)) return false;
-
-            int slotIndex;
-            switch (actionType)
-            {
-                case RadialDigitActionType.RemoveCandidate:
-                    slotIndex = 0;
-                    break;
-                case RadialDigitActionType.AddCandidate:
-                    slotIndex = 1;
-                    break;
-                default:
-                    return false;
-            }
-
-            if (!TryGetDigitSubActionRect(segmentId, segmentPosition, slotIndex, out var rect)) return false;
-            position = rect.center;
+            if (!TryGetDigitActionCenter(segmentId, actionType, out position)) return false;
             return true;
         }
 
@@ -430,104 +427,118 @@ namespace Sudoku.Scripts.UI
 
             foreach (var segmentId in DisplayOrder)
             {
-                if (!TryGetSegmentScreenPosition(segmentId, out var position)) continue;
-
-                float diameter = segmentId == RadialMenuSegmentId.SmartCenter ? CenterDiameter : OuterSegmentDiameter;
-                var rect = new Rect(position.x - diameter * 0.5f, position.y - diameter * 0.5f, diameter, diameter);
-
                 bool enabled = IsSegmentEnabled(segmentId);
                 bool canHover = enabled && segmentId != RadialMenuSegmentId.SmartCenter;
                 bool hovered = canHover && HoveredSegmentId == segmentId;
-                var fill = GetBaseColor(segmentId, hovered);
-                var labelColor = !enabled
-                    ? new Color(TextColor.r, TextColor.g, TextColor.b, 0.65f)
-                    : (hovered ? TextHoverColor : TextColor);
                 if (segmentId == RadialMenuSegmentId.SmartCenter)
                 {
-                    // Center No Action label should stay visually stable.
-                    labelColor = TextColor;
+                    if (!TryGetSegmentScreenPosition(segmentId, out var centerPosition)) continue;
+                    var rect = new Rect(centerPosition.x - CenterDiameter * 0.5f, centerPosition.y - CenterDiameter * 0.5f, CenterDiameter, CenterDiameter);
+                    var fill = GetBaseColor(segmentId, false);
+                    DrawFilledCircle(centerPosition, CenterDiameter * 0.5f, fill, 40);
+                    var style = new GUIStyle(GUI.skin.label)
+                    {
+                        alignment = TextAnchor.MiddleCenter,
+                        normal = { textColor = TextColor },
+                        fontSize = 18,
+                        wordWrap = false,
+                        clipping = TextClipping.Clip
+                    };
+                    GUI.Label(rect, GetLabel(segmentId), style);
                 }
-                DrawRoundedSegment(rect, fill);
-
-                var label = GetLabel(segmentId);
-                var style = new GUIStyle(GUI.skin.label)
+                else if (segmentId == RadialMenuSegmentId.TopNoAction)
                 {
-                    alignment = TextAnchor.MiddleCenter,
-                    normal = { textColor = labelColor },
-                    fontSize = segmentId == RadialMenuSegmentId.SmartCenter ? 18 : 14,
-                    wordWrap = false,
-                    clipping = TextClipping.Clip
-                };
-                GUI.Label(rect, label, style);
-
-                if (!IsDigitSegment(segmentId))
-                {
-                    continue;
+                    DrawTopActionWedge(enabled, hovered);
                 }
-
-                if (!enabled)
+                else if (IsDigitSegment(segmentId))
                 {
-                    continue;
+                    DrawDigitWedge(segmentId, enabled);
                 }
-
-                DrawDigitSubAction(segmentId, position, RadialDigitActionType.RemoveCandidate, "-", 0);
-                DrawDigitSubAction(segmentId, position, RadialDigitActionType.AddCandidate, "+", 1);
             }
         }
 
-        private void DrawDigitSubAction(RadialMenuSegmentId segmentId, Vector2 segmentPosition, RadialDigitActionType actionType, string label, int slotIndex)
+        private void DrawDigitWedge(RadialMenuSegmentId segmentId, bool enabled)
         {
-            if (!TryGetDigitSubActionRect(segmentId, segmentPosition, slotIndex, out var rect))
+            if (!IsDigitSegment(segmentId))
             {
                 return;
             }
 
-            bool enabled = IsDigitSubActionEnabled(segmentId, actionType);
+            float centerAngle = GetSegmentCenterAngle(segmentId);
+            float startAngle = centerAngle + 18f - 2f;
+            float endAngle = centerAngle - 18f + 2f;
+
+            DrawDigitWedgeBand(segmentId, ResolvePrimaryDigitAction(segmentId), GetLabel(segmentId), 0, enabled, startAngle, endAngle);
+            DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
+            DrawDigitWedgeBand(segmentId, RadialDigitActionType.RemoveCandidate, "-", 2, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.RemoveCandidate), startAngle, endAngle);
+        }
+
+        private void DrawDigitWedgeBand(RadialMenuSegmentId segmentId, RadialDigitActionType actionType, string label, int slotIndex, bool enabled, float startAngle, float endAngle)
+        {
+            GetDigitBandRadii(slotIndex, out float innerRadius, out float outerRadius);
+
             bool hovered = enabled && HoveredSegmentId == segmentId && _hoveredDigitActionType == actionType;
-            var fill = enabled ? (hovered ? SubActionHoverColor : SubActionColor) : SubActionDisabledColor;
-            var labelColor = hovered ? SubActionHoverTextColor : SubActionTextColor;
-            if (!enabled)
+            Color fill;
+            Color labelColor;
+
+            if (slotIndex == 0)
             {
-                labelColor = new Color(SubActionTextColor.r, SubActionTextColor.g, SubActionTextColor.b, 0.9f);
+                fill = enabled ? GetBaseColor(segmentId, hovered) : DisabledSegmentColor;
+                labelColor = hovered ? TextHoverColor : TextColor;
+            }
+            else
+            {
+                fill = enabled ? (hovered ? SubActionHoverColor : SubActionColor) : SubActionDisabledColor;
+                labelColor = hovered ? SubActionHoverTextColor : SubActionTextColor;
             }
 
-            // Draw an opaque border first so disabled buttons remain clearly above the board.
-            var borderRect = new Rect(rect.x - 2f, rect.y - 2f, rect.width + 4f, rect.height + 4f);
-            DrawRoundedSegment(borderRect, new Color(0.02f, 0.02f, 0.03f, 0.96f));
-            DrawRoundedSegment(rect, fill);
+            if (!enabled)
+            {
+                labelColor = new Color(labelColor.r, labelColor.g, labelColor.b, 0.75f);
+            }
+
+            DrawFilledSectorBand(innerRadius, outerRadius, startAngle, endAngle, fill, 28);
+
+            if (!TryGetDigitActionCenter(segmentId, actionType, out var labelCenter))
+            {
+                return;
+            }
+
+            var labelRect = new Rect(labelCenter.x - 18f, labelCenter.y - 11f, 36f, 22f);
 
             var style = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
                 normal = { textColor = labelColor },
-                fontSize = 9,
+                fontSize = slotIndex == 0 ? 13 : 10,
                 wordWrap = false,
                 clipping = TextClipping.Clip
             };
-            GUI.Label(rect, label, style);
+            GUI.Label(labelRect, label, style);
         }
 
         private bool TryGetDigitSubActionRect(RadialMenuSegmentId segmentId, Vector2 segmentPosition, int slotIndex, out Rect rect)
         {
             rect = default;
             if (!IsDigitSegment(segmentId)) return false;
-            if (slotIndex < 0 || slotIndex > 1) return false;
+            if (slotIndex < 0 || slotIndex > 2) return false;
 
-            var radialDirection = (segmentPosition - DisplayGuiPosition).normalized;
-            if (radialDirection.sqrMagnitude < 0.0001f)
+            RadialDigitActionType actionType = slotIndex switch
             {
-                radialDirection = Vector2.up;
-            }
+                0 => ResolvePrimaryDigitAction(segmentId),
+                1 => RadialDigitActionType.AddCandidate,
+                _ => RadialDigitActionType.RemoveCandidate
+            };
 
-            float stepDistance = SubActionButtonDiameter + SubActionLineSpacing;
-            float outwardDistance = (OuterSegmentDiameter * 0.5f) + SubActionOutwardGap + (slotIndex + 1) * stepDistance;
-            Vector2 center = segmentPosition + radialDirection * outwardDistance;
+            if (!TryGetDigitActionCenter(segmentId, actionType, out var center)) return false;
+
+            float diameter = slotIndex == 0 ? 34f : 30f;
 
             rect = new Rect(
-                center.x - SubActionButtonDiameter * 0.5f,
-                center.y - SubActionButtonDiameter * 0.5f,
-                SubActionButtonDiameter,
-                SubActionButtonDiameter);
+                center.x - diameter * 0.5f,
+                center.y - diameter * 0.5f,
+                diameter,
+                diameter);
             return true;
         }
 
@@ -536,33 +547,11 @@ namespace Sudoku.Scripts.UI
             if (!IsDigitSegment(segmentId)) return RadialDigitActionType.DefaultDigit;
             if (_isGivenCell) return RadialDigitActionType.DefaultDigit;
 
-            if (TryGetSegmentScreenPosition(segmentId, out var segmentPosition))
+            float radius = (screenPosition - DisplayGuiPosition).magnitude;
+            GetDigitBandRadii(0, out float primaryInner, out float primaryOuter);
+            if (radius >= primaryInner && radius <= primaryOuter)
             {
-                for (int i = 0; i < 2; i++)
-                {
-                    if (!TryGetDigitSubActionRect(segmentId, segmentPosition, i, out var rect)) continue;
-                    if (!rect.Contains(screenPosition)) continue;
-
-                    RadialDigitActionType candidateType = i == 0
-                        ? RadialDigitActionType.RemoveCandidate
-                        : RadialDigitActionType.AddCandidate;
-
-                    if (IsDigitSubActionEnabled(segmentId, candidateType))
-                    {
-                        return candidateType;
-                    }
-
-                    return RadialDigitActionType.DefaultDigit;
-                }
-            }
-
-            if (_currentCellValue.HasValue)
-            {
-                int? digit = SegmentIdToDigit(segmentId);
-                if (digit.HasValue && digit.Value == _currentCellValue.Value)
-                {
-                    return RadialDigitActionType.ClearValue;
-                }
+                return ResolvePrimaryDigitAction(segmentId);
             }
 
             return RadialDigitActionType.DefaultDigit;
@@ -606,40 +595,50 @@ namespace Sudoku.Scripts.UI
                     continue;
                 }
 
-                if (!TryGetSegmentScreenPosition(candidateSegment, out var segmentPosition))
+                if (!TryResolveDigitBand(screenPosition, candidateSegment, out var candidateAction, out var hitDisabledBand))
                 {
                     continue;
                 }
 
-                for (int slot = 0; slot < 2; slot++)
+                if (hitDisabledBand)
                 {
-                    if (!TryGetDigitSubActionRect(candidateSegment, segmentPosition, slot, out var rect))
-                    {
-                        continue;
-                    }
-
-                    if (!rect.Contains(screenPosition))
-                    {
-                        continue;
-                    }
-
-                    var candidateAction = slot == 0
-                        ? RadialDigitActionType.RemoveCandidate
-                        : RadialDigitActionType.AddCandidate;
-
-                    if (!IsDigitSubActionEnabled(candidateSegment, candidateAction))
-                    {
-                        // Disabled sub-action clicks should be consumed as no-op,
-                        // not fall through to the parent digit Set/Clear action.
-                        segmentId = RadialMenuSegmentId.None;
-                        actionType = RadialDigitActionType.DefaultDigit;
-                        return true;
-                    }
-
-                    segmentId = candidateSegment;
-                    actionType = candidateAction;
+                    segmentId = RadialMenuSegmentId.None;
+                    actionType = RadialDigitActionType.DefaultDigit;
                     return true;
                 }
+
+                segmentId = candidateSegment;
+                actionType = candidateAction;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryResolveDigitBand(Vector2 screenPosition, RadialMenuSegmentId segmentId, out RadialDigitActionType actionType, out bool hitDisabledBand)
+        {
+            actionType = RadialDigitActionType.DefaultDigit;
+            hitDisabledBand = false;
+
+            if (!IsDigitSegment(segmentId)) return false;
+            if (ResolveSegment(screenPosition) != segmentId) return false;
+
+            float radius = (screenPosition - DisplayGuiPosition).magnitude;
+            GetDigitBandRadii(1, out float addInner, out float addOuter);
+            GetDigitBandRadii(2, out float removeInner, out float removeOuter);
+
+            if (radius >= addInner && radius <= addOuter)
+            {
+                actionType = RadialDigitActionType.AddCandidate;
+                hitDisabledBand = !IsDigitSubActionEnabled(segmentId, actionType);
+                return true;
+            }
+
+            if (radius >= removeInner && radius <= removeOuter)
+            {
+                actionType = RadialDigitActionType.RemoveCandidate;
+                hitDisabledBand = !IsDigitSubActionEnabled(segmentId, actionType);
+                return true;
             }
 
             return false;
@@ -659,6 +658,158 @@ namespace Sudoku.Scripts.UI
             Color previous = GUI.color;
             GUI.color = color;
             GUI.DrawTexture(rect, _pixelTexture);
+            GUI.color = previous;
+        }
+
+        private void DrawTopActionWedge(bool enabled, bool hovered)
+        {
+            float startAngle = 90f + 18f - 2f;
+            float endAngle = 90f - 18f + 2f;
+            float innerRadius = GetInnerActionRadius();
+            float outerRadius = GetOuterActionRadius();
+            DrawFilledSectorBand(innerRadius, outerRadius, startAngle, endAngle, GetBaseColor(RadialMenuSegmentId.TopNoAction, hovered), 28);
+
+            var labelCenter = DisplayGuiPosition + DirectionFromAngle(90f) * GetTopActionLabelRadius();
+            var labelRect = new Rect(labelCenter.x - 38f, labelCenter.y - 12f, 76f, 24f);
+            var style = new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleCenter,
+                normal = { textColor = enabled ? (hovered ? TextHoverColor : TextColor) : new Color(TextColor.r, TextColor.g, TextColor.b, 0.65f) },
+                fontSize = 12,
+                wordWrap = false,
+                clipping = TextClipping.Clip
+            };
+            GUI.Label(labelRect, GetLabel(RadialMenuSegmentId.TopNoAction), style);
+        }
+
+        private static Vector2 DirectionFromAngle(float angleDegrees)
+        {
+            float radians = angleDegrees * Mathf.Deg2Rad;
+            return new Vector2(Mathf.Cos(radians), -Mathf.Sin(radians));
+        }
+
+        private void DrawFilledTriangle(Vector2 p0, Vector2 p1, Vector2 p2, Color color)
+        {
+            if (_pixelTexture == null) return;
+
+            // Sort by Y ascending for scanline rasterization in IMGUI coordinates.
+            if (p1.y < p0.y) Swap(ref p0, ref p1);
+            if (p2.y < p0.y) Swap(ref p0, ref p2);
+            if (p2.y < p1.y) Swap(ref p1, ref p2);
+
+            float minY = p0.y;
+            float maxY = p2.y;
+            if (maxY - minY < 0.001f)
+            {
+                return;
+            }
+
+            Color previous = GUI.color;
+            GUI.color = color;
+
+            // Bottom-flat section: p0 -> p1 and p0 -> p2 until y == p1.y
+            if (p1.y > p0.y)
+            {
+                DrawTriangleSection(p0, p1, p0, p2);
+            }
+
+            // Top-flat section: p1 -> p2 and p0 -> p2 from y == p1.y to p2.y
+            if (p2.y > p1.y)
+            {
+                DrawTriangleSection(p1, p2, p0, p2);
+            }
+
+            GUI.color = previous;
+        }
+
+        private void DrawFilledSectorBand(float innerRadius, float outerRadius, float startAngle, float endAngle, Color color, int steps)
+        {
+            if (_pixelTexture == null) return;
+            float radiusOverlap = 1.0f;
+            float effectiveInnerRadius = Mathf.Max(0f, innerRadius - radiusOverlap);
+            float effectiveOuterRadius = outerRadius + radiusOverlap;
+            float averageRadius = (effectiveInnerRadius + effectiveOuterRadius) * 0.5f;
+
+            int lineCount = Mathf.Max(steps * 3, 72);
+            float angleStep = (endAngle - startAngle) / lineCount;
+            float lineWidth = Mathf.Max(2f, Mathf.Abs(angleStep) * Mathf.Deg2Rad * averageRadius + 1.5f);
+
+            for (int i = 0; i <= lineCount; i++)
+            {
+                float angle = startAngle + angleStep * i;
+                Vector2 inner = DisplayGuiPosition + DirectionFromAngle(angle) * effectiveInnerRadius;
+                Vector2 outer = DisplayGuiPosition + DirectionFromAngle(angle) * effectiveOuterRadius;
+                DrawLineSegment(inner, outer, lineWidth, color);
+            }
+        }
+
+        private void DrawFilledCircle(Vector2 center, float radius, Color color, int steps)
+        {
+            if (_pixelTexture == null) return;
+            Color previous = GUI.color;
+            GUI.color = color;
+
+            for (int i = 0; i < steps; i++)
+            {
+                float angle0 = (360f / steps) * i;
+                float angle1 = (360f / steps) * (i + 1);
+                Vector2 p0 = center;
+                Vector2 p1 = center + DirectionFromAngle(angle0) * radius;
+                Vector2 p2 = center + DirectionFromAngle(angle1) * radius;
+                DrawFilledTriangle(p0, p1, p2, color);
+            }
+
+            GUI.color = previous;
+        }
+
+        private void DrawTriangleSection(Vector2 leftStart, Vector2 leftEnd, Vector2 rightStart, Vector2 rightEnd)
+        {
+            float leftDeltaY = leftEnd.y - leftStart.y;
+            float rightDeltaY = rightEnd.y - rightStart.y;
+            if (leftDeltaY <= 0.0001f || rightDeltaY <= 0.0001f)
+            {
+                return;
+            }
+
+            float yStart = Mathf.Ceil(leftStart.y);
+            float yEnd = Mathf.Floor(leftEnd.y);
+            for (float y = yStart; y <= yEnd; y += 1f)
+            {
+                float tLeft = Mathf.Clamp01((y - leftStart.y) / leftDeltaY);
+                float tRight = Mathf.Clamp01((y - rightStart.y) / rightDeltaY);
+                float xLeft = Mathf.Lerp(leftStart.x, leftEnd.x, tLeft);
+                float xRight = Mathf.Lerp(rightStart.x, rightEnd.x, tRight);
+
+                float xMin = Mathf.Min(xLeft, xRight);
+                float xMax = Mathf.Max(xLeft, xRight);
+                float width = xMax - xMin;
+                if (width > 0.01f)
+                {
+                    GUI.DrawTexture(new Rect(xMin, y, width, 1f), _pixelTexture);
+                }
+            }
+        }
+
+        private static void Swap(ref Vector2 a, ref Vector2 b)
+        {
+            var tmp = a;
+            a = b;
+            b = tmp;
+        }
+
+        private void DrawLineSegment(Vector2 start, Vector2 end, float width, Color color)
+        {
+            if (_pixelTexture == null) return;
+
+            float angle = Mathf.Atan2(end.y - start.y, end.x - start.x) * Mathf.Rad2Deg;
+            float length = Vector2.Distance(start, end);
+            if (length <= 0.001f) return;
+
+            Color previous = GUI.color;
+            GUI.color = color;
+            GUIUtility.RotateAroundPivot(angle, start);
+            GUI.DrawTexture(new Rect(start.x, start.y - width * 0.5f, length, width), _pixelTexture);
+            GUIUtility.RotateAroundPivot(-angle, start);
             GUI.color = previous;
         }
 
@@ -737,30 +888,14 @@ namespace Sudoku.Scripts.UI
 
         private float GetMaxVisualRadius()
         {
-            float radius = Mathf.Max(ShellDiameter * 0.5f, OuterSegmentRadius + OuterSegmentDiameter * 0.5f);
+            float radius = Mathf.Max(ShellDiameter * 0.5f, GetOuterActionRadius());
             radius = Mathf.Max(radius, GetMaxSubActionExtentRadius());
             return radius;
         }
 
         private float GetMaxSubActionExtentRadius()
         {
-            float maxCenterOffsetFromSegment = float.MinValue;
-            float stepDistance = SubActionButtonDiameter + SubActionLineSpacing;
-            for (int slotIndex = 0; slotIndex < 2; slotIndex++)
-            {
-                float centerOffset = (OuterSegmentDiameter * 0.5f) + SubActionOutwardGap + (slotIndex + 1) * stepDistance;
-                if (centerOffset > maxCenterOffsetFromSegment)
-                {
-                    maxCenterOffsetFromSegment = centerOffset;
-                }
-            }
-
-            if (maxCenterOffsetFromSegment < 0f)
-            {
-                maxCenterOffsetFromSegment = 0f;
-            }
-
-            return OuterSegmentRadius + maxCenterOffsetFromSegment + SubActionButtonDiameter * 0.5f;
+            return GetOuterActionRadius();
         }
 
         private void ApplyVisibility(bool visible)
@@ -827,6 +962,76 @@ namespace Sudoku.Scripts.UI
             }
 
             return hovered ? HoverColor : SegmentColor;
+        }
+
+        private static float GetSegmentCenterAngle(RadialMenuSegmentId segmentId)
+        {
+            int index = Array.IndexOf(DisplayOrder, segmentId);
+            return 90f - index * 36f;
+        }
+
+        private float GetInnerActionRadius()
+        {
+            return CenterDiameter * 0.5f + 6f;
+        }
+
+        private float GetOuterActionRadius()
+        {
+            return OuterSegmentRadius + OuterSegmentDiameter * 0.5f;
+        }
+
+        private float GetDigitBandThickness()
+        {
+            return (GetOuterActionRadius() - GetInnerActionRadius()) / 3f;
+        }
+
+        private void GetDigitBandRadii(int slotIndex, out float innerRadius, out float outerRadius)
+        {
+            float bandThickness = GetDigitBandThickness();
+            innerRadius = GetInnerActionRadius() + bandThickness * slotIndex;
+            outerRadius = innerRadius + bandThickness;
+        }
+
+        private float GetDigitBandCenterRadius(int slotIndex)
+        {
+            GetDigitBandRadii(slotIndex, out float innerRadius, out float outerRadius);
+            return (innerRadius + outerRadius) * 0.5f;
+        }
+
+        private float GetTopActionLabelRadius()
+        {
+            return (GetInnerActionRadius() + GetOuterActionRadius()) * 0.5f;
+        }
+
+        private RadialDigitActionType ResolvePrimaryDigitAction(RadialMenuSegmentId segmentId)
+        {
+            if (_currentCellValue.HasValue)
+            {
+                int? digit = SegmentIdToDigit(segmentId);
+                if (digit.HasValue && digit.Value == _currentCellValue.Value)
+                {
+                    return RadialDigitActionType.ClearValue;
+                }
+            }
+
+            return RadialDigitActionType.DefaultDigit;
+        }
+
+        private bool TryGetDigitActionCenter(RadialMenuSegmentId segmentId, RadialDigitActionType actionType, out Vector2 position)
+        {
+            position = default;
+            if (!IsDigitSegment(segmentId)) return false;
+
+            int slotIndex = actionType switch
+            {
+                RadialDigitActionType.AddCandidate => 1,
+                RadialDigitActionType.RemoveCandidate => 2,
+                _ => 0
+            };
+
+            float centerAngle = GetSegmentCenterAngle(segmentId);
+            position = DisplayGuiPosition + DirectionFromAngle(centerAngle) * GetDigitBandCenterRadius(slotIndex);
+            return true;
         }
 
         private bool IsSegmentEnabled(RadialMenuSegmentId segmentId)
