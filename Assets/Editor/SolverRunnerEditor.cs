@@ -3,10 +3,11 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using Sudoku.Solver;
 
-/// <summary>
-/// Inspector UI for SolverRunner providing editor buttons to trigger solver actions
-/// and a small readout of the current board and last-applied rule/result.
-/// </summary>
+/** <summary>
+ * Inspector UI for SolverRunner providing editor buttons to trigger solver actions
+ * and a small readout of the current board and last-applied rule/result.
+ * TODO: Remove this once we have a more fully-featured in-game UI for these actions and readouts. Which we don't yet.
+ */
 [CustomEditor(typeof(SolverRunner))]
 [CanEditMultipleObjects]
 public class SolverRunnerEditor : Editor
