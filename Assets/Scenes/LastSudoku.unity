@@ -493,6 +493,9 @@ MonoBehaviour:
   MinCellSize: 16
   ShowCandidates: 1
   Offset: {x: 20, y: 20}
+  HoldOpenThresholdSeconds: 0.35
+  EnableHoldDebugLogs: 1
+  DigitActionMode: 3
 --- !u!1 &272880345
 GameObject:
   m_ObjectHideFlags: 0
@@ -1344,7 +1347,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
   m_Material: {fileID: 0}
-  m_Color: {r: 0.5652701, g: 0.9056604, b: 0.5339979, a: 1}
+  m_Color: {r: 0, g: 0, b: 0, a: 0.50980395}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1

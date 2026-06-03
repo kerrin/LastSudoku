@@ -121,6 +121,19 @@ namespace Sudoku.Solver
             CandidatesInitialised = false;
         }
 
+        /**
+         * Clears the currently loaded board and resets transient runner state.
+         */
+        [ContextMenu("Unload Board")]
+        public void UnloadBoard()
+        {
+            _board = null;
+            LastAppliedRule = null;
+            LastRuleResult = null;
+            PreviewRuleResult = null;
+            CandidatesInitialised = false;
+        }
+
         [ContextMenu("Initialise Candidates")]
         public void InitialiseCandidates()
         {

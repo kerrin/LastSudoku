@@ -5,19 +5,28 @@ namespace Sudoku.Scripts.UI
     public static class RuntimeUIBootstrapper
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void EnsureChangeLogControls()
+        private static void EnsureRuntimeUiControllers()
         {
             // Don't run in editor-only contexts where play mode isn't active
             if (!Application.isPlaying) return;
 
-            // If an instance already exists, do nothing
-            var existing = Object.FindAnyObjectByType<ChangeLogRuntimeControls>();
-            if (existing != null) return;
+            // Ensure ChangeLog controls host exists.
+            var changeLogExisting = Object.FindAnyObjectByType<ChangeLogRuntimeControls>();
+            if (changeLogExisting == null)
+            {
+                var changeLogGo = new GameObject("ChangeLogRuntimeControls");
+                Object.DontDestroyOnLoad(changeLogGo);
+                changeLogGo.AddComponent<ChangeLogRuntimeControls>();
+            }
 
-            // Create a new GameObject in the scene to host the controls
-            var go = new GameObject("ChangeLogRuntimeControls");
-            Object.DontDestroyOnLoad(go);
-            go.AddComponent<ChangeLogRuntimeControls>();
+            // Ensure main menu flow host exists.
+            var flowExisting = Object.FindAnyObjectByType<MainMenuFlowController>();
+            if (flowExisting == null)
+            {
+                var flowGo = new GameObject("MainMenuFlowController");
+                Object.DontDestroyOnLoad(flowGo);
+                flowGo.AddComponent<MainMenuFlowController>();
+            }
         }
     }
 }
