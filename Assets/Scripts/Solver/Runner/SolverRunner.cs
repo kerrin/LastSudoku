@@ -127,26 +127,123 @@ namespace Sudoku.Solver
             if (_board == null) LoadBoardFromRows();
             if (_board == null) return;
             EnsureEngine();
+            var result = new RuleResult
+            {
+                Apply = false,
+                Description = "Initialise Candidates"
+            };
+
             // Step over each cell and initialize candidates for empty cells
             // checking the peers for number elimination.
             for (int r = 0; r < _board.Size; r++)
+            {
                 for (int c = 0; c < _board.Size; c++)
                 {
                     Cell cell = _board.Cells[r, c];
                     if (cell.Value.HasValue) continue; // skip filled cells
-                    cell.Candidates.Clear();
-                    for (int v = 1; v <= _board.Size; v++) cell.Candidates.Add(v);
+
+                    if (cell.Candidates == null)
+                    {
+                        cell.Candidates = new HashSet<int>();
+                    }
+
+                    var oldCandidates = new HashSet<int>(cell.Candidates);
+                    var newCandidates = new HashSet<int>();
+                    for (int v = 1; v <= _board.Size; v++) newCandidates.Add(v);
+
                     // Eliminate candidates based on peers' values
                     var peers = _board.GetPeers(cell);
                     foreach (var peer in peers)
                     {
                         if (peer.Value.HasValue)
                         {
-                            cell.Candidates.Remove(peer.Value.Value);
+                            newCandidates.Remove(peer.Value.Value);
                         }
                     }
+
+                    var removedCandidates = new List<int>();
+                    foreach (var candidate in oldCandidates)
+                    {
+                        if (!newCandidates.Contains(candidate))
+                        {
+                            removedCandidates.Add(candidate);
+                        }
+                    }
+
+                    var addedCandidates = new List<int>();
+                    foreach (var candidate in newCandidates)
+                    {
+                        if (!oldCandidates.Contains(candidate))
+                        {
+                            addedCandidates.Add(candidate);
+                        }
+                    }
+
+                    if (removedCandidates.Count > 0 || addedCandidates.Count > 0)
+                    {
+                        result.Changes.Add(new CellChange
+                        {
+                            Row = r,
+                            Column = c,
+                            OldValue = cell.Value,
+                            RemovedCandidates = removedCandidates,
+                            AddedCandidates = addedCandidates
+                        });
+                    }
+
+                    cell.Candidates.Clear();
+                    foreach (var candidate in newCandidates) cell.Candidates.Add(candidate);
                 }
-                CandidatesInitialised = true;
+            }
+
+            result.Apply = result.Changes.Count > 0;
+            if (result.Apply)
+            {
+                result.Description = $"Initialise Candidates ({result.Changes.Count} cells updated)";
+
+                try
+                {
+                    if (_board.ChangeLog == null) _board.ChangeLog = new List<CellChange>();
+                    if (_board.ChangeLogIndex < _board.ChangeLog.Count)
+                    {
+                        _board.ChangeLog.RemoveRange(_board.ChangeLogIndex, _board.ChangeLog.Count - _board.ChangeLogIndex);
+                    }
+
+                    int gid = _board.NextChangeGroupId;
+                    _board.NextChangeGroupId++;
+
+                    foreach (var ch in result.Changes)
+                    {
+                        _board.ChangeLog.Add(new CellChange
+                        {
+                            Row = ch.Row,
+                            Column = ch.Column,
+                            OldValue = ch.OldValue,
+                            NewValue = ch.NewValue,
+                            ClearValue = ch.ClearValue,
+                            ForceSetValue = ch.ForceSetValue,
+                            RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
+                            AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
+                            GroupId = gid,
+                            SourceRuleName = "InitialiseCandidates",
+                            SourceRuleDescription = result.Description
+                        });
+                    }
+
+                    _board.ChangeLogIndex = _board.ChangeLog.Count;
+                    Debug.Log($"SolverRunner.InitialiseCandidates: appended {result.Changes.Count} changes as group {gid}; runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} ChangeLogCount={_board.ChangeLog.Count}");
+                    ChangeLogRuntimeControls.RefreshButtonStates();
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"SolverRunner.InitialiseCandidates: failed to append changes to ChangeLog: {ex.Message}");
+                }
+            }
+
+            LastAppliedRule = null;
+            LastRuleResult = result;
+            PreviewRuleResult = null;
+            CandidatesInitialised = true;
             Debug.Log($"SolverRunner.InitialiseCandidates: runner.EntityId={this.GetEntityId()} board.hash={_board?.GetHashCode() ?? 0} candidatesInitialised={CandidatesInitialised}");
         }
 
