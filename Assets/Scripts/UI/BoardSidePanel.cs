@@ -38,7 +38,6 @@ public class BoardSidePanel : MonoBehaviour
     private Vector2 _lastBoardOffset = new Vector2(float.MinValue, float.MinValue);
     private int _lastComputedCellSize = -1;
     private int _lastBoardSize = -1;
-    private int _lastInteractionMode = -1;
     private bool _preserveSceneLayout = true;
 
     private void Awake()

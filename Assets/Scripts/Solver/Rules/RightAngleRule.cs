@@ -75,7 +75,6 @@ namespace Sudoku.Solver.Rules
             public int digit;
             public List<Cell> UsedCells = new List<Cell>();
             public Cell DeducedCell = new Cell();
-            public string Description;
         }
         private ElimInfo FindElimination(Board board)
         {

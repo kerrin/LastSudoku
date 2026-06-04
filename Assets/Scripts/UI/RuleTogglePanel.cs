@@ -578,6 +578,11 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void RefreshApplyRulesPanel()
     {
+        if (_applyRulePanel == null)
+        {
+            _applyRulePanel = FindAnyObjectByType<ApplyRulePanel>();
+        }
+
         if (_createModeStatusPanel == null)
         {
             _createModeStatusPanel = FindAnyObjectByType<CreateModeStatusPanel>();
