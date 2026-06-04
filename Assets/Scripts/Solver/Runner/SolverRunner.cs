@@ -184,7 +184,6 @@ namespace Sudoku.Solver
             LastRuleResult = null;
             PreviewRuleResult = null;
             SetInteractionMode(BoardInteractionMode.PuzzleCreation);
-            RunCreationSolveAnalysisIfNeeded();
         }
 
         /**
@@ -822,13 +821,13 @@ namespace Sudoku.Solver
                 if (IsPuzzleCreationMode)
                 {
                     SyncCandidatesForCurrentBoard();
-                    SyncUnsolvedCandidatesFromAllRulesSolve();
+                    // Single optimized pass that solves once and validates in one go
+                    RunOptimizedCreationAnalysis();
                 }
                 else
                 {
                     ValidateCurrentBoardState();
                 }
-                RunCreationSolveAnalysisIfNeeded();
             }
         }
 
@@ -883,89 +882,13 @@ namespace Sudoku.Solver
         }
 
         /**
-         * Refine unsolved-cell candidates using the final state of an all-rules solve attempt.
-         * This method never changes board values; it only updates candidate sets for cells
-         * that are currently empty on the active board.
-         */
-        private void SyncUnsolvedCandidatesFromAllRulesSolve()
-        {
-            if (_board == null || _board.Cells == null)
-            {
-                return;
-            }
-
-            var boardCopy = CloneBoardForSolve(_board);
-            var registryCopy = CloneRegistry(includeAllRules: true);
-            var engine = new SolverEngine(registryCopy);
-            engine.Solve(boardCopy, out _);
-
-            for (int r = 0; r < _board.Size; r++)
-            {
-                for (int c = 0; c < _board.Size; c++)
-                {
-                    var targetCell = _board.Cells[r, c];
-                    if (targetCell == null || targetCell.Value.HasValue)
-                    {
-                        continue;
-                    }
-
-                    if (targetCell.Candidates == null)
-                    {
-                        targetCell.Candidates = new HashSet<int>();
-                    }
-
-                    targetCell.Candidates.Clear();
-
-                    var solvedCell = boardCopy.Cells[r, c];
-                    if (solvedCell != null && solvedCell.Value.HasValue)
-                    {
-                        int solvedValue = solvedCell.Value.Value;
-                        if (solvedValue >= 1 && solvedValue <= _board.Size)
-                        {
-                            targetCell.Candidates.Add(solvedValue);
-                        }
-
-                        continue;
-                    }
-
-                    if (solvedCell != null && solvedCell.Candidates != null && solvedCell.Candidates.Count > 0)
-                    {
-                        foreach (int candidate in solvedCell.Candidates)
-                        {
-                            if (candidate >= 1 && candidate <= _board.Size)
-                            {
-                                targetCell.Candidates.Add(candidate);
-                            }
-                        }
-
-                        continue;
-                    }
-
-                    // Fall back to legal peer-based candidates if the solve attempt
-                    // did not leave candidate information for this unsolved cell.
-                    for (int v = 1; v <= _board.Size; v++)
-                    {
-                        targetCell.Candidates.Add(v);
-                    }
-
-                    foreach (var peer in _board.GetPeers(targetCell))
-                    {
-                        if (peer != null && peer.Value.HasValue)
-                        {
-                            targetCell.Candidates.Remove(peer.Value.Value);
-                        }
-                    }
-                }
-            }
-
-            ValidateCurrentBoardState();
-        }
-
-        /**
          * Validate whether the current board state is still potentially solvable.
          * Detects duplicate-value conflicts, zero-candidate dead cells, and full-solver contradictions.
+         * 
+         * @param skipFullSolveCheck When true, skip the expensive full-solver check for latent conflicts.
+         *                           Use this when you'll be solving separately anyway (optimization).
          */
-        public void ValidateCurrentBoardState()
+        public void ValidateCurrentBoardState(bool skipFullSolveCheck = false)
         {
             _lastBoardStateConflictCells.Clear();
 
@@ -981,7 +904,7 @@ namespace Sudoku.Solver
                 LastBoardStateIsPossible = false;
                 LastBoardStateValidationMessage = "Invalid board: duplicate value exists in a row, column, or box.";
 
-                var immediateConflicts = _board.FindConflicts();
+                var immediateConflicts = _board.FindConflicts(skipFullSolve: true);
                 if (immediateConflicts != null)
                 {
                     for (int i = 0; i < immediateConflicts.Count; i++)
@@ -1019,7 +942,8 @@ namespace Sudoku.Solver
                 }
             }
 
-            var conflicts = _board.FindConflicts();
+            // Use skipFullSolve optimization: skip expensive solver check if we'll solve separately
+            var conflicts = _board.FindConflicts(skipFullSolve: skipFullSolveCheck);
             if (conflicts != null && conflicts.Count > 0)
             {
                 bool unsolvable = conflicts.Exists(c => c != null && (c.Row < 0 || c.Column < 0));
@@ -1047,6 +971,238 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Check if the current board has any values set.
+         * Used to skip solving for completely empty boards (optimization).
+         * 
+         * @returns True if at least one cell has a value, false if board is completely empty.
+         */
+        private bool BoardHasAnyValues()
+        {
+            if (_board == null || _board.Cells == null)
+            {
+                return false;
+            }
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell != null && cell.Value.HasValue)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Optimized creation-mode analysis: solve ONCE instead of 3+ times.
+         * 
+         * Strategy:
+         * 1. If board is empty, skip solving entirely
+         * 2. Validate immediate conflicts and candidate availability (skip expensive full solve)
+         * 3. Solve with enabled rules only - track which rules were used
+         * 4. If that fails, continue solving with ALL rules - track additional rules needed
+         * 5. Update candidates for unsolved cells based on final solver state
+         * 6. All validation and status updates done in single pass
+         */
+        private void RunOptimizedCreationAnalysis()
+        {
+            if (!IsPuzzleCreationMode)
+            {
+                return;
+            }
+
+            if (_board == null || _board.Cells == null)
+            {
+                ClearCreationSolveAnalysis();
+                ValidateCurrentBoardState(skipFullSolveCheck: false);
+                return;
+            }
+
+            // If board is completely empty, skip solving - nothing to validate or solve
+            if (!BoardHasAnyValues())
+            {
+                ClearCreationSolveAnalysis();
+                LastBoardStateIsPossible = true;
+                LastBoardStateValidationMessage = "Board is empty (no cells filled yet).";
+                return;
+            }
+
+            // First validate immediate conflicts and candidate availability
+            // Skip the expensive full-solve check since we'll solve right after anyway
+            ValidateCurrentBoardState(skipFullSolveCheck: true);
+            if (!LastBoardStateIsPossible)
+            {
+                // Board has immediate conflicts or zero-candidate cells - don't attempt solving
+                ClearCreationSolveAnalysis();
+                return;
+            }
+
+            // Attempt to solve with enabled rules first, tracking which rules get used
+            var boardCopyForEnabledRules = CloneBoardForSolve(_board);
+            var registryCopyForEnabledRules = CloneRegistry(includeAllRules: false);
+            var engineForEnabledRules = new SolverEngine(registryCopyForEnabledRules);
+            bool solvedWithEnabled = engineForEnabledRules.Solve(boardCopyForEnabledRules, out var enabledSteps);
+
+            var enabledRuleNames = ExtractRuleNamesFromSteps(enabledSteps);
+            var allRuleNames = new List<string>();
+
+            Board finalSolvedBoard = boardCopyForEnabledRules;
+            bool solvedWithAll = solvedWithEnabled;
+
+            // If enabled rules didn't fully solve, try again with ALL rules
+            if (!solvedWithEnabled)
+            {
+                var boardCopyForAllRules = CloneBoardForSolve(_board);
+                var registryCopyForAllRules = CloneRegistry(includeAllRules: true);
+                var engineForAllRules = new SolverEngine(registryCopyForAllRules);
+                solvedWithAll = engineForAllRules.Solve(boardCopyForAllRules, out var allSteps);
+
+                // Track which additional rules were needed beyond the enabled ones
+                var allStepRuleNames = ExtractRuleNamesFromSteps(allSteps);
+                foreach (var ruleName in allStepRuleNames)
+                {
+                    if (!enabledRuleNames.Contains(ruleName))
+                    {
+                        allRuleNames.Add(ruleName);
+                    }
+                }
+
+                finalSolvedBoard = boardCopyForAllRules;
+            }
+
+            // Update candidates for unsolved cells based on the final solve attempt
+            UpdateCandidatesFromSolvedBoard(finalSolvedBoard);
+
+            // Update creation-mode analysis results
+            _lastCreationSolveRuleNames.Clear();
+            AppendDistinctRules(_lastCreationSolveRuleNames, enabledRuleNames);
+            AppendDistinctRules(_lastCreationSolveRuleNames, allRuleNames);
+
+            LastCreationSolveFoundSolution = solvedWithEnabled || solvedWithAll;
+            LastCreationSolveFoundWithSelectedRules = solvedWithEnabled;
+            
+            if (solvedWithEnabled)
+            {
+                LastCreationSolveStatusMessage = "Solution found using the currently enabled rules.";
+            }
+            else if (solvedWithAll)
+            {
+                LastCreationSolveStatusMessage = "Solution found only when all rules were allowed.";
+            }
+            else
+            {
+                LastCreationSolveStatusMessage = "No complete solution found yet with enabled rules or with all rules.";
+            }
+        }
+
+        /**
+         * Extract unique rule names from solver steps in order of first appearance.
+         * 
+         * @param steps Solver steps from a solve attempt (tuples of rule and result).
+         * @returns Ordered unique list of rule type names.
+         */
+        private List<string> ExtractRuleNamesFromSteps(System.Collections.Generic.List<(ISudokuRule rule, RuleResult result)> steps)
+        {
+            var ruleNames = new List<string>();
+            if (steps == null)
+            {
+                return ruleNames;
+            }
+
+            foreach (var (rule, result) in steps)
+            {
+                if (rule == null)
+                {
+                    continue;
+                }
+
+                string name = rule.GetType().Name;
+                if (!ruleNames.Contains(name))
+                {
+                    ruleNames.Add(name);
+                }
+            }
+
+            return ruleNames;
+        }
+
+        /**
+         * Update unsolved-cell candidates using a solved board state.
+         * This method never changes board values; it only updates candidate sets 
+         * for cells that are currently empty on the active board.
+         * 
+         * @param solvedBoard Board state from a solve attempt (may be complete or partial).
+         */
+        private void UpdateCandidatesFromSolvedBoard(Board solvedBoard)
+        {
+            if (_board == null || _board.Cells == null || solvedBoard == null || solvedBoard.Cells == null)
+            {
+                return;
+            }
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var targetCell = _board.Cells[r, c];
+                    if (targetCell == null || targetCell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (targetCell.Candidates == null)
+                    {
+                        targetCell.Candidates = new HashSet<int>();
+                    }
+
+                    targetCell.Candidates.Clear();
+
+                    var solvedCell = solvedBoard.Cells[r, c];
+                    if (solvedCell != null && solvedCell.Value.HasValue)
+                    {
+                        int solvedValue = solvedCell.Value.Value;
+                        if (solvedValue >= 1 && solvedValue <= _board.Size)
+                        {
+                            targetCell.Candidates.Add(solvedValue);
+                        }
+                        continue;
+                    }
+
+                    if (solvedCell != null && solvedCell.Candidates != null && solvedCell.Candidates.Count > 0)
+                    {
+                        foreach (int candidate in solvedCell.Candidates)
+                        {
+                            if (candidate >= 1 && candidate <= _board.Size)
+                            {
+                                targetCell.Candidates.Add(candidate);
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Fall back to legal peer-based candidates if solver didn't leave candidate info
+                    for (int v = 1; v <= _board.Size; v++)
+                    {
+                        targetCell.Candidates.Add(v);
+                    }
+
+                    foreach (var peer in _board.GetPeers(targetCell))
+                    {
+                        if (peer != null && peer.Value.HasValue)
+                        {
+                            targetCell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
+            }
+        }
+
+        /**
          * Enable every rule currently registered in this runner's registry.
          */
         private void EnableAllRegisteredRules()
@@ -1066,52 +1222,6 @@ namespace Sudoku.Solver
                 }
 
                 Registry.SetEnabled(entry.rule.GetType().Name, true);
-            }
-        }
-
-        /**
-         * Run solver analysis for puzzle creation mode.
-         * The analysis first uses currently enabled rules, then falls back to all rules if needed.
-         */
-        public void RunCreationSolveAnalysisIfNeeded()
-        {
-            if (!IsPuzzleCreationMode)
-            {
-                return;
-            }
-
-            if (_board == null || _board.Cells == null)
-            {
-                ClearCreationSolveAnalysis();
-                return;
-            }
-
-            bool solvedWithEnabled = TrySolveBoardCopy(includeAllRules: false, out var enabledRuleNames);
-            bool solvedWithAll = solvedWithEnabled;
-            List<string> allRuleNames = new List<string>();
-
-            if (!solvedWithEnabled)
-            {
-                solvedWithAll = TrySolveBoardCopy(includeAllRules: true, out allRuleNames);
-            }
-
-            _lastCreationSolveRuleNames.Clear();
-            AppendDistinctRules(_lastCreationSolveRuleNames, enabledRuleNames);
-            AppendDistinctRules(_lastCreationSolveRuleNames, allRuleNames);
-
-            LastCreationSolveFoundSolution = solvedWithEnabled || solvedWithAll;
-            LastCreationSolveFoundWithSelectedRules = solvedWithEnabled;
-            if (solvedWithEnabled)
-            {
-                LastCreationSolveStatusMessage = "Solution found using the currently enabled rules.";
-            }
-            else if (solvedWithAll)
-            {
-                LastCreationSolveStatusMessage = "Solution found only when all rules were allowed.";
-            }
-            else
-            {
-                LastCreationSolveStatusMessage = "No complete solution found yet with enabled rules or with all rules.";
             }
         }
 
@@ -1333,7 +1443,6 @@ namespace Sudoku.Solver
             LastRuleResult = res;
             PreviewRuleResult = null;
             ValidateCurrentBoardState();
-            RunCreationSolveAnalysisIfNeeded();
             Debug.Log($"SolverRunner.RunRule: enacted {rule.GetType().Name} runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} changes={res.Changes?.Count ?? 0}");
         }
 

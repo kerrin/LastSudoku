@@ -132,13 +132,24 @@ namespace Sudoku.Solver.Rules
          * Find detailed conflicts in the board. Returns a list of `UsedCell`
          * entries describing cells that violate unit uniqueness (duplicates).
          * Each `UsedCell.Candidate` is set to the duplicated digit.
+         * 
+         * @param board Target board to check for conflicts.
+         * @param skipFullSolve When true, only check for immediate conflicts without attempting to solve.
+         *                      This is an optimization when you'll be solving separately anyway.
+         * @returns List of conflict UsedCell entries, or empty list if none found, or special marker for unsolvable boards.
          */
-        public static List<UsedCell> FindConflicts(this Board board)
+        public static List<UsedCell> FindConflicts(this Board board, bool skipFullSolve = false)
         {
             var conflicts = CollectConflicts(board);
 
             // If we already found conflicts, return them now.
             if (conflicts != null && conflicts.Count > 0) return conflicts;
+
+            // If skipFullSolve is true, only do immediate conflict detection
+            if (skipFullSolve)
+            {
+                return conflicts;
+            }
 
             // No immediate conflicts: attempt to solve a copy of the board with a full rule set
             // so we can detect latent inconsistencies (e.g. candidate-driven contradictions).

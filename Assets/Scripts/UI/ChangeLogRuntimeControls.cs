@@ -94,7 +94,6 @@ namespace Sudoku.Scripts.UI
                     runner.CurrentBoard.UndoLast();
                     runner.SyncCandidatesForCurrentBoard();
                     UpdateDisplayFromCurrentState(runner);
-                    runner.RunCreationSolveAnalysisIfNeeded();
                     RefreshPanels();
                 }
             });
@@ -108,7 +107,6 @@ namespace Sudoku.Scripts.UI
                     runner.CurrentBoard.RedoNext();
                     runner.SyncCandidatesForCurrentBoard();
                     UpdateDisplayFromCurrentState(runner);
-                    runner.RunCreationSolveAnalysisIfNeeded();
                     RefreshPanels();
                 }
             });

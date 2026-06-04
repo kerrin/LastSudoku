@@ -576,11 +576,6 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void RefreshApplyRulesPanel()
     {
-        if (Runner != null)
-        {
-            Runner.RunCreationSolveAnalysisIfNeeded();
-        }
-
         if (_createModeStatusPanel == null)
         {
             _createModeStatusPanel = FindAnyObjectByType<CreateModeStatusPanel>();
