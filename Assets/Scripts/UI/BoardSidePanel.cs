@@ -48,8 +48,7 @@ public class BoardSidePanel : MonoBehaviour
 
         if (!Application.isPlaying)
         {
-            EnsurePanel();
-            EnsureCreateModeStatusPanelAttached();
+            CacheExistingPanelReferences();
             return;
         }
 
@@ -62,8 +61,7 @@ public class BoardSidePanel : MonoBehaviour
     {
         if (!Application.isPlaying)
         {
-            EnsurePanel();
-            EnsureCreateModeStatusPanelAttached();
+            CacheExistingPanelReferences();
             return;
         }
         // Only initialize here if the board is already available; otherwise
@@ -118,10 +116,8 @@ public class BoardSidePanel : MonoBehaviour
     {
         if (!Application.isPlaying)
         {
-            // Only re-ensure panel structure; do NOT force-reset visibility every frame
-            // so the user can manually preview either state in the designer.
-            if (_panelRect == null) EnsurePanel();
-            EnsureCreateModeStatusPanelAttached();
+            // In designer mode do not mutate hierarchy/components. Only cache refs.
+            if (_panelRect == null) CacheExistingPanelReferences();
             return;
         }
 
@@ -274,6 +270,29 @@ public class BoardSidePanel : MonoBehaviour
         {
             UpdatePanelGeometry();
             StartCoroutine(PositionNextFrame());
+        }
+    }
+
+    /**
+     * Cache existing scene references in edit mode without creating or moving objects.
+     */
+    private void CacheExistingPanelReferences()
+    {
+        if (_panelRect != null) return;
+
+        if (TargetCanvas == null) TargetCanvas = Object.FindAnyObjectByType<Canvas>();
+        if (TargetCanvas == null) return;
+
+        var sidePanel = TargetCanvas.transform.Find("SidePanel");
+        if (sidePanel == null) return;
+
+        _panelRect = sidePanel.GetComponent<RectTransform>();
+        _panelImage = sidePanel.GetComponent<Image>();
+
+        var rules = sidePanel.Find("RulesArea");
+        if (rules != null)
+        {
+            RulesArea = rules.GetComponent<RectTransform>();
         }
     }
 
@@ -500,12 +519,44 @@ public class BoardSidePanel : MonoBehaviour
 
         // Find or create CreateModeStatusPanel in the RulesArea so it can replace
         // ApplyRulePanel as the right-hand column in create mode.
-        var existing = RulesArea.GetComponentInChildren<CreateModeStatusPanel>(true);
+        var allStatusPanels = RulesArea.GetComponentsInChildren<CreateModeStatusPanel>(true);
+        CreateModeStatusPanel existing = null;
+        for (int i = 0; i < allStatusPanels.Length; i++)
+        {
+            var candidate = allStatusPanels[i];
+            if (candidate == null) continue;
+
+            bool isDirectChild = candidate.transform.parent == RulesArea;
+            bool hasExpectedPanelRoot = candidate.transform.Find("CreateModeStatus") != null;
+            if (isDirectChild && hasExpectedPanelRoot)
+            {
+                existing = candidate;
+                break;
+            }
+
+            if (existing == null) existing = candidate;
+        }
+
+        // Remove duplicate status panel roots and keep only the selected one.
+        for (int i = 0; i < allStatusPanels.Length; i++)
+        {
+            var candidate = allStatusPanels[i];
+            if (candidate == null || candidate == existing) continue;
+
+            if (Application.isPlaying) Destroy(candidate.gameObject);
+            else DestroyImmediate(candidate.gameObject);
+        }
+
         if (existing != null)
         {
             if (existing.transform.parent != RulesArea)
             {
                 existing.transform.SetParent(RulesArea, false);
+            }
+
+            if (existing.gameObject.name != "CreateModeStatusPanel")
+            {
+                existing.gameObject.name = "CreateModeStatusPanel";
             }
 
             ConfigurePanelSlot(existing.gameObject);
@@ -519,7 +570,7 @@ public class BoardSidePanel : MonoBehaviour
         }
 
         // Create a hosted panel inside RulesArea.
-        var hostGO = new GameObject("CreateModeStatusPanelHost", typeof(RectTransform));
+        var hostGO = new GameObject("CreateModeStatusPanel", typeof(RectTransform));
         hostGO.transform.SetParent(RulesArea, false);
         var rt = hostGO.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 0f);
