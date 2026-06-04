@@ -154,7 +154,7 @@ namespace Sudoku.Scripts.UI
 
             var vlg = _menuPanel.AddComponent<VerticalLayoutGroup>();
             vlg.padding = new RectOffset(28, 28, 24, 24);
-            vlg.spacing = 12f;
+            vlg.spacing = 6f;
             vlg.childAlignment = TextAnchor.UpperCenter;
             vlg.childControlWidth = true;
             vlg.childControlHeight = false;
@@ -169,8 +169,8 @@ namespace Sudoku.Scripts.UI
             CreateLabel(_menuPanel.transform, "Subtitle", "Choose an option to begin", 20, FontStyle.Normal, 36f);
             EnsureMenuPuzzleCodeRow(_menuPanel.transform);
 
-            CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Generated Puzzle", StartGeneratedPuzzle, true);
-            CreateMenuButton(_menuPanel.transform, "StartSeedPuzzleButton", "Start Puzzle From Code", StartPuzzleFromCodeOrExisting, false);
+            CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Puzzle", StartPuzzleFromCodeOrExisting, true);
+            CreateMenuSpacer(_menuPanel.transform, "CreatePuzzleGroupSpacer", 14f);
             CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
             CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Open Configuration", OpenConfigurationStub, false);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
@@ -1129,6 +1129,24 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
+         * Create vertical spacing in the main menu layout.
+         *
+         * @param parent Parent transform.
+         * @param objectName Name for the spacer game object.
+         * @param height Spacer height in pixels.
+         */
+        private static void CreateMenuSpacer(Transform parent, string objectName, float height)
+        {
+            var spacerGO = new GameObject(objectName, typeof(RectTransform), typeof(CanvasRenderer));
+            spacerGO.transform.SetParent(parent, false);
+
+            var layout = spacerGO.AddComponent<LayoutElement>();
+            layout.preferredHeight = height;
+            layout.minHeight = height;
+            layout.flexibleHeight = 0f;
+        }
+
+        /**
          * Create a styled button under a parent transform.
          *
          * @param parent Parent transform.
@@ -1349,8 +1367,8 @@ namespace Sudoku.Scripts.UI
                 rowLayout = rowGO.AddComponent<LayoutElement>();
             }
 
-            rowLayout.preferredHeight = 46f;
-            rowLayout.minHeight = 46f;
+            rowLayout.preferredHeight = 34f;
+            rowLayout.minHeight = 34f;
             rowLayout.flexibleHeight = 0f;
 
             var hlg = rowGO.GetComponent<HorizontalLayoutGroup>();
@@ -1400,8 +1418,8 @@ namespace Sudoku.Scripts.UI
 
             layout.preferredWidth = 500f;
             layout.minWidth = 480f;
-            layout.preferredHeight = 38f;
-            layout.minHeight = 38f;
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
             layout.flexibleWidth = 1f;
             layout.flexibleHeight = 0f;
 
