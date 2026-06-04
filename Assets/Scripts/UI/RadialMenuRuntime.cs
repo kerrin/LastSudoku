@@ -104,6 +104,7 @@ namespace Sudoku.Scripts.UI
         public float SubActionLineSpacing = 2f;
 
         public bool IsOpen { get; private set; }
+        public bool ValueOnlyMode { get; set; }
         public RadialMenuSegmentId HoveredSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public RadialMenuSegmentId SelectedSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public Vector2 OpenScreenPosition { get; private set; }
@@ -224,6 +225,12 @@ namespace Sudoku.Scripts.UI
             {
                 HoveredSegmentId = ResolveSegment(screenPosition);
                 _hoveredDigitActionType = ResolveDigitActionType(screenPosition, HoveredSegmentId);
+            }
+
+            if (HoveredSegmentId != RadialMenuSegmentId.None && !IsSegmentEnabled(HoveredSegmentId))
+            {
+                HoveredSegmentId = RadialMenuSegmentId.None;
+                _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
             }
             SelectedSegmentId = HoveredSegmentId;
             var result = BuildSelection(SelectedSegmentId, _hoveredDigitActionType);
@@ -461,8 +468,11 @@ namespace Sudoku.Scripts.UI
             float endAngle = centerAngle - 18f + 2f;
 
             DrawDigitWedgeBand(segmentId, ResolvePrimaryDigitAction(segmentId), GetLabel(segmentId), 0, enabled, startAngle, endAngle);
-            DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
-            DrawDigitWedgeBand(segmentId, RadialDigitActionType.RemoveCandidate, "-", 2, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.RemoveCandidate), startAngle, endAngle);
+            if (!ValueOnlyMode)
+            {
+                DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
+                DrawDigitWedgeBand(segmentId, RadialDigitActionType.RemoveCandidate, "-", 2, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.RemoveCandidate), startAngle, endAngle);
+            }
         }
 
         private void DrawDigitWedgeBand(RadialMenuSegmentId segmentId, RadialDigitActionType actionType, string label, int slotIndex, bool enabled, float startAngle, float endAngle)
@@ -537,6 +547,7 @@ namespace Sudoku.Scripts.UI
         private RadialDigitActionType ResolveDigitActionType(Vector2 screenPosition, RadialMenuSegmentId segmentId)
         {
             if (!IsDigitSegment(segmentId)) return RadialDigitActionType.DefaultDigit;
+            if (ValueOnlyMode) return ResolvePrimaryDigitAction(segmentId);
             if (_isGivenCell) return RadialDigitActionType.DefaultDigit;
 
             float radius = (screenPosition - DisplayGuiPosition).magnitude;
@@ -551,6 +562,7 @@ namespace Sudoku.Scripts.UI
 
         private bool IsDigitSubActionEnabled(RadialMenuSegmentId segmentId, RadialDigitActionType actionType)
         {
+            if (ValueOnlyMode) return false;
             if (_isGivenCell) return false;
 
             var digit = SegmentIdToDigit(segmentId);
@@ -578,6 +590,11 @@ namespace Sudoku.Scripts.UI
         {
             segmentId = RadialMenuSegmentId.None;
             actionType = RadialDigitActionType.DefaultDigit;
+
+            if (ValueOnlyMode)
+            {
+                return false;
+            }
 
             for (int i = 0; i < OuterOrder.Length; i++)
             {
@@ -1018,6 +1035,11 @@ namespace Sudoku.Scripts.UI
 
         private float GetDigitBandThickness()
         {
+            if (ValueOnlyMode)
+            {
+                return GetOuterActionRadius() - GetInnerActionRadius();
+            }
+
             return (GetOuterActionRadius() - GetInnerActionRadius()) / 3f;
         }
 
@@ -1074,7 +1096,35 @@ namespace Sudoku.Scripts.UI
         {
             if (segmentId == RadialMenuSegmentId.TopNoAction)
             {
+                if (ValueOnlyMode)
+                {
+                    return false;
+                }
+
                 return _currentCellValue.HasValue;
+            }
+
+            if (ValueOnlyMode && IsDigitSegment(segmentId))
+            {
+                if (_isGivenCell)
+                {
+                    return false;
+                }
+
+                int? digit = SegmentIdToDigit(segmentId);
+                if (!digit.HasValue)
+                {
+                    return false;
+                }
+
+                if (_currentCellValue.HasValue)
+                {
+                    // When a value is set, only allow selecting the same digit to clear it.
+                    return _currentCellValue.Value == digit.Value;
+                }
+
+                // For empty cells, only allow legal candidates.
+                return _digitCandidatePresent[digit.Value];
             }
 
             if (!_isGivenCell) return true;

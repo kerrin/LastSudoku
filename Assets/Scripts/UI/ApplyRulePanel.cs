@@ -236,6 +236,8 @@ public class ApplyRulePanel : MonoBehaviour
         // appear regardless of whether candidates have been initialised.
         CreateValidateRow(_contentRoot);
 
+        var usedRuleNames = new System.Collections.Generic.HashSet<string>();
+
         // If candidates have not yet been initialised, show only the Initialise
         // Candidates entry and hide other rules until it has been run.
         if (!Runner.CandidatesInitialised)
@@ -261,7 +263,8 @@ public class ApplyRulePanel : MonoBehaviour
             bool applies = (preview != null && preview.Apply) || can;
             if (!applies) continue;
 
-            CreateRuleRow(_contentRoot, rule, preview);
+            bool usedInAnalysis = usedRuleNames.Contains(rule.GetType().Name);
+            CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis);
             created++;
         }
         // Optionally add a header summary
@@ -272,7 +275,7 @@ public class ApplyRulePanel : MonoBehaviour
         if (contentRect != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
     }
 
-    private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview)
+    private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview, bool usedInAnalysis)
     {
         var ruleGO = new GameObject(rule.GetType().Name + "_Row", typeof(RectTransform));
         ruleGO.transform.SetParent(parent, false);
@@ -287,7 +290,9 @@ public class ApplyRulePanel : MonoBehaviour
         le.preferredHeight = 36f;
 
         var btnImg = ruleGO.AddComponent<Image>();
-        btnImg.color = new Color(1f, 1f, 1f, 0.02f);
+        btnImg.color = usedInAnalysis
+            ? new Color(0.17f, 0.42f, 0.2f, 0.85f)
+            : new Color(1f, 1f, 1f, 0.02f);
         var button = ruleGO.AddComponent<Button>();
 
         // Label

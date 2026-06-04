@@ -445,10 +445,13 @@ namespace Sudoku.Scripts.UI
                         _isHovering = false; // prevent onExit from restoring after Refresh() destroys the rows
                         if (runner?.CurrentBoard == null) return;
                         runner.CurrentBoard.SeekChangeLogIndex(0);
+                        runner.SyncCandidatesForCurrentBoard();
                         runner.ClearPreview();
                         runner.SetLastRuleResultFromChangeLogRange(0, 0);
+                        runner.RunCreationSolveAnalysisIfNeeded();
                         Refresh();
                         foreach (var p in FindObjectsByType<ApplyRulePanel>()) p.RefreshList();
+                        foreach (var p in FindObjectsByType<CreateModeStatusPanel>()) p.RefreshStatus();
                         ChangeLogRuntimeControls.RefreshButtonStates();
                     },
                     onEnter: () =>
@@ -471,10 +474,13 @@ namespace Sudoku.Scripts.UI
                             _isHovering = false; // prevent onExit from restoring after Refresh() destroys the rows
                             if (runner?.CurrentBoard == null) return;
                             runner.CurrentBoard.SeekChangeLogIndex(g.EndIndex);
+                            runner.SyncCandidatesForCurrentBoard();
                             try { runner.SetLastRuleResultFromChangeLogRange(g.StartIndex, g.EndIndex); }
                             catch (Exception) { runner?.ClearPreview(); }
+                            runner.RunCreationSolveAnalysisIfNeeded();
                             Refresh();
                             foreach (var p in FindObjectsByType<ApplyRulePanel>()) p.RefreshList();
+                            foreach (var p in FindObjectsByType<CreateModeStatusPanel>()) p.RefreshStatus();
                             ChangeLogRuntimeControls.RefreshButtonStates();
                         },
                         onEnter: () =>

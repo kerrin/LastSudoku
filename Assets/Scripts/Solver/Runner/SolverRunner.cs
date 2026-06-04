@@ -6,6 +6,12 @@ using Sudoku.Scripts.UI;
 
 namespace Sudoku.Solver
 {
+    public enum BoardInteractionMode
+    {
+        Puzzle = 0,
+        PuzzleCreation = 1
+    }
+
     /**
      * Temporary Simple Unity runner component to load a 9x9 puzzle from inspector rows
      * and execute the registered rule engine. Use the context menu to run steps.
@@ -23,6 +29,7 @@ namespace Sudoku.Solver
         public SolverEngine Engine;
 
         private Board _board;
+        private readonly List<string> _lastCreationSolveRuleNames = new List<string>();
 
         /**
          * Expose the currently loaded board (may be null until loaded).
@@ -46,6 +53,20 @@ namespace Sudoku.Solver
         public RuleResult PreviewRuleResult { get; private set; }
         /** Whether candidates have been initialised for the current board. */
         public bool CandidatesInitialised { get; private set; } = false;
+        /** Current board interaction mode used by UI and edit operations. */
+        public BoardInteractionMode InteractionMode { get; private set; } = BoardInteractionMode.Puzzle;
+        /** True when the board is being edited as a blank/new puzzle (value-only edits). */
+        public bool IsPuzzleCreationMode => InteractionMode == BoardInteractionMode.PuzzleCreation;
+        /** Latest creation-mode solver analysis status message shown by runtime UI. */
+        public string LastCreationSolveStatusMessage { get; private set; } = string.Empty;
+        /** True when the latest creation-mode solver analysis found a complete solution. */
+        public bool LastCreationSolveFoundSolution { get; private set; }
+        /** Ordered unique rule names used by the latest creation-mode solver analysis. */
+        public IReadOnlyList<string> LastCreationSolveRuleNames => _lastCreationSolveRuleNames;
+        /** True when the current board state has no immediate contradictions. */
+        public bool LastBoardStateIsPossible { get; private set; } = true;
+        /** Message describing the latest board-state validation result. */
+        public string LastBoardStateValidationMessage { get; private set; } = "Board state has no immediate contradictions.";
 
         private void Awake()
         {
@@ -119,6 +140,51 @@ namespace Sudoku.Solver
             _board = board;
             Debug.Log($"SolverRunner.LoadBoardFromRows: runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()}");
             CandidatesInitialised = false;
+            SetInteractionMode(BoardInteractionMode.Puzzle);
+            ClearCreationSolveAnalysis();
+            ValidateCurrentBoardState();
+        }
+
+        /**
+         * Create an empty 9x9 board for puzzle creation mode.
+         * Cells start blank and editable, with valid candidate marks.
+         */
+        public void CreateBlankBoard()
+        {
+            var board = new Board(9, 3, 3);
+            for (int r = 0; r < board.Size; r++)
+            {
+                for (int c = 0; c < board.Size; c++)
+                {
+                    var cell = new Cell(r, c, null, false);
+                    board.Cells[r, c] = cell;
+                }
+            }
+
+            _board = board;
+            EnsureEngine();
+            EnableAllRegisteredRules();
+            SyncCandidatesForCurrentBoard();
+            CandidatesInitialised = true;
+            LastAppliedRule = null;
+            LastRuleResult = null;
+            PreviewRuleResult = null;
+            SetInteractionMode(BoardInteractionMode.PuzzleCreation);
+            RunCreationSolveAnalysisIfNeeded();
+        }
+
+        /**
+         * Set the interaction mode used for board edits and runtime UI behavior.
+         *
+         * @param mode Target interaction mode.
+         */
+        public void SetInteractionMode(BoardInteractionMode mode)
+        {
+            InteractionMode = mode;
+            if (mode != BoardInteractionMode.PuzzleCreation)
+            {
+                ClearCreationSolveAnalysis();
+            }
         }
 
         /**
@@ -454,11 +520,65 @@ namespace Sudoku.Solver
         public ManualEditExecutionResult ExecuteManualSetValue(int row, int column, int value)
         {
             if (_board == null) LoadBoardFromRows();
-            var execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                var cell = _board != null && _board.Cells != null && row >= 0 && column >= 0 && row < _board.Size && column < _board.Size
+                    ? _board.Cells[row, column]
+                    : null;
+
+                if (cell == null)
+                {
+                    execution = new ManualEditExecutionResult
+                    {
+                        Applied = false,
+                        Description = "Target cell is missing.",
+                        RuleResult = new RuleResult
+                        {
+                            Apply = false,
+                            Description = "Target cell is missing."
+                        }
+                    };
+                }
+                else if (cell.Value.HasValue && cell.Value.Value != value)
+                {
+                    execution = new ManualEditExecutionResult
+                    {
+                        Applied = false,
+                        Description = "Clear the current value first, then choose a valid candidate.",
+                        RuleResult = new RuleResult
+                        {
+                            Apply = false,
+                            Description = "Clear the current value first, then choose a valid candidate."
+                        }
+                    };
+                }
+                else if (!cell.Value.HasValue && (cell.Candidates == null || !cell.Candidates.Contains(value)))
+                {
+                    execution = new ManualEditExecutionResult
+                    {
+                        Applied = false,
+                        Description = $"Value {value} is not a valid candidate for r{row + 1}c{column + 1}.",
+                        RuleResult = new RuleResult
+                        {
+                            Apply = false,
+                            Description = $"Value {value} is not a valid candidate for r{row + 1}c{column + 1}."
+                        }
+                    };
+                }
+                else
+                {
+                    execution = ManualCellEditCore.ApplySetValueValueOnly(_board, row, column, value);
+                }
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
+            }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            RefreshRuntimeControlsAfterManualEdit(execution);
+            FinalizeManualExecution(execution);
             return execution;
         }
 
@@ -487,11 +607,28 @@ namespace Sudoku.Solver
         public ManualEditExecutionResult ExecuteManualAddCandidate(int row, int column, int candidate)
         {
             if (_board == null) LoadBoardFromRows();
-            var execution = ManualCellEditCore.ApplyAddCandidate(_board, row, column, candidate);
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode only supports setting or clearing cell values.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode only supports setting or clearing cell values."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyAddCandidate(_board, row, column, candidate);
+            }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            RefreshRuntimeControlsAfterManualEdit(execution);
+            FinalizeManualExecution(execution);
             return execution;
         }
 
@@ -505,11 +642,38 @@ namespace Sudoku.Solver
         public ManualEditExecutionResult ExecuteManualClearValue(int row, int column)
         {
             if (_board == null) LoadBoardFromRows();
-            var execution = ManualCellEditCore.ApplyClearValue(_board, row, column);
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                var cell = _board != null && _board.Cells != null && row >= 0 && column >= 0 && row < _board.Size && column < _board.Size
+                    ? _board.Cells[row, column]
+                    : null;
+                if (cell == null || !cell.Value.HasValue)
+                {
+                    execution = new ManualEditExecutionResult
+                    {
+                        Applied = false,
+                        Description = "Cell is already empty.",
+                        RuleResult = new RuleResult
+                        {
+                            Apply = false,
+                            Description = "Cell is already empty."
+                        }
+                    };
+                }
+                else
+                {
+                    execution = ManualCellEditCore.ApplySetValueValueOnly(_board, row, column, cell.Value.Value);
+                }
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyClearValue(_board, row, column);
+            }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            RefreshRuntimeControlsAfterManualEdit(execution);
+            FinalizeManualExecution(execution);
             return execution;
         }
 
@@ -538,11 +702,28 @@ namespace Sudoku.Solver
         public ManualEditExecutionResult ExecuteManualRemoveCandidate(int row, int column, int candidate)
         {
             if (_board == null) LoadBoardFromRows();
-            var execution = ManualCellEditCore.ApplyRemoveCandidate(_board, row, column, candidate);
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode only supports setting or clearing cell values.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode only supports setting or clearing cell values."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyRemoveCandidate(_board, row, column, candidate);
+            }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            RefreshRuntimeControlsAfterManualEdit(execution);
+            FinalizeManualExecution(execution);
             return execution;
         }
 
@@ -558,11 +739,28 @@ namespace Sudoku.Solver
         public ManualEditExecutionResult ExecuteManualUnitCandidateAction(int row, int column, int candidate, bool addToUnsolvedCells)
         {
             if (_board == null) LoadBoardFromRows();
-            var execution = ManualCellEditCore.ApplyUnitCandidateAction(_board, row, column, candidate, addToUnsolvedCells);
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode only supports setting or clearing cell values.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode only supports setting or clearing cell values."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyUnitCandidateAction(_board, row, column, candidate, addToUnsolvedCells);
+            }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
-            RefreshRuntimeControlsAfterManualEdit(execution);
+            FinalizeManualExecution(execution);
             return execution;
         }
 
@@ -595,6 +793,338 @@ namespace Sudoku.Solver
             }
 
             ChangeLogRuntimeControls.RefreshButtonStates();
+        }
+
+        /**
+         * Run all post-edit UI refresh and creation-solve analysis hooks.
+         *
+         * @param execution Manual edit execution result.
+         */
+        private void FinalizeManualExecution(ManualEditExecutionResult execution)
+        {
+            RefreshRuntimeControlsAfterManualEdit(execution);
+            if (execution != null && execution.Applied)
+            {
+                if (IsPuzzleCreationMode)
+                {
+                    SyncCandidatesForCurrentBoard();
+                }
+                else
+                {
+                    ValidateCurrentBoardState();
+                }
+                RunCreationSolveAnalysisIfNeeded();
+            }
+        }
+
+        /**
+         * Recompute all candidates from the current values on the board.
+         * Solved cells have empty candidate sets. Unsolved cells keep only legal values.
+         */
+        public void SyncCandidatesForCurrentBoard()
+        {
+            if (_board == null || _board.Cells == null)
+            {
+                return;
+            }
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell == null)
+                    {
+                        continue;
+                    }
+
+                    if (cell.Candidates == null)
+                    {
+                        cell.Candidates = new HashSet<int>();
+                    }
+
+                    cell.Candidates.Clear();
+                    if (cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    for (int v = 1; v <= _board.Size; v++)
+                    {
+                        cell.Candidates.Add(v);
+                    }
+
+                    foreach (var peer in _board.GetPeers(cell))
+                    {
+                        if (peer != null && peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
+            }
+
+            ValidateCurrentBoardState();
+        }
+
+        /**
+         * Validate whether the current board state is still potentially solvable.
+         * Detects duplicate-value conflicts, zero-candidate dead cells, and full-solver contradictions.
+         */
+        public void ValidateCurrentBoardState()
+        {
+            if (_board == null || _board.Cells == null)
+            {
+                LastBoardStateIsPossible = true;
+                LastBoardStateValidationMessage = "No active board.";
+                return;
+            }
+
+            if (!_board.IsValid())
+            {
+                LastBoardStateIsPossible = false;
+                LastBoardStateValidationMessage = "Invalid board: duplicate value exists in a row, column, or box.";
+                return;
+            }
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell == null || cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (cell.Candidates == null || cell.Candidates.Count == 0)
+                    {
+                        LastBoardStateIsPossible = false;
+                        LastBoardStateValidationMessage = $"Invalid board: r{r + 1}c{c + 1} has no candidates.";
+                        return;
+                    }
+                }
+            }
+
+            var conflicts = _board.FindConflicts();
+            if (conflicts != null && conflicts.Count > 0)
+            {
+                bool unsolvable = conflicts.Exists(c => c != null && (c.Row < 0 || c.Column < 0));
+                LastBoardStateIsPossible = false;
+                LastBoardStateValidationMessage = unsolvable
+                    ? "Board is currently unsolvable with the full rule set."
+                    : "Invalid board: conflicts were detected.";
+                return;
+            }
+
+            LastBoardStateIsPossible = true;
+            LastBoardStateValidationMessage = "Board state is currently possible.";
+        }
+
+        /**
+         * Enable every rule currently registered in this runner's registry.
+         */
+        private void EnableAllRegisteredRules()
+        {
+            if (Registry == null)
+            {
+                return;
+            }
+
+            var withStatus = Registry.GetRulesWithStatus();
+            for (int i = 0; i < withStatus.Count; i++)
+            {
+                var entry = withStatus[i];
+                if (entry.rule == null)
+                {
+                    continue;
+                }
+
+                Registry.SetEnabled(entry.rule.GetType().Name, true);
+            }
+        }
+
+        /**
+         * Run solver analysis for puzzle creation mode.
+         * The analysis first uses currently enabled rules, then falls back to all rules if needed.
+         */
+        public void RunCreationSolveAnalysisIfNeeded()
+        {
+            if (!IsPuzzleCreationMode)
+            {
+                return;
+            }
+
+            if (_board == null || _board.Cells == null)
+            {
+                ClearCreationSolveAnalysis();
+                return;
+            }
+
+            bool solvedWithEnabled = TrySolveBoardCopy(includeAllRules: false, out var enabledRuleNames);
+            bool solvedWithAll = solvedWithEnabled;
+            List<string> allRuleNames = new List<string>();
+
+            if (!solvedWithEnabled)
+            {
+                solvedWithAll = TrySolveBoardCopy(includeAllRules: true, out allRuleNames);
+            }
+
+            _lastCreationSolveRuleNames.Clear();
+            AppendDistinctRules(_lastCreationSolveRuleNames, enabledRuleNames);
+            AppendDistinctRules(_lastCreationSolveRuleNames, allRuleNames);
+
+            LastCreationSolveFoundSolution = solvedWithEnabled || solvedWithAll;
+            if (solvedWithEnabled)
+            {
+                LastCreationSolveStatusMessage = "Solution found using the currently enabled rules.";
+            }
+            else if (solvedWithAll)
+            {
+                LastCreationSolveStatusMessage = "Solution found only when all rules were allowed.";
+            }
+            else
+            {
+                LastCreationSolveStatusMessage = "No complete solution found yet with enabled rules or with all rules.";
+            }
+        }
+
+        /**
+         * Clear cached puzzle-creation solver analysis state.
+         */
+        private void ClearCreationSolveAnalysis()
+        {
+            LastCreationSolveFoundSolution = false;
+            LastCreationSolveStatusMessage = string.Empty;
+            _lastCreationSolveRuleNames.Clear();
+        }
+
+        /**
+         * Attempt to solve a cloned board, optionally forcing all rules enabled.
+         *
+         * @param includeAllRules When true, all registered rule types are enabled for this solve attempt.
+         * @param ruleNames Ordered unique rule names used in the solve attempt.
+         * @returns True if the cloned board reached a full solution.
+         */
+        private bool TrySolveBoardCopy(bool includeAllRules, out List<string> ruleNames)
+        {
+            ruleNames = new List<string>();
+            if (_board == null || _board.Cells == null)
+            {
+                return false;
+            }
+
+            var boardCopy = CloneBoardForSolve(_board);
+            var registryCopy = CloneRegistry(includeAllRules);
+            var engine = new SolverEngine(registryCopy);
+            bool solved = engine.Solve(boardCopy, out var steps);
+
+            if (steps != null)
+            {
+                for (int i = 0; i < steps.Count; i++)
+                {
+                    var rule = steps[i].rule;
+                    if (rule == null)
+                    {
+                        continue;
+                    }
+
+                    string name = rule.GetType().Name;
+                    if (!ruleNames.Contains(name))
+                    {
+                        ruleNames.Add(name);
+                    }
+                }
+            }
+
+            return solved;
+        }
+
+        /**
+         * Create a deep-copy board containing only values/givens and empty candidate sets.
+         *
+         * @param source Source board.
+         * @returns Cloned board for analysis.
+         */
+        private static Board CloneBoardForSolve(Board source)
+        {
+            var copy = new Board(source.Size, source.BoxWidth, source.BoxHeight);
+            for (int r = 0; r < source.Size; r++)
+            {
+                for (int c = 0; c < source.Size; c++)
+                {
+                    var sourceCell = source.Cells[r, c];
+                    var cloned = new Cell(r, c, sourceCell?.Value, sourceCell != null && sourceCell.IsGiven);
+                    cloned.Candidates.Clear();
+                    copy.Cells[r, c] = cloned;
+                }
+            }
+
+            return copy;
+        }
+
+        /**
+         * Clone the current rule registry into a new instance, preserving enable state when requested.
+         *
+         * @param includeAllRules When true, all cloned rules stay enabled.
+         * @returns Cloned rule registry.
+         */
+        private RuleRegistry CloneRegistry(bool includeAllRules)
+        {
+            var clone = new RuleRegistry();
+            if (Registry == null)
+            {
+                clone.RegisterMinimal();
+                clone.RegisterMedium();
+                clone.RegisterAdvanced();
+                return clone;
+            }
+
+            foreach (var rule in Registry.Rules)
+            {
+                if (rule == null)
+                {
+                    continue;
+                }
+
+                if (System.Activator.CreateInstance(rule.GetType()) is ISudokuRule recreated)
+                {
+                    clone.Register(recreated);
+                    if (!includeAllRules && !Registry.IsEnabled(rule))
+                    {
+                        clone.SetEnabled(recreated.GetType().Name, false);
+                    }
+                }
+            }
+
+            return clone;
+        }
+
+        /**
+         * Append rule names to a destination list while preserving insertion order and uniqueness.
+         *
+         * @param destination Target list.
+         * @param source Source names to append.
+         */
+        private static void AppendDistinctRules(List<string> destination, IEnumerable<string> source)
+        {
+            if (destination == null || source == null)
+            {
+                return;
+            }
+
+            foreach (var ruleName in source)
+            {
+                if (string.IsNullOrWhiteSpace(ruleName))
+                {
+                    continue;
+                }
+
+                if (!destination.Contains(ruleName))
+                {
+                    destination.Add(ruleName);
+                }
+            }
         }
 
         /**
@@ -675,6 +1205,8 @@ namespace Sudoku.Solver
             LastAppliedRule = rule;
             LastRuleResult = res;
             PreviewRuleResult = null;
+            ValidateCurrentBoardState();
+            RunCreationSolveAnalysisIfNeeded();
             Debug.Log($"SolverRunner.RunRule: enacted {rule.GetType().Name} runner.EntityId={this.GetEntityId()} board.hash={_board.GetHashCode()} changes={res.Changes?.Count ?? 0}");
         }
 

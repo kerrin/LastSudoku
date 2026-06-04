@@ -321,6 +321,16 @@ namespace Sudoku.Solver
             return Runner != null && Runner.CurrentBoard != null && Runner.CurrentBoard.Cells != null && Runner.CurrentBoard.Size > 0;
         }
 
+        /**
+         * Determine whether board edits should be restricted to value-only operations.
+         *
+         * @returns True when the runner is in puzzle creation mode.
+         */
+        private bool IsValueOnlyEditMode()
+        {
+            return Runner != null && Runner.IsPuzzleCreationMode;
+        }
+
         private void LogHoldDebug(string message)
         {
             if (!EnableHoldDebugLogs) return;
@@ -358,6 +368,7 @@ namespace Sudoku.Solver
                 SelectedHoldRow < Runner.CurrentBoard.Size && SelectedHoldColumn < Runner.CurrentBoard.Size)
             {
                 var cell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
+                menu.ValueOnlyMode = IsValueOnlyEditMode();
                 menu.SetCellContext(cell?.Value, cell?.Candidates, cell != null && cell.IsGiven);
             }
             LogHoldDebug($"OpenRadialMenu at {center} using label='No Action' menu={(menu != null ? menu.name : "(null)")}");
@@ -691,6 +702,33 @@ namespace Sudoku.Solver
                 LastRadialOutcomeMessage = "No action selected.";
                 Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
                 LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (IsValueOnlyEditMode())
+            {
+                if (!selection.Digit.HasValue)
+                {
+                    LastRadialOutcomeMessage = "No action selected.";
+                    Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
+                    LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                    return;
+                }
+
+                var valueOnlyExecution = selection.DigitActionType == RadialDigitActionType.ClearValue
+                    ? Runner.ExecuteManualClearValue(SelectedHoldRow, SelectedHoldColumn)
+                    : Runner.ExecuteManualSetValue(SelectedHoldRow, SelectedHoldColumn, selection.Digit.Value);
+
+                LastRadialOutcomeMessage = valueOnlyExecution != null && !string.IsNullOrWhiteSpace(valueOnlyExecution.Description)
+                    ? valueOnlyExecution.Description
+                    : (valueOnlyExecution != null && valueOnlyExecution.Applied ? "Manual edit applied." : "No manual edit applied.");
+
+                if (Runner.LastRuleResult != null && Runner.LastRuleResult.Apply)
+                {
+                    _lastSeenRuleResult = Runner.LastRuleResult;
+                }
+
+                LogHoldDebug($"Radial action completed: operation=ValueOnly digit={selection.Digit.Value} applied={(valueOnlyExecution != null && valueOnlyExecution.Applied)} outcome='{LastRadialOutcomeMessage}'");
                 return;
             }
 

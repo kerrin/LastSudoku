@@ -92,7 +92,9 @@ namespace Sudoku.Scripts.UI
                 if (runner != null && runner.CurrentBoard != null)
                 {
                     runner.CurrentBoard.UndoLast();
+                    runner.SyncCandidatesForCurrentBoard();
                     UpdateDisplayFromCurrentState(runner);
+                    runner.RunCreationSolveAnalysisIfNeeded();
                     RefreshPanels();
                 }
             });
@@ -104,7 +106,9 @@ namespace Sudoku.Scripts.UI
                 if (runner != null && runner.CurrentBoard != null)
                 {
                     runner.CurrentBoard.RedoNext();
+                    runner.SyncCandidatesForCurrentBoard();
                     UpdateDisplayFromCurrentState(runner);
+                    runner.RunCreationSolveAnalysisIfNeeded();
                     RefreshPanels();
                 }
             });
@@ -163,11 +167,13 @@ namespace Sudoku.Scripts.UI
             foreach (var p in changeLogPanels) p.Refresh();
             var applyPanels = UnityEngine.Object.FindObjectsByType<ApplyRulePanel>();
             foreach (var p in applyPanels) p.RefreshList();
+            var statusPanels = UnityEngine.Object.FindObjectsByType<CreateModeStatusPanel>();
+            foreach (var p in statusPanels) p.RefreshStatus();
             UpdateButtonStates();
         }
 
         /**
-         * Static helper so external components (Jump buttons, ApplyRulePanel) can trigger
+         * Static helper so external components (Jump buttons, status panels) can trigger
          * a button-state refresh without taking a direct reference to this instance.
          */
         public static void RefreshButtonStates()

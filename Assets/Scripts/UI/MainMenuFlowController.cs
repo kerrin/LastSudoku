@@ -239,6 +239,12 @@ namespace Sudoku.Scripts.UI
             {
                 StartCoroutine(EnsurePlayPanelDeferred());
             }
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
         }
 
         /**
@@ -483,7 +489,15 @@ namespace Sudoku.Scripts.UI
             }
 
             _runner.LoadBoardFromRows();
+            _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
+            ConfigureBoardVisualizerForRunnerMode();
             EnterPlayMode();
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
         }
 
         /**
@@ -507,7 +521,44 @@ namespace Sudoku.Scripts.UI
          */
         private void CreateNewPuzzleStub()
         {
-            Debug.Log("MainMenuFlowController: Create New Puzzle is not implemented yet.");
+            ResolveSceneReferences();
+            if (_runner == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No SolverRunner found. Cannot create a new puzzle board.");
+                return;
+            }
+
+            _runner.CreateBlankBoard();
+            ConfigureBoardVisualizerForRunnerMode();
+            EnterPlayMode();
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
+        }
+
+        /**
+         * Align board visualizer rendering defaults with the runner interaction mode.
+         */
+        private void ConfigureBoardVisualizerForRunnerMode()
+        {
+            if (_boardVisualizer == null || _runner == null)
+            {
+                return;
+            }
+
+            if (_runner.IsPuzzleCreationMode)
+            {
+                _boardVisualizer.ShowCandidates = true;
+                _boardVisualizer.DigitActionMode = BoardVisualizer.NumericRadialActionMode.SetValue;
+            }
+            else
+            {
+                _boardVisualizer.ShowCandidates = true;
+                _boardVisualizer.DigitActionMode = BoardVisualizer.NumericRadialActionMode.ModifierDriven;
+            }
         }
 
         /**

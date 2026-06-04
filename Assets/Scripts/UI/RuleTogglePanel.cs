@@ -37,6 +37,7 @@ public class RuleTogglePanel : MonoBehaviour
 
     private RuleRegistry _registry;
     private ApplyRulePanel _applyRulePanel;
+    private CreateModeStatusPanel _createModeStatusPanel;
 
     /**
      * Simplified Start: Validate runner/registry, build panel, then finalize layout.
@@ -813,15 +814,27 @@ public class RuleTogglePanel : MonoBehaviour
 
     private void RefreshApplyRulesPanel()
     {
-        if (_applyRulePanel == null)
+        if (Runner != null)
         {
-            _applyRulePanel = FindAnyObjectByType<ApplyRulePanel>();
+            Runner.RunCreationSolveAnalysisIfNeeded();
+        }
+
+        if (_createModeStatusPanel == null)
+        {
+            _createModeStatusPanel = FindAnyObjectByType<CreateModeStatusPanel>();
         }
 
         if (_applyRulePanel != null)
         {
             _applyRulePanel.RefreshList();
         }
+
+        if (_createModeStatusPanel != null)
+        {
+            _createModeStatusPanel.RefreshStatus();
+        }
+
+        ChangeLogRuntimeControls.RefreshButtonStates();
     }
 
     private Canvas CreateDefaultCanvas()

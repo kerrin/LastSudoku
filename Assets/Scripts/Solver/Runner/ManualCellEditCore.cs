@@ -36,6 +36,62 @@ namespace Sudoku.Solver
     public static class ManualCellEditCore
     {
         /**
+         * Apply value-only manual edit for puzzle creation mode.
+         * This operation only changes the cell value (or clears it when the same value is selected)
+         * and does not add/remove candidates on the edited cell or its peers.
+         *
+         * @param board Source board.
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param value Digit to place.
+         * @returns Operation outcome and optional applied RuleResult.
+         */
+        public static ManualEditExecutionResult ApplySetValueValueOnly(Board board, int row, int column, int value)
+        {
+            if (!TryGetEditableCell(board, row, column, out var cell, out var reason))
+            {
+                return CreateNoOp(reason);
+            }
+
+            if (value < 1 || value > board.Size)
+            {
+                return CreateNoOp($"Value {value} is outside board range 1..{board.Size}.");
+            }
+
+            var result = new RuleResult
+            {
+                Apply = true,
+                Description = string.Empty
+            };
+
+            if (cell.Value.HasValue && cell.Value.Value == value)
+            {
+                result.Description = $"Manual clear value at r{row + 1}c{column + 1}";
+                result.Changes.Add(new CellChange
+                {
+                    Row = row,
+                    Column = column,
+                    ClearValue = true
+                });
+                return ApplyAndRecord(board, result, "ManualSetValueValueOnly");
+            }
+
+            result.Description = cell.Value.HasValue
+                ? $"Manual replace value at r{row + 1}c{column + 1}: {cell.Value.Value}->{value}"
+                : $"Manual set value r{row + 1}c{column + 1}={value}";
+
+            result.Changes.Add(new CellChange
+            {
+                Row = row,
+                Column = column,
+                NewValue = value,
+                ForceSetValue = true
+            });
+
+            return ApplyAndRecord(board, result, "ManualSetValueValueOnly");
+        }
+
+        /**
          * Resolve a smart-action placeholder for a target cell.
          *
          * @param board Source board.
