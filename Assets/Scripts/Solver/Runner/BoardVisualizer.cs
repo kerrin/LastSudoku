@@ -449,6 +449,7 @@ namespace Sudoku.Solver
                 // `_lastSeenRuleResult`), then the Runner.LastRuleResult fallback.
                 var activePreview = Runner.PreviewRuleResult != null && Runner.PreviewRuleResult.Apply;
                 var resultToShow = activePreview ? Runner.PreviewRuleResult : (_lastSeenRuleResult ?? Runner.LastRuleResult);
+                var validationConflictCells = Runner.LastBoardStateConflictCells;
 
                 // Log when the display source changes or preview toggles (throttled)
                 if (resultToShow != _lastLoggedResultToShow || activePreview != _lastLoggedPreviewActive)
@@ -516,6 +517,19 @@ namespace Sudoku.Solver
                                     DrawHighlight(cellRect, highlightColor);
                                     if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
                                 }
+                            }
+                        }
+                    }
+
+                    if (validationConflictCells != null)
+                    {
+                        for (int i = 0; i < validationConflictCells.Count; i++)
+                        {
+                            var conflict = validationConflictCells[i];
+                            if (conflict != null && conflict.Row == r && conflict.Column == c)
+                            {
+                                DrawHighlight(cellRect, new Color(1f, 0.18f, 0.18f, 0.62f));
+                                break;
                             }
                         }
                     }

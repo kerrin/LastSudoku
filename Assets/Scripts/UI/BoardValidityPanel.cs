@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using System.Text;
 
 /**
  * Runtime status panel that reports whether the current board is valid.
@@ -20,12 +21,14 @@ public class BoardValidityPanel : MonoBehaviour
 
     private struct BoardStateSnapshot
     {
-        public int FilledCount;
         public int ChangeLogIndex;
         public bool IsValid;
         public bool IsPossible;
+        public bool IsSolvedWithSelectedRules;
+        public bool IsSolvedWithAnyRules;
         public int ValidationMessageHash;
         public int SolveStatusHash;
+        public int RulesUsedHash;
         public bool IsCreationMode;
     }
 
@@ -73,36 +76,31 @@ public class BoardValidityPanel : MonoBehaviour
         }
 
         var board = Runner.CurrentBoard;
-        int filledCount = 0;
-        for (int r = 0; r < board.Size; r++)
-        {
-            for (int c = 0; c < board.Size; c++)
-            {
-                if (board.Cells[r, c] != null && board.Cells[r, c].Value.HasValue)
-                {
-                    filledCount++;
-                }
-            }
-        }
-
         bool isValid = board.IsValid();
+        string rulesUsed = Runner.LastCreationSolveRuleNames != null && Runner.LastCreationSolveRuleNames.Count > 0
+            ? string.Join("|", Runner.LastCreationSolveRuleNames)
+            : "none";
         var snapshot = new BoardStateSnapshot
         {
-            FilledCount = filledCount,
             ChangeLogIndex = board.ChangeLogIndex,
             IsValid = isValid,
             IsPossible = Runner.LastBoardStateIsPossible,
+            IsSolvedWithSelectedRules = Runner.LastCreationSolveFoundWithSelectedRules,
+            IsSolvedWithAnyRules = Runner.LastCreationSolveFoundSolution,
             ValidationMessageHash = (Runner.LastBoardStateValidationMessage ?? string.Empty).GetHashCode(),
             SolveStatusHash = (Runner.LastCreationSolveStatusMessage ?? string.Empty).GetHashCode(),
+            RulesUsedHash = rulesUsed.GetHashCode(),
             IsCreationMode = Runner.IsPuzzleCreationMode
         };
 
-        if (!force && snapshot.FilledCount == _lastSnapshot.FilledCount &&
-            snapshot.ChangeLogIndex == _lastSnapshot.ChangeLogIndex &&
+        if (!force && snapshot.ChangeLogIndex == _lastSnapshot.ChangeLogIndex &&
             snapshot.IsValid == _lastSnapshot.IsValid &&
             snapshot.IsPossible == _lastSnapshot.IsPossible &&
+            snapshot.IsSolvedWithSelectedRules == _lastSnapshot.IsSolvedWithSelectedRules &&
+            snapshot.IsSolvedWithAnyRules == _lastSnapshot.IsSolvedWithAnyRules &&
             snapshot.ValidationMessageHash == _lastSnapshot.ValidationMessageHash &&
             snapshot.SolveStatusHash == _lastSnapshot.SolveStatusHash &&
+            snapshot.RulesUsedHash == _lastSnapshot.RulesUsedHash &&
             snapshot.IsCreationMode == _lastSnapshot.IsCreationMode)
         {
             return;
@@ -111,28 +109,95 @@ public class BoardValidityPanel : MonoBehaviour
         _lastSnapshot = snapshot;
         _titleText.text = "Board Status";
         _statusText.text = isValid
-            ? $"Valid board. Filled cells: {filledCount}/{board.Size * board.Size}"
-            : $"Invalid board. Check row/column/box duplicates. Filled cells: {filledCount}/{board.Size * board.Size}";
+            ? "Valid board."
+            : "Invalid board. Check row/column/box duplicates.";
         _possibilityText.text = Runner.LastBoardStateValidationMessage;
+
+        var red = new Color(1f, 0.42f, 0.42f, 1f);
+        var amber = new Color(1f, 0.78f, 0.38f, 1f);
+        var green = new Color(0.62f, 1f, 0.62f, 1f);
 
         if (Runner.IsPuzzleCreationMode)
         {
-            string rulesUsed = Runner.LastCreationSolveRuleNames != null && Runner.LastCreationSolveRuleNames.Count > 0
-                ? string.Join(", ", Runner.LastCreationSolveRuleNames)
-                : "none";
-            _solveStatusText.text = $"{Runner.LastCreationSolveStatusMessage} Rules used: {rulesUsed}";
+            _solveStatusText.supportRichText = true;
+            _solveStatusText.color = Color.white;
+            _solveStatusText.text = BuildSolveStatusText(red, amber, green);
         }
         else
         {
             _solveStatusText.text = string.Empty;
         }
 
-        _background.color = Runner.LastBoardStateIsPossible
-            ? new Color(0.13f, 0.38f, 0.16f, 0.9f)
-            : new Color(0.45f, 0.16f, 0.16f, 0.9f);
+        _background.color = new Color(0.08f, 0.15f, 0.28f, 0.9f);
 
-        _possibilityText.color = Runner.LastBoardStateIsPossible ? new Color(0.9f, 1f, 0.9f, 1f) : new Color(1f, 0.85f, 0.85f, 1f);
-        _solveStatusText.color = Runner.LastCreationSolveFoundSolution ? new Color(0.95f, 1f, 0.92f, 1f) : new Color(1f, 0.93f, 0.82f, 1f);
+        _statusText.color = isValid ? green : red;
+        _possibilityText.color = Runner.LastBoardStateIsPossible ? green : red;
+    }
+
+    /**
+     * Build solve-status details with independent colors for selected-rules status,
+     * all-rules status, and the used-rules vertical list.
+     *
+     * @param red Color used for invalid or unsolved states.
+     * @param amber Color used for solvable-only-with-all-rules states.
+     * @param green Color used for solvable-with-selected-rules states.
+     * @returns Rich-text string for the solve status block.
+     */
+    private string BuildSolveStatusText(Color red, Color amber, Color green)
+    {
+        if (Runner == null)
+        {
+            return string.Empty;
+        }
+
+        string selectedText = Runner.LastCreationSolveFoundWithSelectedRules
+            ? "Selected rules: Solution found."
+            : "Selected rules: No complete solution found.";
+
+        Color selectedColor = Runner.LastCreationSolveFoundWithSelectedRules
+            ? green
+            : (Runner.LastCreationSolveFoundSolution ? amber : red);
+
+        string allRulesText = Runner.LastCreationSolveFoundSolution
+            ? "All rules: Solution found."
+            : "All rules: No complete solution found.";
+
+        Color allRulesColor = Runner.LastCreationSolveFoundSolution ? green : red;
+
+        var sb = new StringBuilder();
+        sb.AppendLine(Colorize(selectedText, selectedColor));
+        sb.AppendLine(Colorize(allRulesText, allRulesColor));
+        sb.AppendLine();
+        string rulesUsedLabel = Runner.LastCreationSolveFoundWithSelectedRules
+            ? "Selected Rules Used:"
+            : (Runner.LastCreationSolveFoundSolution ? "All Rules Used:" : "Selected Rules Used:");
+        sb.AppendLine(Colorize(rulesUsedLabel, allRulesColor));
+
+        if (Runner.LastCreationSolveRuleNames != null && Runner.LastCreationSolveRuleNames.Count > 0)
+        {
+            for (int i = 0; i < Runner.LastCreationSolveRuleNames.Count; i++)
+            {
+                sb.AppendLine(Colorize($"- {Runner.LastCreationSolveRuleNames[i]}", allRulesColor));
+            }
+        }
+        else
+        {
+            sb.AppendLine(Colorize("- none", allRulesColor));
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    /**
+     * Wrap text in a Unity rich-text color tag.
+     *
+     * @param text Content to colorize.
+     * @param color Color value.
+     * @returns Rich-text color-tagged string.
+     */
+    private static string Colorize(string text, Color color)
+    {
+        return $"<color=#{ColorUtility.ToHtmlStringRGB(color)}>{text}</color>";
     }
 
     /**

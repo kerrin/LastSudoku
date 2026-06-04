@@ -61,12 +61,18 @@ namespace Sudoku.Solver
         public string LastCreationSolveStatusMessage { get; private set; } = string.Empty;
         /** True when the latest creation-mode solver analysis found a complete solution. */
         public bool LastCreationSolveFoundSolution { get; private set; }
+        /** True when the latest creation-mode solver analysis found a solution with currently selected rules. */
+        public bool LastCreationSolveFoundWithSelectedRules { get; private set; }
         /** Ordered unique rule names used by the latest creation-mode solver analysis. */
         public IReadOnlyList<string> LastCreationSolveRuleNames => _lastCreationSolveRuleNames;
         /** True when the current board state has no immediate contradictions. */
         public bool LastBoardStateIsPossible { get; private set; } = true;
         /** Message describing the latest board-state validation result. */
         public string LastBoardStateValidationMessage { get; private set; } = "Board state has no immediate contradictions.";
+        /** Cells involved in the latest board-state validation issue (when any). */
+        public IReadOnlyList<UsedCell> LastBoardStateConflictCells => _lastBoardStateConflictCells;
+
+        private readonly List<UsedCell> _lastBoardStateConflictCells = new List<UsedCell>();
 
         private void Awake()
         {
@@ -108,10 +114,18 @@ namespace Sudoku.Solver
             foreach (var r in runners)
             {
                 if (r == this) continue;
+
+                // Remove only the duplicate SolverRunner component so we never
+                // accidentally delete designer-authored GameObject hierarchies.
+                if (Application.isPlaying)
+                {
+                    Destroy(r);
+                }
 #if UNITY_EDITOR
-                DestroyImmediate(r.gameObject);
-#else
-                Destroy(r.gameObject);
+                else
+                {
+                    DestroyImmediate(r);
+                }
 #endif
             }
 
@@ -808,6 +822,7 @@ namespace Sudoku.Solver
                 if (IsPuzzleCreationMode)
                 {
                     SyncCandidatesForCurrentBoard();
+                    SyncUnsolvedCandidatesFromAllRulesSolve();
                 }
                 else
                 {
@@ -868,11 +883,92 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Refine unsolved-cell candidates using the final state of an all-rules solve attempt.
+         * This method never changes board values; it only updates candidate sets for cells
+         * that are currently empty on the active board.
+         */
+        private void SyncUnsolvedCandidatesFromAllRulesSolve()
+        {
+            if (_board == null || _board.Cells == null)
+            {
+                return;
+            }
+
+            var boardCopy = CloneBoardForSolve(_board);
+            var registryCopy = CloneRegistry(includeAllRules: true);
+            var engine = new SolverEngine(registryCopy);
+            engine.Solve(boardCopy, out _);
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var targetCell = _board.Cells[r, c];
+                    if (targetCell == null || targetCell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (targetCell.Candidates == null)
+                    {
+                        targetCell.Candidates = new HashSet<int>();
+                    }
+
+                    targetCell.Candidates.Clear();
+
+                    var solvedCell = boardCopy.Cells[r, c];
+                    if (solvedCell != null && solvedCell.Value.HasValue)
+                    {
+                        int solvedValue = solvedCell.Value.Value;
+                        if (solvedValue >= 1 && solvedValue <= _board.Size)
+                        {
+                            targetCell.Candidates.Add(solvedValue);
+                        }
+
+                        continue;
+                    }
+
+                    if (solvedCell != null && solvedCell.Candidates != null && solvedCell.Candidates.Count > 0)
+                    {
+                        foreach (int candidate in solvedCell.Candidates)
+                        {
+                            if (candidate >= 1 && candidate <= _board.Size)
+                            {
+                                targetCell.Candidates.Add(candidate);
+                            }
+                        }
+
+                        continue;
+                    }
+
+                    // Fall back to legal peer-based candidates if the solve attempt
+                    // did not leave candidate information for this unsolved cell.
+                    for (int v = 1; v <= _board.Size; v++)
+                    {
+                        targetCell.Candidates.Add(v);
+                    }
+
+                    foreach (var peer in _board.GetPeers(targetCell))
+                    {
+                        if (peer != null && peer.Value.HasValue)
+                        {
+                            targetCell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
+            }
+
+            ValidateCurrentBoardState();
+        }
+
+        /**
          * Validate whether the current board state is still potentially solvable.
          * Detects duplicate-value conflicts, zero-candidate dead cells, and full-solver contradictions.
          */
         public void ValidateCurrentBoardState()
         {
+            _lastBoardStateConflictCells.Clear();
+
             if (_board == null || _board.Cells == null)
             {
                 LastBoardStateIsPossible = true;
@@ -884,6 +980,22 @@ namespace Sudoku.Solver
             {
                 LastBoardStateIsPossible = false;
                 LastBoardStateValidationMessage = "Invalid board: duplicate value exists in a row, column, or box.";
+
+                var immediateConflicts = _board.FindConflicts();
+                if (immediateConflicts != null)
+                {
+                    for (int i = 0; i < immediateConflicts.Count; i++)
+                    {
+                        var conflict = immediateConflicts[i];
+                        if (conflict == null || conflict.Row < 0 || conflict.Column < 0)
+                        {
+                            continue;
+                        }
+
+                        _lastBoardStateConflictCells.Add(conflict);
+                    }
+                }
+
                 return;
             }
 
@@ -900,7 +1012,8 @@ namespace Sudoku.Solver
                     if (cell.Candidates == null || cell.Candidates.Count == 0)
                     {
                         LastBoardStateIsPossible = false;
-                        LastBoardStateValidationMessage = $"Invalid board: r{r + 1}c{c + 1} has no candidates.";
+                        LastBoardStateValidationMessage = $"Invalid board: row {r + 1}, column {c + 1} has no possible candidates.";
+                        _lastBoardStateConflictCells.Add(new UsedCell { Row = r, Column = c, Candidate = null });
                         return;
                     }
                 }
@@ -914,6 +1027,18 @@ namespace Sudoku.Solver
                 LastBoardStateValidationMessage = unsolvable
                     ? "Board is currently unsolvable with the full rule set."
                     : "Invalid board: conflicts were detected.";
+
+                for (int i = 0; i < conflicts.Count; i++)
+                {
+                    var conflict = conflicts[i];
+                    if (conflict == null || conflict.Row < 0 || conflict.Column < 0)
+                    {
+                        continue;
+                    }
+
+                    _lastBoardStateConflictCells.Add(conflict);
+                }
+
                 return;
             }
 
@@ -975,6 +1100,7 @@ namespace Sudoku.Solver
             AppendDistinctRules(_lastCreationSolveRuleNames, allRuleNames);
 
             LastCreationSolveFoundSolution = solvedWithEnabled || solvedWithAll;
+            LastCreationSolveFoundWithSelectedRules = solvedWithEnabled;
             if (solvedWithEnabled)
             {
                 LastCreationSolveStatusMessage = "Solution found using the currently enabled rules.";
@@ -995,6 +1121,7 @@ namespace Sudoku.Solver
         private void ClearCreationSolveAnalysis()
         {
             LastCreationSolveFoundSolution = false;
+            LastCreationSolveFoundWithSelectedRules = false;
             LastCreationSolveStatusMessage = string.Empty;
             _lastCreationSolveRuleNames.Clear();
         }
