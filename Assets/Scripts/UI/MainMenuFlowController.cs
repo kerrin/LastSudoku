@@ -25,9 +25,15 @@ namespace Sudoku.Scripts.UI
         private BoardVisualizer _boardVisualizer;
         private BoardSidePanel _boardSidePanel;
         private InputField _generatedCodeInput;
+        private InputField _startPuzzleCodeInput;
         private GameObject _puzzleCodeRow;
+        private GameObject _solvePuzzleCodeRow;
+        private InputField _solvePuzzleCodeInput;
         private GameObject _overwriteConfirmRow;
         private string _pendingCodeToApply = string.Empty;
+        private string _startingPuzzleCode = string.Empty;
+        private float _defaultRulesAreaTopOffset = float.NaN;
+        private bool _hasCapturedRulesAreaTopOffset;
         private int _lastObservedBoardFingerprint = int.MinValue;
 
         /**
@@ -161,9 +167,10 @@ namespace Sudoku.Scripts.UI
 
             CreateLabel(_menuPanel.transform, "Title", "Sudoku", 44, FontStyle.Bold, 56f);
             CreateLabel(_menuPanel.transform, "Subtitle", "Choose an option to begin", 20, FontStyle.Normal, 36f);
+            EnsureMenuPuzzleCodeRow(_menuPanel.transform);
 
             CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Generated Puzzle", StartGeneratedPuzzle, true);
-            CreateMenuButton(_menuPanel.transform, "StartSeedPuzzleButton", "Start Puzzle From Seed", StartPuzzleFromSeedStub, false);
+            CreateMenuButton(_menuPanel.transform, "StartSeedPuzzleButton", "Start Puzzle From Code", StartPuzzleFromCodeOrExisting, false);
             CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
             CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Open Configuration", OpenConfigurationStub, false);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
@@ -233,6 +240,7 @@ namespace Sudoku.Scripts.UI
             EnsurePuzzleCodeRow(_playPanel.transform);
             EnsureOverwriteConfirmationRow(_playPanel.transform);
             var actionsRow = EnsurePlayActionsRow(_playPanel.transform);
+            EnsureSolvePuzzleCodeRow(sidePanel.transform);
 
             EnsurePlayActionButton(actionsRow, "LoadPuzzleCodeButton", "Load Code", ApplyPuzzleCodeFromInput, false);
             EnsurePlayActionButton(actionsRow, "SaveBoardButton", "", GeneratePuzzleCode, false);
@@ -555,6 +563,7 @@ namespace Sudoku.Scripts.UI
             }
 
             _runner.LoadBoardFromRows();
+            CacheStartingPuzzleCodeFromCurrentBoard();
             _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
             ConfigureBoardVisualizerForRunnerMode();
             EnterPlayMode();
@@ -575,11 +584,55 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
-         * Stub: start puzzle from seed.
+         * Start puzzle mode using menu-entered code when provided.
+         * Falls back to the default board when code is empty.
          */
-        private void StartPuzzleFromSeedStub()
+        private void StartPuzzleFromCodeOrExisting()
         {
-            Debug.Log("MainMenuFlowController: Start Puzzle From Seed is not implemented yet.");
+            string enteredCode = _startPuzzleCodeInput != null ? _startPuzzleCodeInput.text : string.Empty;
+            StartPuzzleFromOptionalCode(enteredCode);
+        }
+
+        /**
+         * Start puzzle mode from an optional puzzle code.
+         *
+         * @param code Optional code entered by the user.
+         */
+        private void StartPuzzleFromOptionalCode(string code)
+        {
+            ResolveSceneReferences();
+            if (_runner == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No SolverRunner found. Cannot start puzzle.");
+                return;
+            }
+
+            _runner.LoadBoardFromRows();
+
+            string trimmed = string.IsNullOrWhiteSpace(code) ? string.Empty : code.Trim();
+            if (!string.IsNullOrEmpty(trimmed))
+            {
+                var decoded = PuzzleCodeGenerator.DecodeBoardFromCode(trimmed);
+                if (decoded != null)
+                {
+                    ApplyDecodedBoardValuesToCurrentBoard(decoded, markAsGiven: true);
+                }
+                else
+                {
+                    Debug.LogWarning("MainMenuFlowController: Entered puzzle code is invalid. Using the existing board.");
+                }
+            }
+
+            CacheStartingPuzzleCodeFromCurrentBoard();
+            _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
+            ConfigureBoardVisualizerForRunnerMode();
+            EnterPlayMode();
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
         }
 
         /**
@@ -795,9 +848,80 @@ namespace Sudoku.Scripts.UI
             }
 
             _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
+
+            if (_runner.IsPuzzleCreationMode)
+            {
+                _runner.HandleRuleToggleChanged("PuzzleCodeLoadRefresh", true);
+                RefreshCreateModeStatusPanels();
+            }
+
             _lastObservedBoardFingerprint = ComputeBoardFingerprint(board);
             ClearPuzzleCodeText();
             Debug.Log("MainMenuFlowController: Puzzle code values were applied to the board.");
+        }
+
+        /**
+         * Force all create-mode status panels to refresh immediately.
+         */
+        private static void RefreshCreateModeStatusPanels()
+        {
+            var panels = Resources.FindObjectsOfTypeAll<CreateModeStatusPanel>();
+            for (int i = 0; i < panels.Length; i++)
+            {
+                var panel = panels[i];
+                if (panel == null)
+                {
+                    continue;
+                }
+
+                var go = panel.gameObject;
+                if (go == null || !go.scene.IsValid() || !go.scene.isLoaded)
+                {
+                    continue;
+                }
+
+                panel.RefreshStatus(force: true);
+            }
+        }
+
+        /**
+         * Apply decoded values onto the current board and optionally mark them as givens.
+         *
+         * @param decoded Decoded board values.
+         * @param markAsGiven True to lock non-empty values as givens.
+         */
+        private void ApplyDecodedBoardValuesToCurrentBoard(Sudoku.Models.Board decoded, bool markAsGiven)
+        {
+            ResolveSceneReferences();
+            if (_runner == null || decoded == null)
+            {
+                return;
+            }
+
+            var board = _runner.CurrentBoard;
+            if (board == null || board.Cells == null || decoded.Cells == null || board.Size != decoded.Size)
+            {
+                Debug.LogWarning("MainMenuFlowController: Decoded board dimensions do not match the active board.");
+                return;
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int col = 0; col < board.Size; col++)
+                {
+                    var target = board.Cells[row, col];
+                    var source = decoded.Cells[row, col];
+                    if (target == null || source == null)
+                    {
+                        continue;
+                    }
+
+                    target.Value = source.Value;
+                    target.IsGiven = markAsGiven && source.Value.HasValue;
+                }
+            }
+
+            _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
         }
 
         /**
@@ -812,6 +936,35 @@ namespace Sudoku.Scripts.UI
 
             GUIUtility.systemCopyBuffer = _generatedCodeInput.text;
             StartCoroutine(SelectGeneratedCodeNextFrame());
+        }
+
+        /**
+         * Copy the solve-mode starting puzzle code to the OS clipboard.
+         */
+        private void CopySolvePuzzleCodeToClipboard()
+        {
+            if (_solvePuzzleCodeInput == null || string.IsNullOrEmpty(_solvePuzzleCodeInput.text))
+            {
+                return;
+            }
+
+            GUIUtility.systemCopyBuffer = _solvePuzzleCodeInput.text;
+        }
+
+        /**
+         * Cache the starting puzzle code from the currently active board.
+         */
+        private void CacheStartingPuzzleCodeFromCurrentBoard()
+        {
+            ResolveSceneReferences();
+            if (_runner == null || _runner.CurrentBoard == null)
+            {
+                _startingPuzzleCode = string.Empty;
+                return;
+            }
+
+            _startingPuzzleCode = PuzzleCodeGenerator.EncodeBoardToCode(_runner.CurrentBoard) ?? string.Empty;
+            UpdateSolvePuzzleCodeDisplay();
         }
 
         /**
@@ -1167,6 +1320,151 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
+         * Ensure the startup-menu row containing code input and start button exists.
+         */
+        private void EnsureMenuPuzzleCodeRow(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var rowTransform = parent.Find("MenuPuzzleCodeRow");
+            GameObject rowGO;
+            if (rowTransform == null)
+            {
+                rowGO = new GameObject("MenuPuzzleCodeRow", typeof(RectTransform), typeof(CanvasRenderer));
+                rowGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                rowGO = rowTransform.gameObject;
+            }
+
+            rowGO.transform.SetSiblingIndex(2);
+
+            var rowLayout = rowGO.GetComponent<LayoutElement>();
+            if (rowLayout == null)
+            {
+                rowLayout = rowGO.AddComponent<LayoutElement>();
+            }
+
+            rowLayout.preferredHeight = 46f;
+            rowLayout.minHeight = 46f;
+            rowLayout.flexibleHeight = 0f;
+
+            var hlg = rowGO.GetComponent<HorizontalLayoutGroup>();
+            if (hlg == null)
+            {
+                hlg = rowGO.AddComponent<HorizontalLayoutGroup>();
+            }
+
+            hlg.padding = new RectOffset(0, 0, 0, 0);
+            hlg.spacing = 8f;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = false;
+
+            EnsureMenuPuzzleCodeInput(rowGO.transform);
+        }
+
+        /**
+         * Ensure the startup-menu puzzle code input exists.
+         */
+        private void EnsureMenuPuzzleCodeInput(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var inputTransform = parent.Find("MenuPuzzleCodeInput");
+            GameObject inputGO;
+            if (inputTransform == null)
+            {
+                inputGO = new GameObject("MenuPuzzleCodeInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(InputField));
+                inputGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                inputGO = inputTransform.gameObject;
+            }
+
+            var layout = inputGO.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = inputGO.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredWidth = 500f;
+            layout.minWidth = 480f;
+            layout.preferredHeight = 38f;
+            layout.minHeight = 38f;
+            layout.flexibleWidth = 1f;
+            layout.flexibleHeight = 0f;
+
+            var image = inputGO.GetComponent<Image>();
+            image.color = new Color(0.97f, 0.97f, 0.97f, 1f);
+
+            var inputField = inputGO.GetComponent<InputField>();
+            inputField.readOnly = false;
+            inputField.lineType = InputField.LineType.SingleLine;
+
+            var textTransform = inputGO.transform.Find("Text");
+            if (textTransform == null)
+            {
+                var textGO = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                textGO.transform.SetParent(inputGO.transform, false);
+                textTransform = textGO.transform;
+            }
+
+            var textRect = textTransform.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 6f);
+            textRect.offsetMax = new Vector2(-8f, -6f);
+
+            var text = textTransform.GetComponent<Text>();
+            text.alignment = TextAnchor.MiddleLeft;
+            text.color = new Color(0.08f, 0.08f, 0.08f, 1f);
+            text.fontSize = 13;
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+            text.font = font;
+
+            var placeholderTransform = inputGO.transform.Find("Placeholder");
+            if (placeholderTransform == null)
+            {
+                var placeholderGO = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                placeholderGO.transform.SetParent(inputGO.transform, false);
+                placeholderTransform = placeholderGO.transform;
+            }
+
+            var placeholderRect = placeholderTransform.GetComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = new Vector2(8f, 6f);
+            placeholderRect.offsetMax = new Vector2(-8f, -6f);
+
+            var placeholder = placeholderTransform.GetComponent<Text>();
+            placeholder.text = "Enter puzzle code (optional)";
+            placeholder.alignment = TextAnchor.MiddleLeft;
+            placeholder.color = new Color(0.42f, 0.42f, 0.42f, 0.85f);
+            placeholder.fontSize = 11;
+            placeholder.font = font;
+
+            inputField.textComponent = text;
+            inputField.placeholder = placeholder;
+
+            _startPuzzleCodeInput = inputField;
+        }
+
+        /**
          * Ensure the generated-code input field exists.
          */
         private void EnsurePuzzleCodeInput(Transform parent)
@@ -1312,6 +1610,296 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
+         * Ensure the solve-mode puzzle-code row exists at the top of the side panel.
+         */
+        private void EnsureSolvePuzzleCodeRow(Transform sidePanel)
+        {
+            if (sidePanel == null)
+            {
+                return;
+            }
+
+            var rowTransform = sidePanel.Find("SolvePuzzleCodeRow");
+            if (rowTransform == null)
+            {
+                _solvePuzzleCodeRow = new GameObject("SolvePuzzleCodeRow", typeof(RectTransform), typeof(CanvasRenderer));
+                _solvePuzzleCodeRow.transform.SetParent(sidePanel, false);
+            }
+            else
+            {
+                _solvePuzzleCodeRow = rowTransform.gameObject;
+            }
+
+            var rowRect = _solvePuzzleCodeRow.GetComponent<RectTransform>();
+            rowRect.anchorMin = new Vector2(0f, 1f);
+            rowRect.anchorMax = new Vector2(1f, 1f);
+            rowRect.pivot = new Vector2(0.5f, 1f);
+            rowRect.anchoredPosition = new Vector2(0f, -8f);
+            rowRect.sizeDelta = new Vector2(-16f, 34f);
+            rowRect.SetAsFirstSibling();
+
+            var hlg = _solvePuzzleCodeRow.GetComponent<HorizontalLayoutGroup>();
+            if (hlg == null)
+            {
+                hlg = _solvePuzzleCodeRow.AddComponent<HorizontalLayoutGroup>();
+            }
+
+            hlg.padding = new RectOffset(0, 0, 0, 0);
+            hlg.spacing = 6f;
+            hlg.childAlignment = TextAnchor.MiddleRight;
+            hlg.childControlWidth = true;
+            hlg.childControlHeight = true;
+            hlg.childForceExpandWidth = false;
+            hlg.childForceExpandHeight = false;
+
+            EnsureSolvePuzzleCodeLabel(_solvePuzzleCodeRow.transform);
+            EnsureSolvePuzzleCodeInput(_solvePuzzleCodeRow.transform);
+            EnsureSolvePuzzleCodeCopyButton(_solvePuzzleCodeRow.transform);
+            UpdateSolvePuzzleCodeDisplay();
+        }
+
+        /**
+         * Ensure the solve-mode puzzle-code label exists.
+         */
+        private static void EnsureSolvePuzzleCodeLabel(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var labelTransform = parent.Find("SolvePuzzleCodeLabel");
+            GameObject labelGO;
+            if (labelTransform == null)
+            {
+                labelGO = new GameObject("SolvePuzzleCodeLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                labelGO = labelTransform.gameObject;
+            }
+
+            var layout = labelGO.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = labelGO.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredWidth = 86f;
+            layout.minWidth = 86f;
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
+
+            var text = labelGO.GetComponent<Text>();
+            text.text = "Puzzle Code";
+            text.alignment = TextAnchor.MiddleRight;
+            text.color = Color.white;
+            text.fontSize = 13;
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+            text.font = font;
+        }
+
+        /**
+         * Ensure the solve-mode puzzle-code input exists.
+         */
+        private void EnsureSolvePuzzleCodeInput(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var inputTransform = parent.Find("SolvePuzzleCodeInput");
+            GameObject inputGO;
+            if (inputTransform == null)
+            {
+                inputGO = new GameObject("SolvePuzzleCodeInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(InputField));
+                inputGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                inputGO = inputTransform.gameObject;
+            }
+
+            var layout = inputGO.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = inputGO.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredWidth = 260f;
+            layout.minWidth = 240f;
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
+            layout.flexibleWidth = 0f;
+
+            var image = inputGO.GetComponent<Image>();
+            image.color = new Color(0.97f, 0.97f, 0.97f, 1f);
+
+            var inputField = inputGO.GetComponent<InputField>();
+            inputField.readOnly = true;
+            inputField.lineType = InputField.LineType.SingleLine;
+
+            var textTransform = inputGO.transform.Find("Text");
+            if (textTransform == null)
+            {
+                var textGO = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                textGO.transform.SetParent(inputGO.transform, false);
+                textTransform = textGO.transform;
+            }
+
+            var textRect = textTransform.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 6f);
+            textRect.offsetMax = new Vector2(-8f, -6f);
+
+            var text = textTransform.GetComponent<Text>();
+            text.alignment = TextAnchor.MiddleLeft;
+            text.color = new Color(0.08f, 0.08f, 0.08f, 1f);
+            text.fontSize = 12;
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+            text.font = font;
+
+            var placeholderTransform = inputGO.transform.Find("Placeholder");
+            if (placeholderTransform == null)
+            {
+                var placeholderGO = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                placeholderGO.transform.SetParent(inputGO.transform, false);
+                placeholderTransform = placeholderGO.transform;
+            }
+
+            var placeholderRect = placeholderTransform.GetComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = new Vector2(8f, 6f);
+            placeholderRect.offsetMax = new Vector2(-8f, -6f);
+
+            var placeholder = placeholderTransform.GetComponent<Text>();
+            placeholder.text = string.Empty;
+            placeholder.alignment = TextAnchor.MiddleLeft;
+            placeholder.color = new Color(0.42f, 0.42f, 0.42f, 0.85f);
+            placeholder.fontSize = 11;
+            placeholder.font = font;
+
+            inputField.textComponent = text;
+            inputField.placeholder = placeholder;
+
+            _solvePuzzleCodeInput = inputField;
+        }
+
+        /**
+         * Ensure the copy button for solve-mode puzzle code exists.
+         */
+        private void EnsureSolvePuzzleCodeCopyButton(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var buttonTransform = parent.Find("CopySolvePuzzleCodeButton");
+            if (buttonTransform == null)
+            {
+                CreateMenuButton(parent, "CopySolvePuzzleCodeButton", "Copy", CopySolvePuzzleCodeToClipboard, true);
+                buttonTransform = parent.Find("CopySolvePuzzleCodeButton");
+            }
+
+            if (buttonTransform == null)
+            {
+                return;
+            }
+
+            var button = buttonTransform.GetComponent<Button>();
+            if (button != null)
+            {
+                button.onClick.RemoveAllListeners();
+                button.onClick.AddListener(CopySolvePuzzleCodeToClipboard);
+            }
+
+            var layout = buttonTransform.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = buttonTransform.gameObject.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredWidth = 38f;
+            layout.minWidth = 34f;
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
+            layout.flexibleWidth = 0f;
+
+            var text = buttonTransform.GetComponentInChildren<Text>();
+            if (text != null)
+            {
+                text.text = string.Empty;
+            }
+
+            EnsureCopyIconGraphic(buttonTransform);
+        }
+
+        /**
+         * Refresh solve-mode puzzle-code text from the captured starting code.
+         */
+        private void UpdateSolvePuzzleCodeDisplay()
+        {
+            if (_solvePuzzleCodeInput == null)
+            {
+                return;
+            }
+
+            _solvePuzzleCodeInput.text = string.IsNullOrEmpty(_startingPuzzleCode)
+                ? string.Empty
+                : _startingPuzzleCode;
+        }
+
+        /**
+         * Offset the side-panel rules area down when the solve puzzle-code row is visible.
+         *
+         * @param showSolveRow True when solve-mode row should be visible.
+         */
+        private void UpdateRulesAreaTopOffset(bool showSolveRow)
+        {
+            var sidePanel = FindSidePanelIncludingInactive();
+            if (sidePanel == null)
+            {
+                return;
+            }
+
+            var rulesArea = sidePanel.transform.Find("RulesArea") as RectTransform;
+            if (rulesArea == null)
+            {
+                return;
+            }
+
+            if (!_hasCapturedRulesAreaTopOffset)
+            {
+                _defaultRulesAreaTopOffset = rulesArea.anchoredPosition.y;
+                _hasCapturedRulesAreaTopOffset = true;
+            }
+
+            float targetY = showSolveRow
+                ? _defaultRulesAreaTopOffset - 42f
+                : _defaultRulesAreaTopOffset;
+
+            var anchored = rulesArea.anchoredPosition;
+            if (!Mathf.Approximately(anchored.y, targetY))
+            {
+                anchored.y = targetY;
+                rulesArea.anchoredPosition = anchored;
+            }
+        }
+
+        /**
          * Build a clear copy icon from simple UI shapes so it does not depend on font glyph support.
          */
         private static void EnsureCopyIconGraphic(Transform buttonTransform)
@@ -1389,11 +1977,20 @@ namespace Sudoku.Scripts.UI
         {
             ResolveSceneReferences();
             bool isCreateMode = _runner != null && _runner.IsPuzzleCreationMode;
+            bool isSolveMode = _runner != null && !_runner.IsPuzzleCreationMode;
 
             if (_puzzleCodeRow != null)
             {
                 _puzzleCodeRow.SetActive(isCreateMode);
             }
+
+            if (_solvePuzzleCodeRow != null)
+            {
+                _solvePuzzleCodeRow.SetActive(isSolveMode);
+            }
+
+            UpdateRulesAreaTopOffset(isSolveMode);
+            UpdateSolvePuzzleCodeDisplay();
 
             if (_playPanel != null)
             {
