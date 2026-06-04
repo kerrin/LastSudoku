@@ -158,119 +158,36 @@ public class BoardSidePanel : MonoBehaviour
     {
         if (_panelRect != null) return;
 
-        // If a TargetCanvas is already set, prefer reusing any existing SidePanel
-        // on that canvas to avoid creating duplicates. Do this regardless of
-        // the canvas' render mode.
-        if (TargetCanvas != null)
+        _preserveSceneLayout = true;
+
+        if (TargetCanvas == null) TargetCanvas = Object.FindAnyObjectByType<Canvas>();
+        if (TargetCanvas == null)
         {
-            var existing = TargetCanvas.transform.Find("SidePanel");
-            if (existing != null)
-            {
-                _preserveSceneLayout = true;
-                _panelRect = existing.GetComponent<RectTransform>();
-                _panelImage = existing.GetComponent<Image>();
-                var ra = existing.Find("RulesArea");
-                if (ra == null) ra = EnsureRulesAreaExists(existing.gameObject);
-                if (ra != null)
-                {
-                    RulesArea = ra.GetComponent<RectTransform>();
-                    EnsureRulesAreaLayout(ra.gameObject);
-                }
-                EnsureRuleTogglePanelAttached();
-                EnsureCreateModeStatusPanelAttached();
-                return;
-            }
+            Debug.LogWarning("BoardSidePanel: No Canvas found. Runtime side panel wiring skipped.");
+            return;
         }
 
-        // Prefer an existing ScreenSpaceOverlay canvas. If TargetCanvas is unset
-        // or set to a non-overlay mode (WorldSpace), try to find an overlay canvas
-        // in the scene. Otherwise create a default overlay canvas.
-        if (TargetCanvas == null || TargetCanvas.renderMode != RenderMode.ScreenSpaceOverlay)
+        var sidePanel = TargetCanvas.transform.Find("SidePanel");
+        if (sidePanel == null)
         {
-            Canvas found = null;
-            foreach (var c in Object.FindObjectsByType<Canvas>())
-            {
-                if (c.renderMode == RenderMode.ScreenSpaceOverlay)
-                {
-                    found = c;
-                    break;
-                }
-            }
-            if (found != null)
-            {
-                TargetCanvas = found;
-            }
-            else
-            {
-                // Create a simple default canvas if none exists (screen-space overlay)
-                var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-                TargetCanvas = canvasGO.GetComponent<Canvas>();
-                TargetCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            }
+            Debug.LogWarning("BoardSidePanel: Expected designer object 'SidePanel' was not found.");
+            return;
         }
 
-        // After locating/creating the TargetCanvas, check once more for an
-        // existing SidePanel that may already be present on it.
-        if (TargetCanvas != null)
+        _panelRect = sidePanel.GetComponent<RectTransform>();
+        _panelImage = sidePanel.GetComponent<Image>();
+
+        var rulesAreaTransform = sidePanel.Find("RulesArea");
+        if (rulesAreaTransform == null)
         {
-            var existing2 = TargetCanvas.transform.Find("SidePanel");
-            if (existing2 != null)
-            {
-                _preserveSceneLayout = true;
-                _panelRect = existing2.GetComponent<RectTransform>();
-                _panelImage = existing2.GetComponent<Image>();
-                var ra = existing2.Find("RulesArea");
-                if (ra == null) ra = EnsureRulesAreaExists(existing2.gameObject);
-                if (ra != null)
-                {
-                    RulesArea = ra.GetComponent<RectTransform>();
-                    EnsureRulesAreaLayout(ra.gameObject);
-                }
-                EnsureRuleTogglePanelAttached();
-                EnsureCreateModeStatusPanelAttached();
-                return;
-            }
+            Debug.LogWarning("BoardSidePanel: Expected designer object 'SidePanel/RulesArea' was not found.");
+            return;
         }
 
-        var panelGO = new GameObject("SidePanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        _preserveSceneLayout = false;
-        panelGO.transform.SetParent(TargetCanvas.transform, false);
-        _panelRect = panelGO.GetComponent<RectTransform>();
-        _panelImage = panelGO.GetComponent<Image>();
-        _panelImage.color = Background;
-        // Don't let the background image intercept raycasts; children should handle input.
-        _panelImage.raycastTarget = false;
-
-        // Stretch full canvas and use offsets to place it to the right of the board
-        _panelRect.anchorMin = Vector2.zero;
-        _panelRect.anchorMax = Vector2.one;
-        // Use a centered pivot so offsets apply symmetrically and anchoredPosition behaves predictably
-        _panelRect.pivot = new Vector2(0.5f, 0.5f);
-        _panelRect.anchoredPosition = Vector2.zero;
-
-        // Create a dedicated area for rules and other UI inside the panel.
-        var rulesGO = new GameObject("RulesArea", typeof(RectTransform));
-        rulesGO.transform.SetParent(panelGO.transform, false);
-        RulesArea = rulesGO.GetComponent<RectTransform>();
-        RulesArea.anchorMin = new Vector2(0f, 0f);
-        RulesArea.anchorMax = new Vector2(1f, 1f);
-        RulesArea.pivot = new Vector2(0.5f, 0.5f);
-        // Apply padding via offsets so children won't sit flush against edges
-        RulesArea.offsetMin = new Vector2(Padding, Padding);
-        RulesArea.offsetMax = new Vector2(-Padding, -Padding);
-        // Use a HorizontalLayoutGroup so toggle and apply panels sit side-by-side as equal columns.
-        EnsureRulesAreaLayout(rulesGO);
-
-        // Ensure a RuleTogglePanel is attached inside the RulesArea so runtime
-        // toggles appear in the side panel automatically.
+        RulesArea = rulesAreaTransform.GetComponent<RectTransform>();
         EnsureRuleTogglePanelAttached();
+        EnsureRuleListPanelAttached();
         EnsureCreateModeStatusPanelAttached();
-        // Update geometry immediately and again next frame to ensure proper placement
-        if (!_preserveSceneLayout)
-        {
-            UpdatePanelGeometry();
-            StartCoroutine(PositionNextFrame());
-        }
     }
 
     /**
@@ -296,328 +213,53 @@ public class BoardSidePanel : MonoBehaviour
         }
     }
 
-    private System.Collections.IEnumerator PositionNextFrame()
-    {
-        yield return null;
-        UpdatePanelGeometry();
-    }
-
-    /**
-     * Ensures the RulesArea uses a HorizontalLayoutGroup for the 2-column layout,
-     * upgrading from any legacy VerticalLayoutGroup in the scene.
-     *
-     * @param rulesGO The RulesArea game object to configure.
-     */
-    private void EnsureRulesAreaLayout(GameObject rulesGO)
-    {
-        // Replace any pre-existing VLG with HLG for side-by-side column layout.
-        // Use DestroyImmediate so the VLG is gone before AddComponent<HLG> runs
-        // (Destroy is deferred and having both on the same object causes layout conflicts).
-        var vlg = rulesGO.GetComponent<VerticalLayoutGroup>();
-        if (vlg != null) DestroyImmediate(vlg);
-        var hlg = rulesGO.GetComponent<HorizontalLayoutGroup>();
-        if (hlg == null) hlg = rulesGO.AddComponent<HorizontalLayoutGroup>();
-        hlg.childControlHeight     = true;
-        hlg.childForceExpandHeight = true;
-        hlg.childControlWidth      = true;
-        hlg.childForceExpandWidth  = true;
-        hlg.spacing                = 8f;
-        hlg.padding                = new RectOffset(0, 0, 0, 0);
-        // Note: do NOT touch RulesArea.offsetMin/Max here — callers manage the RT.
-    }
-
-    /**
-     * Creates a RulesArea container inside the given SidePanel and re-parents
-     * any existing RuleTogglePanel and ApplyRulePanel direct children into it.
-     * Called when the scene has the panels as flat children of SidePanel (legacy).
-     *
-     * @param sidePanelGO The SidePanel game object.
-     * @returns The newly created RulesArea Transform.
-     */
-    private Transform EnsureRulesAreaExists(GameObject sidePanelGO)
-    {
-        var rulesGO = new GameObject("RulesArea", typeof(RectTransform));
-        rulesGO.transform.SetParent(sidePanelGO.transform, false);
-        // Insert before ChangeLogControls so the rule panels appear first.
-        rulesGO.transform.SetSiblingIndex(0);
-        var rulesRT = rulesGO.GetComponent<RectTransform>();
-        // Top-anchored, full-width strip with a screen-proportion height.
-        rulesRT.anchorMin        = new Vector2(0f, 1f);
-        rulesRT.anchorMax        = new Vector2(1f, 1f);
-        rulesRT.pivot            = new Vector2(0.5f, 1f);
-        rulesRT.anchoredPosition = new Vector2(0f, -Padding);
-        float h = Mathf.Min(400f, Mathf.Max(80f, (float)Screen.height * 0.4f));
-        rulesRT.sizeDelta        = new Vector2(-Padding * 2f, h);
-        RulesArea = rulesRT;
-
-        // Re-parent the toggle panel and apply rules panel
-        var toggleT = sidePanelGO.transform.Find("RuleTogglePanel");
-        if (toggleT != null) toggleT.SetParent(rulesGO.transform, false);
-        var applyT = sidePanelGO.transform.Find("ApplyRulePanel");
-        if (applyT != null) applyT.SetParent(rulesGO.transform, false);
-
-        return rulesGO.transform;
-    }
-
     private void EnsureRuleTogglePanelAttached()
     {
-        if (_panelRect == null) return;
         if (RulesArea == null) return;
 
-        // If a RuleTogglePanel already exists anywhere in the scene, reparent
-        // the first instance under the SidePanel so we don't create duplicates.
-        // Include inactive objects so a panel that was hidden by editor preview is still found.
-        var all = Object.FindObjectsByType<RuleTogglePanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        if (all != null && all.Length > 0)
+        var panel = RulesArea.GetComponentInChildren<RuleTogglePanel>(true);
+        if (panel == null)
         {
-            RuleTogglePanel chosen = null;
-            foreach (var p in all)
-            {
-                var cur = p.transform;
-                while (cur != null)
-                {
-                    if (cur.name == "SidePanel")
-                    {
-                        chosen = p;
-                        break;
-                    }
-                    cur = cur.parent;
-                }
-                if (chosen != null) break;
-            }
-            if (chosen == null) chosen = all[0];
-
-            if (chosen.transform.parent != RulesArea)
-                chosen.transform.SetParent(RulesArea, false);
-
-            ConfigurePanelSlot(chosen.gameObject);
-
-            // Tell the toggle panel not to impose its own fixed width.
-            var rtpComp = chosen.GetComponent<RuleTogglePanel>();
-            if (rtpComp != null) rtpComp.FlexFillParent = true;
-
-            if (BoardVisualizer != null && BoardVisualizer.Runner != null)
-            {
-                chosen.Runner = BoardVisualizer.Runner;
-            }
-            else
-            {
-                chosen.Runner = Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-            }
-
-            for (int i = 0; i < all.Length; i++)
-            {
-                if (all[i] == chosen) continue;
-                Destroy(all[i].gameObject);
-            }
-
-            // Ensure the ApplyRulePanel is present.
-            EnsureRuleListPanelAttached();
-            EnsureCreateModeStatusPanelAttached();
+            Debug.LogWarning("BoardSidePanel: Expected designer object with RuleTogglePanel was not found under RulesArea.");
             return;
         }
 
-        // No existing instance found: create a host object as a direct child of the SidePanel
-        var hostGO = new GameObject("RuleTogglePanelHost", typeof(RectTransform));
-        hostGO.transform.SetParent(RulesArea, false);
-        var rt = hostGO.GetComponent<RectTransform>();
-        // Host should not stretch horizontally; the toggle panel will have a preferred width
-        rt.anchorMin = new Vector2(0f, 1f);
-        rt.anchorMax = new Vector2(0f, 1f);
-        rt.pivot = new Vector2(0f, 1f);
-        rt.anchoredPosition = new Vector2(Padding, -Padding);
-        ConfigurePanelSlot(hostGO);
-
-        var panel = hostGO.AddComponent<RuleTogglePanel>();
         panel.FlexFillParent = true;
-
-        if (BoardVisualizer != null && BoardVisualizer.Runner != null)
-        {
-            panel.Runner = BoardVisualizer.Runner;
-        }
-        else
-        {
-            panel.Runner = Object.FindAnyObjectByType<Sudoku.Solver.SolverRunner>();
-        }
-
-        // Ensure the ApplyRulePanel is present.
-        EnsureRuleListPanelAttached();
-        // Ensure the CreateModeStatusPanel is present for Create mode.
-        EnsureCreateModeStatusPanelAttached();
+        panel.Runner = GetRunner();
     }
 
     private void EnsureRuleListPanelAttached()
     {
         if (RulesArea == null) return;
 
-        // Include inactive objects — the panel may have been hidden by editor preview.
-        var all = Object.FindObjectsByType<ApplyRulePanel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        if (all != null && all.Length > 0)
+        var panel = RulesArea.GetComponentInChildren<ApplyRulePanel>(true);
+        if (panel == null)
         {
-            ApplyRulePanel chosen = null;
-            foreach (var p in all)
-            {
-                var cur = p.transform;
-                while (cur != null)
-                {
-                    if (cur.name == "SidePanel")
-                    {
-                        chosen = p;
-                        break;
-                    }
-                    cur = cur.parent;
-                }
-                if (chosen != null) break;
-            }
-            if (chosen == null) chosen = all[0];
-
-            if (chosen.transform.parent != RulesArea)
-                chosen.transform.SetParent(RulesArea, false);
-            ConfigurePanelSlot(chosen.gameObject);
-
-            if (BoardVisualizer != null && BoardVisualizer.Runner != null)
-            {
-                chosen.Runner = BoardVisualizer.Runner;
-            }
-            else
-            {
-                chosen.Runner = Object.FindAnyObjectByType<SolverRunner>();
-            }
-
-            for (int i = 0; i < all.Length; i++)
-            {
-                if (all[i] == chosen) continue;
-                Destroy(all[i].gameObject);
-            }
-
+            Debug.LogWarning("BoardSidePanel: Expected designer object with ApplyRulePanel was not found under RulesArea.");
             return;
         }
 
-        var hostGO = new GameObject("RuleListPanelHost", typeof(RectTransform));
-        hostGO.transform.SetParent(RulesArea, false);
-        var rt = hostGO.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        ConfigurePanelSlot(hostGO);
-
-        var panel = hostGO.AddComponent<ApplyRulePanel>();
-        if (BoardVisualizer != null && BoardVisualizer.Runner != null)
-        {
-            panel.Runner = BoardVisualizer.Runner;
-        }
-        else
-        {
-            panel.Runner = Object.FindAnyObjectByType<SolverRunner>();
-        }
+        panel.Runner = GetRunner();
     }
 
     private void EnsureCreateModeStatusPanelAttached()
     {
         if (RulesArea == null) return;
 
-        // Find or create CreateModeStatusPanel in the RulesArea so it can replace
-        // ApplyRulePanel as the right-hand column in create mode.
-        var allStatusPanels = RulesArea.GetComponentsInChildren<CreateModeStatusPanel>(true);
-        CreateModeStatusPanel existing = null;
-        for (int i = 0; i < allStatusPanels.Length; i++)
+        var panel = RulesArea.GetComponentInChildren<CreateModeStatusPanel>(true);
+        if (panel == null)
         {
-            var candidate = allStatusPanels[i];
-            if (candidate == null) continue;
-
-            bool isDirectChild = candidate.transform.parent == RulesArea;
-            bool hasExpectedPanelRoot = candidate.transform.Find("CreateModeStatus") != null;
-            if (isDirectChild && hasExpectedPanelRoot)
-            {
-                existing = candidate;
-                break;
-            }
-
-            if (existing == null) existing = candidate;
-        }
-
-        // Remove duplicate status panel roots and keep only the selected one.
-        for (int i = 0; i < allStatusPanels.Length; i++)
-        {
-            var candidate = allStatusPanels[i];
-            if (candidate == null || candidate == existing) continue;
-
-            if (Application.isPlaying) Destroy(candidate.gameObject);
-            else DestroyImmediate(candidate.gameObject);
-        }
-
-        if (existing != null)
-        {
-            if (existing.transform.parent != RulesArea)
-            {
-                existing.transform.SetParent(RulesArea, false);
-            }
-
-            if (existing.gameObject.name != "CreateModeStatusPanel")
-            {
-                existing.gameObject.name = "CreateModeStatusPanel";
-            }
-
-            ConfigurePanelSlot(existing.gameObject);
-
-            // Wire Runner if needed
-            if (existing.Runner == null)
-            {
-                existing.Runner = GetRunner();
-            }
+            Debug.LogWarning("BoardSidePanel: Expected designer object with CreateModeStatusPanel was not found under RulesArea.");
             return;
         }
 
-        // Create a hosted panel inside RulesArea.
-        var hostGO = new GameObject("CreateModeStatusPanel", typeof(RectTransform));
-        hostGO.transform.SetParent(RulesArea, false);
-        var rt = hostGO.GetComponent<RectTransform>();
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(0.5f, 0.5f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
-        ConfigurePanelSlot(hostGO);
-
-        var panel = hostGO.AddComponent<CreateModeStatusPanel>();
         panel.Runner = GetRunner();
     }
 
     private void ConfigurePanelSlot(GameObject panelGO)
     {
-        if (panelGO == null) return;
-
-        var rect = panelGO.GetComponent<RectTransform>();
-        if (rect != null)
-        {
-            rect.localScale = Vector3.one;
-            rect.anchorMin = new Vector2(0f, 0f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.anchoredPosition = Vector2.zero;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-        }
-
-        var layout = panelGO.GetComponent<LayoutElement>();
-        if (layout == null) layout = panelGO.AddComponent<LayoutElement>();
-        layout.ignoreLayout = false;
-        layout.minWidth = PanelSlotMinWidth;
-        layout.preferredWidth = PanelSlotPreferredWidth;
-        layout.flexibleWidth = 1f;
-        layout.minHeight = 0f;
-        layout.preferredHeight = 0f;
-        layout.flexibleHeight = 1f;
-
-        var canvasGroup = panelGO.GetComponent<CanvasGroup>();
-        if (canvasGroup != null)
-        {
-            canvasGroup.alpha = 1f;
-            canvasGroup.interactable = true;
-            canvasGroup.blocksRaycasts = true;
-        }
+        // Designer-mode values own layout and anchors for static panel slots.
+        // Intentionally no-op to avoid runtime overrides.
     }
 
     /**
@@ -640,7 +282,6 @@ public class BoardSidePanel : MonoBehaviour
             var p = applyPanels[i];
             if (p != null)
             {
-                ConfigurePanelSlot(p.gameObject);
                 p.gameObject.SetActive(!isCreation);
             }
         }
@@ -652,7 +293,6 @@ public class BoardSidePanel : MonoBehaviour
             if (p != null)
             {
                 p.Runner = runner;
-                ConfigurePanelSlot(p.gameObject);
                 p.gameObject.SetActive(isCreation);
                 if (isCreation)
                 {

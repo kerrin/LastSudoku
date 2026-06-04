@@ -154,40 +154,33 @@ public class CreateModeStatusPanel : MonoBehaviour
      */
     private void BuildUi()
     {
-        bool createMissing = Application.isPlaying;
-
         _background = GetComponent<Image>();
-        if (_background == null && createMissing)
+        if (_background == null)
         {
-            _background = gameObject.AddComponent<Image>();
+            Debug.LogWarning("CreateModeStatusPanel: Expected Image on panel root.");
         }
 
         var statusRoot = transform.Find("CreateModeStatus") ?? transform;
 
-        _headerText = FindOrCreateTextChild(statusRoot, "Header", false, 18, FontStyle.Bold);
+        _headerText = FindTextChild(statusRoot, "Header");
         if (_headerText == null)
         {
-            _headerText = FindOrCreateTextChild(transform, "Header", false, 18, FontStyle.Bold);
-        }
-        if (_headerText == null)
-        {
-            _headerText = FindOrCreateTextChild(statusRoot, "Header", createMissing, 18, FontStyle.Bold);
+            _headerText = FindTextChild(transform, "Header");
         }
 
-        var scrollArea = FindOrCreateRectTransformChild(statusRoot, "ScrollArea", createMissing);
+        var scrollArea = FindRectTransformChild(statusRoot, "ScrollArea");
         var viewport = scrollArea != null
-            ? FindOrCreateRectTransformChild(scrollArea, "ViewPort", createMissing) ?? FindOrCreateRectTransformChild(scrollArea, "Viewport", createMissing)
+            ? FindRectTransformChild(scrollArea, "ViewPort") ?? FindRectTransformChild(scrollArea, "Viewport")
             : null;
-        _contentRoot = viewport != null ? FindOrCreateRectTransformChild(viewport, "Content", createMissing) : null;
+        _contentRoot = viewport != null ? FindRectTransformChild(viewport, "Content") : null;
 
-        _statusText = _contentRoot != null ? FindOrCreateTextChild(_contentRoot, "Status", createMissing, 15, FontStyle.Normal) : null;
-        _possibilityText = _contentRoot != null ? FindOrCreateTextChild(_contentRoot, "Possibility", createMissing, 14, FontStyle.Normal) : null;
-        _solveStatusText = _contentRoot != null ? FindOrCreateTextChild(_contentRoot, "SolveStatus", createMissing, 13, FontStyle.Normal) : null;
+        _statusText = _contentRoot != null ? FindTextChild(_contentRoot, "Status") : null;
+        _possibilityText = _contentRoot != null ? FindTextChild(_contentRoot, "Possibility") : null;
+        _solveStatusText = _contentRoot != null ? FindTextChild(_contentRoot, "SolveStatus") : null;
 
         if (scrollArea != null)
         {
             var scrollRect = scrollArea.GetComponent<ScrollRect>();
-            if (scrollRect == null && createMissing) scrollRect = scrollArea.gameObject.AddComponent<ScrollRect>();
             if (scrollRect != null)
             {
                 scrollRect.horizontal = false;
@@ -201,12 +194,7 @@ public class CreateModeStatusPanel : MonoBehaviour
         if (viewport != null)
         {
             var viewportImage = viewport.GetComponent<Image>();
-            if (viewportImage == null && createMissing) viewportImage = viewport.gameObject.AddComponent<Image>();
             if (viewportImage != null) viewportImage.raycastTarget = false;
-            if (viewport.GetComponent<RectMask2D>() == null && createMissing)
-            {
-                viewport.gameObject.AddComponent<RectMask2D>();
-            }
         }
     }
 
@@ -218,23 +206,12 @@ public class CreateModeStatusPanel : MonoBehaviour
      * @param createMissing Whether to create child when absent.
      * @returns Child RectTransform or null.
      */
-    private RectTransform FindOrCreateRectTransformChild(Transform parent, string childName, bool createMissing)
+    private RectTransform FindRectTransformChild(Transform parent, string childName)
     {
         if (parent == null || string.IsNullOrEmpty(childName)) return null;
 
         var child = parent.Find(childName);
-        if (child == null)
-        {
-            if (!createMissing) return null;
-
-            var go = new GameObject(childName, typeof(RectTransform));
-            go.transform.SetParent(parent, false);
-            return go.GetComponent<RectTransform>();
-        }
-
-        var rt = child.GetComponent<RectTransform>();
-        if (rt == null && createMissing) rt = child.gameObject.AddComponent<RectTransform>();
-        return rt;
+        return child != null ? child.GetComponent<RectTransform>() : null;
     }
 
     /**
@@ -247,32 +224,12 @@ public class CreateModeStatusPanel : MonoBehaviour
      * @param defaultStyle Font style used only when creating a new text object.
      * @returns Text component or null.
      */
-    private Text FindOrCreateTextChild(Transform parent, string childName, bool createMissing, int defaultFontSize, FontStyle defaultStyle)
+    private Text FindTextChild(Transform parent, string childName)
     {
         if (parent == null || string.IsNullOrEmpty(childName)) return null;
 
         var child = parent.Find(childName);
-        if (child == null)
-        {
-            if (!createMissing) return null;
-
-            var go = new GameObject(childName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
-            go.transform.SetParent(parent, false);
-            var createdText = go.GetComponent<Text>();
-            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            createdText.font = font;
-            createdText.fontSize = defaultFontSize;
-            createdText.fontStyle = defaultStyle;
-            createdText.alignment = TextAnchor.UpperLeft;
-            createdText.horizontalOverflow = HorizontalWrapMode.Wrap;
-            createdText.verticalOverflow = VerticalWrapMode.Truncate;
-            return createdText;
-        }
-
-        var text = child.GetComponent<Text>();
-        if (text == null && createMissing) text = child.gameObject.AddComponent<Text>();
-        return text;
+        return child != null ? child.GetComponent<Text>() : null;
     }
 
 }

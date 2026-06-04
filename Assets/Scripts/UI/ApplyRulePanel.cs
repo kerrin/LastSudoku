@@ -25,12 +25,34 @@ public class ApplyRulePanel : MonoBehaviour
     private Board _lastBoard;
     
 
+    private void OnEnable()
+    {
+        if (!Application.isPlaying) return;
+
+        if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
+        if (Runner != null && _registry == null)
+        {
+            Runner.EnsureEngine();
+            _registry = Runner.Registry;
+        }
+
+        if (ResolveUiReferences())
+        {
+            BuildList();
+            _lastBoard = Runner != null ? Runner.CurrentBoard : null;
+        }
+    }
+
     private System.Collections.IEnumerator Start()
     {
         if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         if (Runner == null)
         {
             Debug.LogWarning("ApplyRulePanel: No SolverRunner found in scene.");
+            if (ResolveUiReferences())
+            {
+                CreateInfoRow(_contentRoot, "Waiting for solver...");
+            }
             yield break;
         }
         
@@ -39,146 +61,17 @@ public class ApplyRulePanel : MonoBehaviour
         if (_registry == null)
         {
             Debug.LogWarning("ApplyRulePanel: Runner has no RuleRegistry.");
+            if (ResolveUiReferences())
+            {
+                CreateInfoRow(_contentRoot, "Rule registry unavailable.");
+            }
             yield break;
         }
 
-        // Use an existing designer-created child named "ApplyRules" when present
-        GameObject ruleListRootGO = null;
-        var existing = transform.Find("ApplyRules");
-        if (existing != null)
+        if (!ResolveUiReferences())
         {
-            ruleListRootGO = existing.gameObject;
+            yield break;
         }
-        else
-        {
-            ruleListRootGO = new GameObject("ApplyRules", typeof(RectTransform));
-            ruleListRootGO.transform.SetParent(transform, false);
-        }
-
-        var rt = ruleListRootGO.GetComponent<RectTransform>();
-        if (rt == null) rt = ruleListRootGO.AddComponent<RectTransform>();
-        // Stretch the panel root to match the parent so it can take the
-        // available width of the SidePanel. Constrain height via the
-        // optional LayoutElement below rather than a fixed sizeDelta.
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(0.5f, 1f);
-        rt.anchoredPosition = Vector2.zero;
-        rt.offsetMin = Vector2.zero;
-        rt.offsetMax = Vector2.zero;
-
-        // Ensure a LayoutElement so the parent VerticalLayoutGroup can size the
-        // header + rules area correctly. Prefer flexibleHeight so it expands.
-        var panelLE = ruleListRootGO.GetComponent<LayoutElement>();
-        if (panelLE == null) panelLE = ruleListRootGO.AddComponent<LayoutElement>();
-        panelLE.preferredHeight = MaxHeight;
-        panelLE.flexibleHeight = 1f;
-
-        var bg = ruleListRootGO.GetComponent<Image>();
-        if (bg == null) bg = ruleListRootGO.AddComponent<Image>();
-        bg.color = new Color(0f, 0f, 0f, 0.45f);
-
-        // Reuse designer-time hierarchy when present: ScrollArea (or Scroll) -> Viewport (or ViewPort) -> Content
-        // Try exact known names first, then fall back to a recursive search to handle naming/case differences.
-        Transform scrollTrans = ruleListRootGO.transform.Find("ScrollArea");
-        GameObject scrollGO;
-        ScrollRect scroll;
-        RectTransform scrollRT;
-        scrollGO = scrollTrans.gameObject;
-        scroll = scrollGO.GetComponent<ScrollRect>();
-        scrollRT = scrollGO.GetComponent<RectTransform>();
-        
-        scrollRT.anchorMin = Vector2.zero;
-        scrollRT.anchorMax = Vector2.one;
-        scrollRT.offsetMin = new Vector2(6, 6);
-        scrollRT.offsetMax = new Vector2(-6, -6);
-
-        // Viewport (accept "Viewport" or "ViewPort", and search recursively)
-        Transform vpTrans = scrollGO.transform.Find("ViewPort");
-        GameObject viewportGO;
-        RectTransform vpRT;
-        viewportGO = vpTrans.gameObject;
-        vpRT = viewportGO.GetComponent<RectTransform>();
-        vpRT.anchorMin = Vector2.zero;
-        vpRT.anchorMax = Vector2.one;
-        vpRT.offsetMin = Vector2.zero;
-        vpRT.offsetMax = Vector2.zero;
-        var vpImg = viewportGO.GetComponent<Image>();
-        if (vpImg == null) vpImg = viewportGO.AddComponent<Image>();
-        vpImg.color = new Color(0f, 0f, 0f, 0f);
-        // The viewport should not block raycasts to the rule rows/buttons;
-        // leave it non-raycastable so pointer events reach the child rows.
-        vpImg.raycastTarget = false;
-        // RectMask2D clips children to the viewport rect without requiring a visible Image.
-        if (viewportGO.GetComponent<RectMask2D>() == null)
-            viewportGO.AddComponent<RectMask2D>();
-
-        // Content (prefer existing descendant named "Content")
-        Transform contentTrans = null;
-        // Try direct path first with common names
-        contentTrans = ruleListRootGO.transform.Find("ScrollArea/ViewPort/Content");        
-        GameObject contentGO;
-        RectTransform contentRT;
-        contentGO = contentTrans.gameObject;
-        contentRT = contentGO.GetComponent<RectTransform>();
-        contentRT.anchorMin = new Vector2(0, 1);
-        contentRT.anchorMax = new Vector2(1, 1);
-        contentRT.pivot = new Vector2(0.5f, 1);
-        contentRT.anchoredPosition = Vector2.zero;
-        var vlg = contentGO.GetComponent<VerticalLayoutGroup>();
-        vlg.childControlHeight = true;
-        vlg.childControlWidth = true;
-        vlg.childForceExpandHeight = false;
-        vlg.spacing = 4;
-
-        var csf = contentGO.GetComponent<ContentSizeFitter>();
-        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
-
-        scroll.content           = contentRT;
-        scroll.viewport          = vpRT;
-        scroll.horizontal        = false;
-        scroll.scrollSensitivity = 30f;
-
-        // Vertical scrollbar — anchored to the right edge of the scroll container.
-        var apScrollbarGO = new GameObject("VerticalScrollbar",
-            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Scrollbar));
-        apScrollbarGO.transform.SetParent(scrollGO.transform, false);
-        var apScrollbarRT = apScrollbarGO.GetComponent<RectTransform>();
-        apScrollbarRT.anchorMin        = new Vector2(1f, 0f);
-        apScrollbarRT.anchorMax        = new Vector2(1f, 1f);
-        apScrollbarRT.pivot            = new Vector2(1f, 0.5f);
-        apScrollbarRT.sizeDelta        = new Vector2(12f, 0f);
-        apScrollbarRT.anchoredPosition = Vector2.zero;
-        apScrollbarGO.GetComponent<Image>().color = new Color(0.15f, 0.15f, 0.15f, 0.8f);
-
-        var apSlidingAreaGO = new GameObject("SlidingArea", typeof(RectTransform));
-        apSlidingAreaGO.transform.SetParent(apScrollbarGO.transform, false);
-        var apSlidingAreaRT = apSlidingAreaGO.GetComponent<RectTransform>();
-        apSlidingAreaRT.anchorMin = Vector2.zero;
-        apSlidingAreaRT.anchorMax = Vector2.one;
-        apSlidingAreaRT.offsetMin = new Vector2(2f, 6f);
-        apSlidingAreaRT.offsetMax = new Vector2(-2f, -6f);
-
-        var apHandleGO = new GameObject("Handle",
-            typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        apHandleGO.transform.SetParent(apSlidingAreaGO.transform, false);
-        var apHandleRT = apHandleGO.GetComponent<RectTransform>();
-        apHandleRT.anchorMin = Vector2.zero;
-        apHandleRT.anchorMax = Vector2.one;
-        apHandleRT.offsetMin = Vector2.zero;
-        apHandleRT.offsetMax = Vector2.zero;
-        var apHandleImg = apHandleGO.GetComponent<Image>();
-        apHandleImg.color = new Color(0.6f, 0.6f, 0.6f, 1f);
-
-        var apScrollbarComp = apScrollbarGO.GetComponent<Scrollbar>();
-        apScrollbarComp.handleRect    = apHandleRT;
-        apScrollbarComp.direction     = Scrollbar.Direction.BottomToTop;
-        apScrollbarComp.targetGraphic = apHandleImg;
-
-        scroll.verticalScrollbar           = apScrollbarComp;
-        scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
-
-        _contentRoot = contentGO.transform;
 
         // initial build
         BuildList();
@@ -201,6 +94,10 @@ public class ApplyRulePanel : MonoBehaviour
 
     private void BuildList()
     {
+        if (_contentRoot == null)
+        {
+            if (!ResolveUiReferences()) return;
+        }
         if (_contentRoot == null || _registry == null || Runner == null) return;
 
         // If running, destroy children then rebuild next frame to ensure
@@ -231,6 +128,8 @@ public class ApplyRulePanel : MonoBehaviour
 
     private void BuildListInternal()
     {
+        if (_contentRoot == null) return;
+
         // Always add a dedicated Validate Board row so users can explicitly
         // validate the current board and highlight conflicts. This should
         // appear regardless of whether candidates have been initialised.
@@ -267,12 +166,120 @@ public class ApplyRulePanel : MonoBehaviour
             CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis);
             created++;
         }
-        // Optionally add a header summary
+
+        // Ensure the panel is never empty in Solve mode.
+        if (created == 0)
+        {
+            CreateInfoRow(_contentRoot, "No applicable rules right now.");
+        }
 
         // Force an immediate layout rebuild so the ScrollRect and EventSystem
         // see the final child positions and sizes before any pointer events.
         var contentRect = _contentRoot.GetComponent<RectTransform>();
         if (contentRect != null) LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+    }
+
+    /**
+     * Resolve ApplyRules hierarchy and ensure required UI components exist.
+     * This keeps the panel resilient when designer wiring is partially missing.
+     *
+     * @returns True when Content root was resolved.
+     */
+    private bool ResolveUiReferences()
+    {
+        var ruleListRoot = transform.Find("ApplyRules") ?? transform;
+
+        Transform scrollTrans = ruleListRoot.Find("ScrollArea") ?? FindChildRecursive(ruleListRoot, "ScrollArea");
+        if (scrollTrans == null)
+        {
+            Debug.LogWarning("ApplyRulePanel: ScrollArea not found; cannot build rule list.");
+            return false;
+        }
+
+        var scrollGO = scrollTrans.gameObject;
+        var scroll = scrollGO.GetComponent<ScrollRect>();
+        if (scroll == null) scroll = scrollGO.AddComponent<ScrollRect>();
+        var scrollRT = scrollGO.GetComponent<RectTransform>();
+        if (scrollRT != null)
+        {
+            scrollRT.anchorMin = Vector2.zero;
+            scrollRT.anchorMax = Vector2.one;
+            scrollRT.offsetMin = new Vector2(6f, 6f);
+            scrollRT.offsetMax = new Vector2(-6f, -6f);
+        }
+
+        Transform vpTrans = scrollGO.transform.Find("ViewPort") ?? scrollGO.transform.Find("Viewport") ?? FindChildRecursive(scrollGO.transform, "ViewPort") ?? FindChildRecursive(scrollGO.transform, "Viewport");
+        if (vpTrans == null)
+        {
+            Debug.LogWarning("ApplyRulePanel: ViewPort/Viewport not found; cannot build rule list.");
+            return false;
+        }
+
+        var viewportGO = vpTrans.gameObject;
+        var vpRT = viewportGO.GetComponent<RectTransform>();
+        if (vpRT == null)
+        {
+            Debug.LogWarning("ApplyRulePanel: Viewport is missing RectTransform.");
+            return false;
+        }
+        vpRT.anchorMin = Vector2.zero;
+        vpRT.anchorMax = Vector2.one;
+        vpRT.offsetMin = Vector2.zero;
+        vpRT.offsetMax = Vector2.zero;
+
+        var vpImg = viewportGO.GetComponent<Image>();
+        if (vpImg == null) vpImg = viewportGO.AddComponent<Image>();
+        vpImg.raycastTarget = false;
+        if (viewportGO.GetComponent<RectMask2D>() == null) viewportGO.AddComponent<RectMask2D>();
+
+        Transform contentTrans = vpTrans.Find("Content") ?? FindChildRecursive(vpTrans, "Content");
+        if (contentTrans == null)
+        {
+            Debug.LogWarning("ApplyRulePanel: Content not found under viewport; cannot build rule list.");
+            return false;
+        }
+
+        var contentGO = contentTrans.gameObject;
+        var contentRT = contentGO.GetComponent<RectTransform>();
+        if (contentRT == null)
+        {
+            Debug.LogWarning("ApplyRulePanel: Content is missing RectTransform.");
+            return false;
+        }
+        contentRT.anchorMin = new Vector2(0f, 1f);
+        contentRT.anchorMax = new Vector2(1f, 1f);
+        contentRT.pivot = new Vector2(0.5f, 1f);
+        contentRT.anchoredPosition = Vector2.zero;
+        contentRT.offsetMin = Vector2.zero;
+        contentRT.offsetMax = Vector2.zero;
+
+        var vlg = contentGO.GetComponent<VerticalLayoutGroup>();
+        if (vlg == null) vlg = contentGO.AddComponent<VerticalLayoutGroup>();
+        vlg.childControlHeight = true;
+        vlg.childControlWidth = true;
+        vlg.childForceExpandHeight = false;
+        vlg.childForceExpandWidth = true;
+        vlg.spacing = 4f;
+        vlg.padding = new RectOffset(0, 0, 0, 0);
+
+        var csf = contentGO.GetComponent<ContentSizeFitter>();
+        if (csf == null) csf = contentGO.AddComponent<ContentSizeFitter>();
+        csf.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        scroll.content = contentRT;
+        scroll.viewport = vpRT;
+        scroll.horizontal = false;
+        scroll.scrollSensitivity = 30f;
+
+        var apScrollbarComp = scrollGO.transform.Find("VerticalScrollbar")?.GetComponent<Scrollbar>();
+        if (apScrollbarComp != null)
+        {
+            scroll.verticalScrollbar = apScrollbarComp;
+            scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
+        }
+
+        _contentRoot = contentGO.transform;
+        return true;
     }
 
     private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview, bool usedInAnalysis)
@@ -428,6 +435,47 @@ public class ApplyRulePanel : MonoBehaviour
         });
 
         // No hover preview for validate row — it only acts on click.
+    }
+
+    /**
+     * Create a non-interactive informational row.
+     *
+     * @param parent Parent transform where the row should be added.
+     * @param message Message to display.
+     */
+    private void CreateInfoRow(Transform parent, string message)
+    {
+        if (parent == null) return;
+
+        var rowGO = new GameObject("Info_Row", typeof(RectTransform));
+        rowGO.transform.SetParent(parent, false);
+        var rt = rowGO.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(0.5f, 1f);
+
+        var le = rowGO.AddComponent<LayoutElement>();
+        le.preferredHeight = 36f;
+
+        var img = rowGO.AddComponent<Image>();
+        img.color = new Color(1f, 1f, 1f, 0.02f);
+        img.raycastTarget = false;
+
+        var labelGO = new GameObject("Label", typeof(RectTransform));
+        labelGO.transform.SetParent(rowGO.transform, false);
+        var label = labelGO.AddComponent<Text>();
+        label.text = message;
+        label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        label.fontSize = 14;
+        label.color = new Color(0.86f, 0.86f, 0.86f, 1f);
+        label.alignment = TextAnchor.MiddleLeft;
+        label.raycastTarget = false;
+
+        var lblRT = labelGO.GetComponent<RectTransform>();
+        lblRT.anchorMin = new Vector2(0f, 0f);
+        lblRT.anchorMax = new Vector2(1f, 1f);
+        lblRT.offsetMin = new Vector2(8f, 2f);
+        lblRT.offsetMax = new Vector2(-8f, -2f);
     }
 
     private System.Collections.IEnumerator ApplyRuleCoroutine(ISudokuRule rule)
