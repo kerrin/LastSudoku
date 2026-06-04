@@ -317,6 +317,7 @@ public class RuleTogglePanel : MonoBehaviour
                     toggle.onValueChanged.AddListener((val) =>
                     {
                         _registry.SetEnabled(capturedName, val);
+                        Runner?.HandleRuleToggleChanged(capturedName, val);
                         RefreshApplyRulesPanel();
                     });
                     var rowButton = existing.GetComponent<Button>();
@@ -508,6 +509,7 @@ public class RuleTogglePanel : MonoBehaviour
         toggle.onValueChanged.AddListener((val) =>
         {
             _registry.SetEnabled(ruleTypeName, val);
+            Runner?.HandleRuleToggleChanged(ruleTypeName, val);
             RefreshApplyRulesPanel();
             // Keep the GO always active; control visibility via alpha.
             if (toggle.graphic != null)
@@ -592,19 +594,5 @@ public class RuleTogglePanel : MonoBehaviour
         }
 
         ChangeLogRuntimeControls.RefreshButtonStates();
-    }
-
-    private Canvas CreateDefaultCanvas()
-    {
-        var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-        var canvas = canvasGO.GetComponent<Canvas>();
-        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-
-        if (Object.FindAnyObjectByType<EventSystem>() == null)
-        {
-            var eventSystemGO = new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
-        }
-
-        return canvas;
     }
 }

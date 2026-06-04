@@ -19,6 +19,13 @@ namespace Sudoku.Solver
      */
     public class SolverRunner : MonoBehaviour
     {
+        private const int SparseCreationDigitThreshold = 12;
+        private const int SinglesOnlyCreationDigitWindow = 8;
+        private const int CandidateSinglePropagationStartDigit = 8;
+        private const int SparseCandidateResyncEveryEdits = 5;
+        private const string NakedSingleRuleTypeName = nameof(NakedSingleRule);
+        private const string HiddenSingleRuleTypeName = nameof(HiddenSingleRule);
+
         /** When true, ignore incoming preview requests (useful during apply). */
         public bool SuppressPreviewRequests = false;
 
@@ -30,6 +37,9 @@ namespace Sudoku.Solver
 
         private Board _board;
         private readonly List<string> _lastCreationSolveRuleNames = new List<string>();
+        private int _sparseCreationEditCounter;
+        private readonly CreationSparseCandidateValidationRule _creationSparseCandidateValidationRule = new CreationSparseCandidateValidationRule();
+        private readonly CreationSingleCandidatePropagationRule _creationSingleCandidatePropagationRule = new CreationSingleCandidatePropagationRule();
 
         /**
          * Expose the currently loaded board (may be null until loaded).
@@ -178,7 +188,7 @@ namespace Sudoku.Solver
             _board = board;
             EnsureEngine();
             EnableAllRegisteredRules();
-            SyncCandidatesForCurrentBoard();
+            SyncCandidatesForCurrentBoard(skipFullSolveCheck: true);
             CandidatesInitialised = true;
             LastAppliedRule = null;
             LastRuleResult = null;
@@ -820,12 +830,50 @@ namespace Sudoku.Solver
             {
                 if (IsPuzzleCreationMode)
                 {
-                    SyncCandidatesForCurrentBoard();
+                    int setDigitCount = CountSetDigits();
+
+                    bool requestFullCandidateResync;
+                    bool usedSparsePath = _creationSparseCandidateValidationRule.TryApply(
+                        _board,
+                        execution?.RuleResult,
+                        setDigitCount,
+                        SparseCreationDigitThreshold,
+                        SparseCandidateResyncEveryEdits,
+                        ref _sparseCreationEditCounter,
+                        out requestFullCandidateResync);
+
+                    if (usedSparsePath)
+                    {
+                        if (requestFullCandidateResync)
+                        {
+                            SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: false);
+                        }
+
+                        if (setDigitCount >= CandidateSinglePropagationStartDigit)
+                        {
+                            _creationSingleCandidatePropagationRule.Apply(_board);
+                        }
+
+                        ValidateCurrentBoardState(skipFullSolveCheck: true);
+                        ClearCreationSolveAnalysis();
+                        LastCreationSolveStatusMessage = $"Lightweight candidate sync active until {SparseCreationDigitThreshold} digits are set.";
+                        return;
+                    }
+
+                    _sparseCreationEditCounter = 0;
+                    SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: false);
+
+                    if (setDigitCount >= CandidateSinglePropagationStartDigit)
+                    {
+                        _creationSingleCandidatePropagationRule.Apply(_board);
+                    }
+
                     // Single optimized pass that solves once and validates in one go
                     RunOptimizedCreationAnalysis();
                 }
                 else
                 {
+                    _sparseCreationEditCounter = 0;
                     ValidateCurrentBoardState();
                 }
             }
@@ -834,8 +882,11 @@ namespace Sudoku.Solver
         /**
          * Recompute all candidates from the current values on the board.
          * Solved cells have empty candidate sets. Unsolved cells keep only legal values.
+         *
+         * @param skipFullSolveCheck When true, validation skips latent conflict solving.
+         * @param validateState When true, run board-state validation after candidate sync.
          */
-        public void SyncCandidatesForCurrentBoard()
+        public void SyncCandidatesForCurrentBoard(bool skipFullSolveCheck = false, bool validateState = true)
         {
             if (_board == null || _board.Cells == null)
             {
@@ -878,7 +929,10 @@ namespace Sudoku.Solver
                 }
             }
 
-            ValidateCurrentBoardState();
+            if (validateState)
+            {
+                ValidateCurrentBoardState(skipFullSolveCheck: skipFullSolveCheck);
+            }
         }
 
         /**
@@ -999,6 +1053,149 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Count solved cells that currently contain a digit.
+         *
+         * @returns Number of cells with a non-null value.
+         */
+        private int CountSetDigits()
+        {
+            if (_board == null || _board.Cells == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell != null && cell.Value.HasValue)
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        /**
+         * Handle a rule toggle change and conditionally re-run creation-mode analysis.
+         *
+         * Re-evaluation policy:
+         * - Enabling any rule: always re-evaluate.
+         * - Disabling a rule: re-evaluate only if that rule was used in the last solution path.
+         *
+         * @param ruleTypeName Type name of the toggled rule.
+         * @param enabled New enabled state.
+         */
+        public void HandleRuleToggleChanged(string ruleTypeName, bool enabled)
+        {
+            if (!IsPuzzleCreationMode)
+            {
+                return;
+            }
+
+            bool shouldReevaluate = enabled;
+            if (!enabled)
+            {
+                shouldReevaluate = !string.IsNullOrWhiteSpace(ruleTypeName) && _lastCreationSolveRuleNames.Contains(ruleTypeName);
+            }
+
+            if (!shouldReevaluate)
+            {
+                return;
+            }
+
+            if (_board == null || _board.Cells == null)
+            {
+                ClearCreationSolveAnalysis();
+                return;
+            }
+
+            SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: false);
+            RunOptimizedCreationAnalysis();
+        }
+
+        /**
+         * Return true when the current creation progress is inside the singles-only window.
+         *
+         * Window definition: from digit #9 inclusive for the next 6 digits.
+         *
+         * @param setDigitCount Count of currently solved/filled cells.
+         * @returns True when singles-only solving should be used.
+         */
+        private static bool IsSinglesOnlyCreationWindow(int setDigitCount)
+        {
+            int start = SparseCreationDigitThreshold;
+            int endExclusive = SparseCreationDigitThreshold + SinglesOnlyCreationDigitWindow;
+            return setDigitCount >= start && setDigitCount < endExclusive;
+        }
+
+        /**
+         * Restrict a registry to only Naked/Hidden Single rules while preserving their enabled state.
+         *
+         * @param registry Target registry clone to mutate.
+         */
+        private static void RestrictRegistryToSinglesOnly(RuleRegistry registry)
+        {
+            if (registry == null)
+            {
+                return;
+            }
+
+            var withStatus = registry.GetRulesWithStatus();
+            for (int i = 0; i < withStatus.Count; i++)
+            {
+                var entry = withStatus[i];
+                if (entry.rule == null)
+                {
+                    continue;
+                }
+
+                string typeName = entry.rule.GetType().Name;
+                bool isSinglesRule = typeName == NakedSingleRuleTypeName || typeName == HiddenSingleRuleTypeName;
+                if (!isSinglesRule)
+                {
+                    registry.SetEnabled(typeName, false);
+                }
+            }
+        }
+
+        /**
+         * Determine whether at least one singles rule is enabled in the provided registry.
+         *
+         * @param registry Registry clone to inspect.
+         * @returns True when Naked Single and/or Hidden Single is enabled.
+         */
+        private static bool HasAnyEnabledSinglesRule(RuleRegistry registry)
+        {
+            if (registry == null)
+            {
+                return false;
+            }
+
+            var withStatus = registry.GetRulesWithStatus();
+            for (int i = 0; i < withStatus.Count; i++)
+            {
+                var entry = withStatus[i];
+                if (entry.rule == null || !entry.enabled)
+                {
+                    continue;
+                }
+
+                string typeName = entry.rule.GetType().Name;
+                if (typeName == NakedSingleRuleTypeName || typeName == HiddenSingleRuleTypeName)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
          * Optimized creation-mode analysis: solve ONCE instead of 3+ times.
          * 
          * Strategy:
@@ -1042,6 +1239,40 @@ namespace Sudoku.Solver
                 return;
             }
 
+            int setDigitCount = CountSetDigits();
+            bool singlesOnlyWindow = IsSinglesOnlyCreationWindow(setDigitCount);
+
+            if (singlesOnlyWindow)
+            {
+                var boardCopyForSingles = CloneBoardForSolve(_board);
+                var registryCopyForSingles = CloneRegistry(includeAllRules: false);
+                RestrictRegistryToSinglesOnly(registryCopyForSingles);
+
+                _lastCreationSolveRuleNames.Clear();
+
+                if (!HasAnyEnabledSinglesRule(registryCopyForSingles))
+                {
+                    LastCreationSolveFoundSolution = false;
+                    LastCreationSolveFoundWithSelectedRules = false;
+                    LastCreationSolveStatusMessage = "Singles-only window active: enable Naked Single and/or Hidden Single to evaluate progress.";
+                    return;
+                }
+
+                var singlesEngine = new SolverEngine(registryCopyForSingles);
+                bool singlesSolved = singlesEngine.Solve(boardCopyForSingles, out var singlesSteps);
+                var singlesRuleNames = ExtractRuleNamesFromSteps(singlesSteps);
+                AppendDistinctRules(_lastCreationSolveRuleNames, singlesRuleNames);
+
+                UpdateCandidatesFromSolvedBoard(boardCopyForSingles);
+
+                LastCreationSolveFoundSolution = singlesSolved;
+                LastCreationSolveFoundWithSelectedRules = singlesSolved;
+                LastCreationSolveStatusMessage = singlesSolved
+                    ? "Singles-only window: solution found using enabled singles rules."
+                    : "Singles-only window: no complete solution yet with enabled singles rules.";
+                return;
+            }
+
             // Attempt to solve with enabled rules first, tracking which rules get used
             var boardCopyForEnabledRules = CloneBoardForSolve(_board);
             var registryCopyForEnabledRules = CloneRegistry(includeAllRules: false);
@@ -1054,10 +1285,11 @@ namespace Sudoku.Solver
             Board finalSolvedBoard = boardCopyForEnabledRules;
             bool solvedWithAll = solvedWithEnabled;
 
-            // If enabled rules didn't fully solve, try again with ALL rules
+            // If enabled rules didn't fully solve, continue from that partial state with ALL rules.
+            // This avoids restarting from the original puzzle and reduces fallback cost.
             if (!solvedWithEnabled)
             {
-                var boardCopyForAllRules = CloneBoardForSolve(_board);
+                var boardCopyForAllRules = boardCopyForEnabledRules;
                 var registryCopyForAllRules = CloneRegistry(includeAllRules: true);
                 var engineForAllRules = new SolverEngine(registryCopyForAllRules);
                 solvedWithAll = engineForAllRules.Solve(boardCopyForAllRules, out var allSteps);
