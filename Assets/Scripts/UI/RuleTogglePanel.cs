@@ -38,6 +38,9 @@ public class RuleTogglePanel : MonoBehaviour
     private RuleRegistry _registry;
     private ApplyRulePanel _applyRulePanel;
     private CreateModeStatusPanel _createModeStatusPanel;
+    // Cached reference to the Content transform so external state changes
+    // can update toggle visuals without rebuilding the whole list.
+    private Transform _togglesParent;
 
     /**
      * Simplified Start: Validate runner/registry, build panel, then finalize layout.
@@ -80,8 +83,16 @@ public class RuleTogglePanel : MonoBehaviour
             }
         }
 
+        _togglesParent = togglesParent;
+        // Subscribe so this panel stays in sync when another UI (e.g. ConfigPanel)
+        // changes a rule's enabled state through the registry.
+        _registry.OnEnabledChanged += OnRegistryRuleEnabledChanged;
+
         var expectedNames = BuildToggles(togglesParent);
         CleanupExtraToggles(togglesParent, expectedNames);
+        // Reorder children to match registry insertion order so both panels
+        // display rules in the same sequence regardless of designer placement.
+        ReorderTogglesToRegistryOrder(togglesParent);
 
         // Allow layout to settle then finalize horizontal sizing
         yield return null;
@@ -177,6 +188,46 @@ public class RuleTogglePanel : MonoBehaviour
             scrollRect.verticalScrollbar = scrollbarComp;
             scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
         }
+    }
+
+    private void OnDestroy()
+    {
+        // Unsubscribe to prevent stale delegates after this panel is destroyed.
+        if (_registry != null)
+            _registry.OnEnabledChanged -= OnRegistryRuleEnabledChanged;
+    }
+
+    /**
+     * Called by the registry when any rule's enabled state changes externally.
+     * Updates only the checkmark graphic colour so the visual matches without
+     * triggering the toggle's onValueChanged and causing a re-evaluation loop.
+     *
+     * @param ruleTypeName The type name of the changed rule.
+     * @param enabled      The new enabled state.
+     */
+    private void OnRegistryRuleEnabledChanged(string ruleTypeName, bool enabled)
+    {
+        if (_togglesParent == null) return;
+
+        var rowTransform    = _togglesParent.Find(ruleTypeName + "_Toggle");
+        if (rowTransform    == null) return;
+
+        var toggleTransform = rowTransform.Find("Toggle");
+        if (toggleTransform == null) return;
+
+        var toggle = toggleTransform.GetComponent<Toggle>();
+        if (toggle == null) return;
+
+        // Update the graphic colour directly so we don't fire onValueChanged
+        // (which would call back into the registry and the solver).
+        if (toggle.graphic != null)
+        {
+            toggle.graphic.gameObject.SetActive(true);
+            toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
+        }
+
+        // Also sync isOn silently by suppressing the listener temporarily.
+        toggle.SetIsOnWithoutNotify(enabled);
     }
 
     private bool InitRunnerAndRegistry()
@@ -352,6 +403,28 @@ public class RuleTogglePanel : MonoBehaviour
                 if (Application.isPlaying) Destroy(child.gameObject);
                 else DestroyImmediate(child.gameObject);
             }
+        }
+    }
+
+    /**
+     * Reorder the toggle children inside the content container to match the
+     * order in which rules appear in the registry. This ensures both the
+     * puzzle-mode panel and the config panel display rules in the same sequence
+     * regardless of how designer-placed objects were originally ordered.
+     *
+     * @param togglesParent The Content transform that holds one GO per rule.
+     */
+    private void ReorderTogglesToRegistryOrder(Transform togglesParent)
+    {
+        if (_registry == null || togglesParent == null) return;
+
+        var rules = _registry.GetRulesWithStatus();
+        for (int i = 0; i < rules.Count; i++)
+        {
+            string expectedName = rules[i].rule.GetType().Name + "_Toggle";
+            var child = togglesParent.Find(expectedName);
+            if (child != null)
+                child.SetSiblingIndex(i);
         }
     }
 

@@ -1149,7 +1149,14 @@ namespace Sudoku.Scripts.UI
          */
         private void OpenConfigurationStub()
         {
-            Debug.Log("MainMenuFlowController: Open Configuration is not implemented yet.");
+            var configManager = FindAnyObjectByType<ConfigPanelManager>();
+            if (configManager == null)
+            {
+                // Create the config manager if it doesn't exist
+                var managerGO = new GameObject("ConfigPanelManager", typeof(ConfigPanelManager));
+                configManager = managerGO.GetComponent<ConfigPanelManager>();
+            }
+            configManager.OpenConfigPanel();
         }
 
         /**

@@ -38,12 +38,20 @@ namespace Sudoku.Solver.Rules
             return !_disabledRuleNames.Contains(rule.GetType().Name);
         }
 
+        /**
+         * Raised whenever a rule's enabled state changes via SetEnabled.
+         * Subscribers receive (ruleTypeName, newEnabledState).
+         * This allows UI panels to stay in sync when state is changed externally.
+         */
+        public event Action<string, bool> OnEnabledChanged;
+
         /** Enable or disable a rule by its type name. */
         public void SetEnabled(string ruleTypeName, bool enabled)
         {
             if (string.IsNullOrEmpty(ruleTypeName)) return;
             if (enabled) _disabledRuleNames.Remove(ruleTypeName);
             else _disabledRuleNames.Add(ruleTypeName);
+            OnEnabledChanged?.Invoke(ruleTypeName, enabled);
         }
 
         /** Get a snapshot of rules with their enabled state. */
