@@ -2,6 +2,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Models;
+using System;
+using System.Collections.Generic;
+using Object = UnityEngine.Object;
 
 namespace Sudoku.Scripts.UI
 {
@@ -32,6 +35,7 @@ namespace Sudoku.Scripts.UI
         private GameObject _overwriteConfirmRow;
         private string _pendingCodeToApply = string.Empty;
         private SavedPuzzleListPanel _savedPuzzleListPanel;
+        private LoadPuzzleListPanel _loadPuzzleListPanel;
         private string _startingPuzzleCode = string.Empty;
         private float _defaultRulesAreaTopOffset = float.NaN;
         private bool _hasCapturedRulesAreaTopOffset;
@@ -190,8 +194,9 @@ namespace Sudoku.Scripts.UI
 
             CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Puzzle", StartPuzzleFromCodeOrExisting, true);
             CreateMenuSpacer(_menuPanel.transform, "CreatePuzzleGroupSpacer", 14f);
-            CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
+            CreateMenuButton(_menuPanel.transform, "LoadPuzzleButton", "Load Puzzle", OpenLoadPuzzleList, false);
             CreateMenuButton(_menuPanel.transform, "SavedPuzzlesButton", "Saved Puzzles", OpenSavedPuzzleList, false);
+            CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
             CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Open Configuration", OpenConfigurationStub, false);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
         }
@@ -271,6 +276,9 @@ namespace Sudoku.Scripts.UI
             EnsurePlayActionButton(actionsRow, "SaveToListButton", "Save", SaveCurrentPuzzleToList, false);
             ConfigurePlayButtonLayout(actionsRow, "SaveToListButton", 54f, 34f, 44f);
 
+            EnsurePlayActionButton(actionsRow, "SaveSolvedStateButton", "Save Current Solved State", SaveCurrentSolvedStateToXml, false);
+            ConfigurePlayButtonLayout(actionsRow, "SaveSolvedStateButton", 168f, 34f, 148f);
+
             EnsureBottomRightExitButton(sidePanel.transform);
 
             UpdatePlayPanelCreateModeControls();
@@ -298,6 +306,7 @@ namespace Sudoku.Scripts.UI
             }
 
             _savedPuzzleListPanel?.Close();
+            _loadPuzzleListPanel?.Close();
 
             var exitButton = FindObjectInLoadedScenesIncludingInactive("ExitCornerButton");
             if (exitButton != null)
@@ -319,6 +328,7 @@ namespace Sudoku.Scripts.UI
             }
 
             _savedPuzzleListPanel?.Close();
+            _loadPuzzleListPanel?.Close();
 
             SetPlayUiVisible(true);
             EnsureSidePanelVisible();
@@ -720,6 +730,18 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
+         * Open the solved-state load panel overlay.
+         */
+        private void OpenLoadPuzzleList()
+        {
+            EnsureLoadPuzzleListPanel();
+            if (_loadPuzzleListPanel != null)
+            {
+                _loadPuzzleListPanel.Open();
+            }
+        }
+
+        /**
          * Ensure the saved puzzle list panel has been created and initialized.
          */
         private void EnsureSavedPuzzleListPanel()
@@ -745,6 +767,30 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
+         * Ensure the solved-state load panel has been created and initialized.
+         */
+        private void EnsureLoadPuzzleListPanel()
+        {
+            if (_loadPuzzleListPanel != null)
+            {
+                return;
+            }
+
+            if (_runtimeCanvas == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot create load puzzle panel - runtime canvas not found.");
+                return;
+            }
+
+            var panelGO = new GameObject("LoadPuzzleListPanelHost", typeof(RectTransform));
+            panelGO.transform.SetParent(_runtimeCanvas.transform, false);
+
+            _loadPuzzleListPanel = panelGO.AddComponent<LoadPuzzleListPanel>();
+            _loadPuzzleListPanel.Initialize(_runtimeCanvas);
+            _loadPuzzleListPanel.OnPuzzleLoadRequested += OnSolvedStatePuzzleLoadRequested;
+        }
+
+        /**
          * Handle a load request from the saved puzzle list panel.
          * Closes the panel and starts solving the selected puzzle.
          *
@@ -753,6 +799,178 @@ namespace Sudoku.Scripts.UI
         private void OnSavedPuzzleLoadRequested(string code)
         {
             StartPuzzleFromOptionalCode(code);
+        }
+
+        /**
+         * Handle a solved-state load request from the Load Puzzle panel.
+         *
+         * @param solvedState Serialized solved-state export selected by the user.
+         */
+        private void OnSolvedStatePuzzleLoadRequested(SolvedPuzzleStateExport solvedState)
+        {
+            StartPuzzleFromSolvedState(solvedState);
+        }
+
+        /**
+         * Start solve mode from a previously saved solved-state export.
+         *
+         * @param solvedState Serialized solved-state payload loaded from XML.
+         */
+        private void StartPuzzleFromSolvedState(SolvedPuzzleStateExport solvedState)
+        {
+            ResolveSceneReferences();
+            if (_runner == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No SolverRunner found. Cannot load solved-state puzzle.");
+                return;
+            }
+
+            if (solvedState == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot load solved-state puzzle - payload is null.");
+                return;
+            }
+
+            _runner.LoadBoardFromRows();
+            if (_runner.CurrentBoard == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No board is available for solved-state loading.");
+                return;
+            }
+
+            var board = _runner.CurrentBoard;
+            if (board.Cells == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Current board grid is missing and cannot be loaded.");
+                return;
+            }
+
+            string initialCode = string.IsNullOrWhiteSpace(solvedState.InitialPuzzleCode)
+                ? solvedState.PuzzleCode
+                : solvedState.InitialPuzzleCode;
+
+            var initialDecoded = PuzzleCodeGenerator.DecodeBoardFromCode(initialCode);
+            if (initialDecoded != null && initialDecoded.Size == board.Size)
+            {
+                ApplyDecodedBoardValuesToCurrentBoard(initialDecoded, markAsGiven: true);
+            }
+
+            var cellByPosition = new Dictionary<(int row, int col), SolvedPuzzleCellExport>();
+            if (solvedState.Cells != null)
+            {
+                for (int i = 0; i < solvedState.Cells.Count; i++)
+                {
+                    var exportCell = solvedState.Cells[i];
+                    if (exportCell == null)
+                    {
+                        continue;
+                    }
+
+                    if (exportCell.Row < 0 || exportCell.Column < 0 || exportCell.Row >= board.Size || exportCell.Column >= board.Size)
+                    {
+                        continue;
+                    }
+
+                    cellByPosition[(exportCell.Row, exportCell.Column)] = exportCell;
+                }
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int col = 0; col < board.Size; col++)
+                {
+                    var target = board.Cells[row, col];
+                    if (target == null)
+                    {
+                        continue;
+                    }
+
+                    if (!cellByPosition.TryGetValue((row, col), out var source))
+                    {
+                        continue;
+                    }
+
+                    target.Value = source.Value;
+                    target.IsGiven = source.IsGiven;
+                    if (target.Candidates == null)
+                    {
+                        target.Candidates = new HashSet<int>();
+                    }
+
+                    target.Candidates.Clear();
+                    if (!target.Value.HasValue && source.Candidates != null)
+                    {
+                        for (int i = 0; i < source.Candidates.Count; i++)
+                        {
+                            int candidate = source.Candidates[i];
+                            if (candidate >= 1 && candidate <= board.Size)
+                            {
+                                target.Candidates.Add(candidate);
+                            }
+                        }
+                    }
+                }
+            }
+
+            var restoredChangeLog = new List<Solver.Rules.CellChange>();
+            if (solvedState.ChangeLog != null)
+            {
+                for (int i = 0; i < solvedState.ChangeLog.Count; i++)
+                {
+                    var source = solvedState.ChangeLog[i];
+                    if (source == null)
+                    {
+                        continue;
+                    }
+
+                    if (source.Row < 0 || source.Column < 0 || source.Row >= board.Size || source.Column >= board.Size)
+                    {
+                        continue;
+                    }
+
+                    var change = new Solver.Rules.CellChange
+                    {
+                        Row = source.Row,
+                        Column = source.Column,
+                        OldValue = source.OldValue,
+                        NewValue = source.NewValue,
+                        ClearValue = source.ClearValue,
+                        ForceSetValue = source.ForceSetValue,
+                        GroupId = source.GroupId,
+                        SourceRuleName = source.SourceRuleName,
+                        SourceRuleDescription = source.SourceRuleDescription,
+                        RemovedCandidates = source.RemovedCandidates != null ? new List<int>(source.RemovedCandidates) : new List<int>(),
+                        AddedCandidates = source.AddedCandidates != null ? new List<int>(source.AddedCandidates) : new List<int>()
+                    };
+
+                    restoredChangeLog.Add(change);
+                }
+            }
+
+            board.ChangeLog = restoredChangeLog;
+            board.ChangeLogIndex = Mathf.Clamp(solvedState.ChangeLogIndex, 0, board.ChangeLog.Count);
+            board.NextChangeGroupId = solvedState.NextChangeGroupId > 0
+                ? solvedState.NextChangeGroupId
+                : board.ChangeLog.Count + 1;
+
+            _startingPuzzleCode = string.IsNullOrWhiteSpace(initialCode) ? string.Empty : initialCode.Trim();
+            UpdateSolvePuzzleCodeDisplay();
+
+            _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
+            _runner.ValidateCurrentBoardState(skipFullSolveCheck: true);
+            ChangeLogRuntimeControls.RefreshButtonStates();
+
+            ConfigureBoardVisualizerForRunnerMode();
+            EnterPlayMode();
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
+
+            _lastObservedBoardFingerprint = ComputeBoardFingerprint(board);
+            Debug.Log("MainMenuFlowController: Loaded solved-state puzzle from XML save.");
         }
 
         /**
@@ -847,6 +1065,50 @@ namespace Sudoku.Scripts.UI
             SavedPuzzleRepository.Add(entry);
 
             Debug.Log($"MainMenuFlowController: Saved '{entry.Name}' to the puzzle list.");
+        }
+
+        /**
+         * Save the solve-mode current board state to XML in Documents/My Games/Last Sudoku.
+         */
+        private void SaveCurrentSolvedStateToXml()
+        {
+            ResolveSceneReferences();
+            if (_runner == null || _runner.CurrentBoard == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot export solved state - no active puzzle board.");
+                return;
+            }
+
+            if (_runner.IsPuzzleCreationMode)
+            {
+                Debug.LogWarning("MainMenuFlowController: Solved-state XML export is only available in Solve Puzzle mode.");
+                return;
+            }
+
+            bool isWindows = Application.platform == RuntimePlatform.WindowsEditor || Application.platform == RuntimePlatform.WindowsPlayer;
+            if (!isWindows)
+            {
+                Debug.LogWarning("MainMenuFlowController: Solved-state XML export currently targets Windows documents path.");
+                return;
+            }
+
+            string currentPuzzleCode = PuzzleCodeGenerator.EncodeBoardToCode(_runner.CurrentBoard);
+            if (string.IsNullOrWhiteSpace(currentPuzzleCode))
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot export solved state - failed to generate puzzle code.");
+                return;
+            }
+
+            try
+            {
+                var exportModel = SolvedPuzzleStateExport.FromBoard(_runner.CurrentBoard, currentPuzzleCode, _startingPuzzleCode);
+                string fullPath = SolvedPuzzleStateXmlExporter.Save(exportModel);
+                Debug.Log($"MainMenuFlowController: Saved solved-state XML to '{fullPath}'.");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"MainMenuFlowController: Failed to export solved state XML. {ex.Message}");
+            }
         }
 
         /**
@@ -2205,6 +2467,39 @@ namespace Sudoku.Scripts.UI
                 if (saveToListButton != null)
                 {
                     saveToListButton.gameObject.SetActive(true);
+
+                    var saveToListLabel = saveToListButton.GetComponentInChildren<Text>();
+                    if (saveToListLabel != null)
+                    {
+                        saveToListLabel.text = isSolveMode ? "Save Initial Puzzle" : "Save";
+                        saveToListLabel.fontSize = isSolveMode ? 12 : 14;
+                    }
+
+                    if (isSolveMode)
+                    {
+                        ConfigurePlayButtonLayout(_playPanel.transform.Find("PlayActionsRow"), "SaveToListButton", 96f, 34f, 84f);
+                    }
+                    else
+                    {
+                        ConfigurePlayButtonLayout(_playPanel.transform.Find("PlayActionsRow"), "SaveToListButton", 54f, 34f, 44f);
+                    }
+                }
+
+                var saveSolvedStateButton = _playPanel.transform.Find("PlayActionsRow/SaveSolvedStateButton");
+                if (saveSolvedStateButton != null)
+                {
+                    saveSolvedStateButton.gameObject.SetActive(isSolveMode);
+                    if (isSolveMode)
+                    {
+                        var solvedStateLabel = saveSolvedStateButton.GetComponentInChildren<Text>();
+                        if (solvedStateLabel != null)
+                        {
+                            solvedStateLabel.text = "Save Current Solved State";
+                            solvedStateLabel.fontSize = 12;
+                        }
+
+                        ConfigurePlayButtonLayout(_playPanel.transform.Find("PlayActionsRow"), "SaveSolvedStateButton", 168f, 34f, 148f);
+                    }
                 }
             }
 
