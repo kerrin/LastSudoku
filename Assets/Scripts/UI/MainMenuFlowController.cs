@@ -31,6 +31,7 @@ namespace Sudoku.Scripts.UI
         private InputField _solvePuzzleCodeInput;
         private GameObject _overwriteConfirmRow;
         private string _pendingCodeToApply = string.Empty;
+        private SavedPuzzleListPanel _savedPuzzleListPanel;
         private string _startingPuzzleCode = string.Empty;
         private float _defaultRulesAreaTopOffset = float.NaN;
         private bool _hasCapturedRulesAreaTopOffset;
@@ -172,6 +173,7 @@ namespace Sudoku.Scripts.UI
             CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Puzzle", StartPuzzleFromCodeOrExisting, true);
             CreateMenuSpacer(_menuPanel.transform, "CreatePuzzleGroupSpacer", 14f);
             CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
+            CreateMenuButton(_menuPanel.transform, "SavedPuzzlesButton", "Saved Puzzles", OpenSavedPuzzleList, false);
             CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Open Configuration", OpenConfigurationStub, false);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
         }
@@ -244,9 +246,12 @@ namespace Sudoku.Scripts.UI
 
             EnsurePlayActionButton(actionsRow, "LoadPuzzleCodeButton", "Load Code", ApplyPuzzleCodeFromInput, false);
             EnsurePlayActionButton(actionsRow, "SaveBoardButton", "", GeneratePuzzleCode, false);
-            ConfigurePlayButtonLayout(actionsRow, "LoadPuzzleCodeButton", 130f, 34f, 130f);
-            ConfigurePlayButtonLayout(actionsRow, "SaveBoardButton", 70f, 34f, 70f);
+            ConfigurePlayButtonLayout(actionsRow, "LoadPuzzleCodeButton", 86f, 34f, 70f);
+            ConfigurePlayButtonLayout(actionsRow, "SaveBoardButton", 44f, 34f, 40f);
             EnsureIconLabel(actionsRow.Find("SaveBoardButton"), "GenerateIconLabel", "⟳", 24);
+
+            EnsurePlayActionButton(actionsRow, "SaveToListButton", "Save", SaveCurrentPuzzleToList, false);
+            ConfigurePlayButtonLayout(actionsRow, "SaveToListButton", 54f, 34f, 44f);
 
             EnsureBottomRightExitButton(sidePanel.transform);
 
@@ -274,6 +279,8 @@ namespace Sudoku.Scripts.UI
                 _playPanel.SetActive(false);
             }
 
+            _savedPuzzleListPanel?.Close();
+
             var exitButton = FindObjectInLoadedScenesIncludingInactive("ExitCornerButton");
             if (exitButton != null)
             {
@@ -292,6 +299,8 @@ namespace Sudoku.Scripts.UI
             {
                 _menuPanel.SetActive(false);
             }
+
+            _savedPuzzleListPanel?.Close();
 
             SetPlayUiVisible(true);
             EnsureSidePanelVisible();
@@ -678,6 +687,88 @@ namespace Sudoku.Scripts.UI
                 _boardVisualizer.ShowCandidates = true;
                 _boardVisualizer.DigitActionMode = BoardVisualizer.NumericRadialActionMode.ModifierDriven;
             }
+        }
+
+        /**
+         * Open the saved puzzle list panel overlay.
+         */
+        private void OpenSavedPuzzleList()
+        {
+            EnsureSavedPuzzleListPanel();
+            if (_savedPuzzleListPanel != null)
+            {
+                _savedPuzzleListPanel.Open();
+            }
+        }
+
+        /**
+         * Ensure the saved puzzle list panel has been created and initialized.
+         */
+        private void EnsureSavedPuzzleListPanel()
+        {
+            if (_savedPuzzleListPanel != null)
+            {
+                return;
+            }
+
+            if (_runtimeCanvas == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot create saved puzzle panel - runtime canvas not found.");
+                return;
+            }
+
+            var panelGO = new GameObject("SavedPuzzleListPanelHost", typeof(RectTransform));
+            panelGO.transform.SetParent(_runtimeCanvas.transform, false);
+
+            _savedPuzzleListPanel = panelGO.AddComponent<SavedPuzzleListPanel>();
+            _savedPuzzleListPanel.Initialize(_runtimeCanvas);
+            _savedPuzzleListPanel.OnPuzzleLoadRequested += OnSavedPuzzleLoadRequested;
+        }
+
+        /**
+         * Handle a load request from the saved puzzle list panel.
+         * Closes the panel and starts solving the selected puzzle.
+         *
+         * @param code The encoded puzzle code to start.
+         */
+        private void OnSavedPuzzleLoadRequested(string code)
+        {
+            StartPuzzleFromOptionalCode(code);
+        }
+
+        /**
+         * Save the currently active puzzle to the saved puzzle list.
+         * In create mode the board's current values are encoded; in solve mode
+         * the captured starting puzzle code is saved.
+         */
+        private void SaveCurrentPuzzleToList()
+        {
+            ResolveSceneReferences();
+
+            string code = string.Empty;
+
+            if (_runner != null && _runner.IsPuzzleCreationMode && _runner.CurrentBoard != null)
+            {
+                // Save the created puzzle's current board state.
+                code = PuzzleCodeGenerator.EncodeBoardToCode(_runner.CurrentBoard);
+            }
+            else if (!string.IsNullOrEmpty(_startingPuzzleCode))
+            {
+                // Save the solve-mode starting puzzle code.
+                code = _startingPuzzleCode;
+            }
+
+            if (string.IsNullOrEmpty(code))
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot save - no active puzzle board.");
+                return;
+            }
+
+            int nextNumber = SavedPuzzleRepository.Count() + 1;
+            var entry = new SavedPuzzle($"Puzzle {nextNumber}", code);
+            SavedPuzzleRepository.Add(entry);
+
+            Debug.Log($"MainMenuFlowController: Saved '{entry.Name}' to the puzzle list.");
         }
 
         /**
@@ -2030,6 +2121,15 @@ namespace Sudoku.Scripts.UI
                 _overwriteConfirmRow.SetActive(isCreateMode && !string.IsNullOrEmpty(_pendingCodeToApply));
             }
 
+            if (_playPanel != null)
+            {
+                var saveToListButton = _playPanel.transform.Find("PlayActionsRow/SaveToListButton");
+                if (saveToListButton != null)
+                {
+                    saveToListButton.gameObject.SetActive(true);
+                }
+            }
+
             if (!isCreateMode && _generatedCodeInput != null)
             {
                 _generatedCodeInput.text = string.Empty;
@@ -2179,9 +2279,9 @@ namespace Sudoku.Scripts.UI
 
             layout.preferredHeight = 34f;
             layout.minHeight = 34f;
-            layout.preferredWidth = 206f;
-            layout.minWidth = 206f;
-            layout.flexibleWidth = 0f;
+            layout.preferredWidth = 0f;
+            layout.minWidth = 0f;
+            layout.flexibleWidth = 1f;
             layout.flexibleHeight = 0f;
 
             var oldVertical = row.GetComponent<VerticalLayoutGroup>();
@@ -2197,9 +2297,9 @@ namespace Sudoku.Scripts.UI
             }
 
             hlg.padding = new RectOffset(0, 0, 0, 0);
-            hlg.spacing = 6f;
-            hlg.childAlignment = TextAnchor.MiddleCenter;
-            hlg.childControlWidth = false;
+            hlg.spacing = 4f;
+            hlg.childAlignment = TextAnchor.MiddleRight;
+            hlg.childControlWidth = true;
             hlg.childControlHeight = true;
             hlg.childForceExpandWidth = false;
             hlg.childForceExpandHeight = false;
