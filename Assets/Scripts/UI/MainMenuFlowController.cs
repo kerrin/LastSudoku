@@ -723,6 +723,7 @@ namespace Sudoku.Scripts.UI
             _savedPuzzleListPanel = panelGO.AddComponent<SavedPuzzleListPanel>();
             _savedPuzzleListPanel.Initialize(_runtimeCanvas);
             _savedPuzzleListPanel.OnPuzzleLoadRequested += OnSavedPuzzleLoadRequested;
+            _savedPuzzleListPanel.OnPuzzleEditRequested += OnSavedPuzzleEditRequested;
         }
 
         /**
@@ -734,6 +735,64 @@ namespace Sudoku.Scripts.UI
         private void OnSavedPuzzleLoadRequested(string code)
         {
             StartPuzzleFromOptionalCode(code);
+        }
+
+        /**
+         * Handle an edit request from the saved puzzle list panel.
+         * Loads the selected puzzle into create mode so values can be edited.
+         *
+         * @param code Encoded puzzle code to load for editing.
+         */
+        private void OnSavedPuzzleEditRequested(string code)
+        {
+            StartPuzzleEditFromCode(code);
+        }
+
+        /**
+         * Enter create mode and preload a puzzle code as editable values.
+         *
+         * @param code Puzzle code to decode and load.
+         */
+        private void StartPuzzleEditFromCode(string code)
+        {
+            ResolveSceneReferences();
+            if (_runner == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No SolverRunner found. Cannot edit saved puzzle.");
+                return;
+            }
+
+            string trimmed = string.IsNullOrWhiteSpace(code) ? string.Empty : code.Trim();
+            if (string.IsNullOrEmpty(trimmed))
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot edit saved puzzle - code is empty.");
+                return;
+            }
+
+            var decoded = PuzzleCodeGenerator.DecodeBoardFromCode(trimmed);
+            if (decoded == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Cannot edit saved puzzle - code is invalid.");
+                return;
+            }
+
+            _runner.CreateBlankBoard();
+            if (_runner.CurrentBoard == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: No board is available for saved puzzle editing.");
+                return;
+            }
+
+            ApplyDecodedBoardValues(decoded);
+            _runner.SetInteractionMode(BoardInteractionMode.PuzzleCreation);
+            ConfigureBoardVisualizerForRunnerMode();
+            EnterPlayMode();
+
+            ResolveSceneReferences();
+            if (_boardSidePanel != null)
+            {
+                _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
+            }
         }
 
         /**
@@ -766,6 +825,7 @@ namespace Sudoku.Scripts.UI
 
             int nextNumber = SavedPuzzleRepository.Count() + 1;
             var entry = new SavedPuzzle($"Puzzle {nextNumber}", code);
+            entry.ApplyAnalysis(SavedPuzzleAnalysisGenerator.AnalyzeFromCode(code));
             SavedPuzzleRepository.Add(entry);
 
             Debug.Log($"MainMenuFlowController: Saved '{entry.Name}' to the puzzle list.");

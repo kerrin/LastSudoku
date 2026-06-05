@@ -24,6 +24,8 @@ namespace Sudoku.Scripts.UI
     {
         // Fired with the puzzle code when the user clicks "Load" on an entry.
         public event Action<string> OnPuzzleLoadRequested;
+        // Fired with the puzzle code when the user clicks "Edit" on an entry.
+        public event Action<string> OnPuzzleEditRequested;
 
         // Panel colours kept consistent with MainMenuFlowController styling.
         private static readonly Color ColourOverlay = new Color(0f, 0f, 0f, 0.72f);
@@ -54,6 +56,7 @@ namespace Sudoku.Scripts.UI
         private Text _emptyLabelText;
         private InputField _addCodeInput;
         private ScrollRect _scrollRect;
+        private string _pendingDeletePuzzleId = string.Empty;
 
         // Tracks textures created for mini previews so they can be cleaned up.
         private readonly List<Texture2D> _previewTextures = new List<Texture2D>();
@@ -164,6 +167,15 @@ namespace Sudoku.Scripts.UI
                 }
             }
 
+            if (!string.IsNullOrEmpty(_pendingDeletePuzzleId))
+            {
+                bool stillExists = puzzles.Exists(p => p != null && p.Id == _pendingDeletePuzzleId);
+                if (!stillExists)
+                {
+                    _pendingDeletePuzzleId = string.Empty;
+                }
+            }
+
             if (_emptyLabel != null)
             {
                 bool isEmpty = puzzles.Count == 0;
@@ -244,25 +256,58 @@ namespace Sudoku.Scripts.UI
 
         private void OnLoadClicked(string code)
         {
+            _pendingDeletePuzzleId = string.Empty;
             OnPuzzleLoadRequested?.Invoke(code);
+            Close();
+        }
+
+        private void OnEditClicked(string code)
+        {
+            _pendingDeletePuzzleId = string.Empty;
+            OnPuzzleEditRequested?.Invoke(code);
             Close();
         }
 
         private void OnMoveUpClicked(string id)
         {
+            _pendingDeletePuzzleId = string.Empty;
             SavedPuzzleRepository.MoveUp(id);
             RefreshList();
         }
 
         private void OnMoveDownClicked(string id)
         {
+            _pendingDeletePuzzleId = string.Empty;
             SavedPuzzleRepository.MoveDown(id);
             RefreshList();
         }
 
         private void OnDeleteClicked(string id)
         {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
+            _pendingDeletePuzzleId = id;
+            RefreshList();
+        }
+
+        private void OnDeleteConfirmClicked(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+
             SavedPuzzleRepository.Delete(id);
+            _pendingDeletePuzzleId = string.Empty;
+            RefreshList();
+        }
+
+        private void OnDeleteCancelClicked()
+        {
+            _pendingDeletePuzzleId = string.Empty;
             RefreshList();
         }
 
@@ -298,6 +343,7 @@ namespace Sudoku.Scripts.UI
 
             int nextNumber = SavedPuzzleRepository.Count() + 1;
             var entry = new SavedPuzzle($"Puzzle {nextNumber}", canonical);
+            entry.ApplyAnalysis(SavedPuzzleAnalysisGenerator.AnalyzeFromCode(canonical));
             SavedPuzzleRepository.Add(entry);
 
             _addCodeInput.text = string.Empty;
@@ -840,7 +886,8 @@ namespace Sudoku.Scripts.UI
 
             var dateText = dateGO.GetComponent<Text>();
             string localDate = puzzle.SavedAt.ToLocalTime().ToString("dd MMM yyyy, HH:mm");
-            dateText.text = $"Saved: {localDate}";
+            string difficulty = string.IsNullOrWhiteSpace(puzzle.DifficultyLabel) ? "Unknown" : puzzle.DifficultyLabel;
+            dateText.text = $"Saved: {localDate}  |  {difficulty}";
             dateText.alignment = TextAnchor.UpperLeft;
             dateText.color = new Color(0.62f, 0.62f, 0.62f, 1f);
             dateText.fontSize = 10;
@@ -877,16 +924,47 @@ namespace Sudoku.Scripts.UI
 
             string puzzleId = puzzle.Id;
             string puzzleCode = puzzle.Code;
+            bool isDeletePendingForRow = !string.IsNullOrEmpty(_pendingDeletePuzzleId) && _pendingDeletePuzzleId == puzzleId;
 
             // Load button.
             var loadBtn = CreateButton(colGO.transform, "LoadButton", "Load",
                 () => OnLoadClicked(puzzleCode), true);
-            SetButtonSize(loadBtn, 56f, 34f);
+            SetButtonSize(loadBtn, 40f, 34f);
+
+            if (isDeletePendingForRow)
+            {
+                var confirmBtn = CreateButton(colGO.transform, "ConfirmDeleteButton", "Yes",
+                    () => OnDeleteConfirmClicked(puzzleId), false);
+                SetButtonSize(confirmBtn, 36f, 34f);
+
+                var confirmBtnImage = confirmBtn.GetComponent<Image>();
+                if (confirmBtnImage != null)
+                {
+                    confirmBtnImage.color = new Color(0.80f, 0.22f, 0.22f, 1f);
+                }
+
+                var confirmBtnText = confirmBtn.GetComponentInChildren<Text>();
+                if (confirmBtnText != null)
+                {
+                    confirmBtnText.color = Color.white;
+                }
+
+                var cancelBtn = CreateButton(colGO.transform, "CancelDeleteButton", "No",
+                    OnDeleteCancelClicked, false);
+                SetButtonSize(cancelBtn, 36f, 34f);
+
+                return;
+            }
+
+            // Edit button opens puzzle creation mode with this puzzle preloaded.
+            var editBtn = CreateButton(colGO.transform, "EditButton", "Edit",
+                () => OnEditClicked(puzzleCode), false);
+            SetButtonSize(editBtn, 40f, 34f);
 
             // Move Up button.
             var upBtn = CreateButton(colGO.transform, "UpButton", "↑",
                 () => OnMoveUpClicked(puzzleId), false);
-            SetButtonSize(upBtn, 32f, 34f);
+            SetButtonSize(upBtn, 24f, 34f);
             if (isFirst)
             {
                 var upImage = upBtn.GetComponent<Image>();
@@ -898,7 +976,7 @@ namespace Sudoku.Scripts.UI
             // Move Down button.
             var downBtn = CreateButton(colGO.transform, "DownButton", "↓",
                 () => OnMoveDownClicked(puzzleId), false);
-            SetButtonSize(downBtn, 32f, 34f);
+            SetButtonSize(downBtn, 24f, 34f);
             if (isLast)
             {
                 var downImage = downBtn.GetComponent<Image>();
@@ -910,7 +988,7 @@ namespace Sudoku.Scripts.UI
             // Delete button.
             var deleteBtn = CreateButton(colGO.transform, "DeleteButton", "✕",
                 () => OnDeleteClicked(puzzleId), false);
-            SetButtonSize(deleteBtn, 32f, 34f);
+            SetButtonSize(deleteBtn, 24f, 34f);
             var deleteBtnImage = deleteBtn.GetComponent<Image>();
             if (deleteBtnImage != null)
             {
