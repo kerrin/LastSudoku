@@ -18,7 +18,7 @@ namespace Sudoku.Tests.Editor.Models
         public void SetUp()
         {
             // Redirect repository to a temp file so tests are isolated.
-            _tempFile = Path.Combine(Path.GetTempPath(), $"test_saved_puzzles_{Guid.NewGuid():N}.json");
+            _tempFile = Path.Combine(Path.GetTempPath(), $"test_saved_puzzles_{Guid.NewGuid():N}.xml");
             SavedPuzzleRepository.OverrideFilePath = _tempFile;
         }
 
@@ -60,7 +60,7 @@ namespace Sudoku.Tests.Editor.Models
         [Test]
         public void LoadAll_WhenFileIsCorrupt_ReturnsEmptyList()
         {
-            File.WriteAllText(_tempFile, "{ not valid json {{{{");
+            File.WriteAllText(_tempFile, "<SavedPuzzleList><Puzzles><Puzzle>");
 
             var puzzles = SavedPuzzleRepository.LoadAll();
 

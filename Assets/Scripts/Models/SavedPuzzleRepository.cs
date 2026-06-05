@@ -1,18 +1,21 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Xml.Serialization;
 using UnityEngine;
 
 namespace Sudoku.Models
 {
     /**
      * Manages persistence of the saved puzzle list.
-     * Puzzles are serialized as JSON and stored in the application's persistent
-     * data directory. All mutating operations immediately flush to disk.
+     * Puzzles are serialized as XML. On Windows builds and in the editor, the
+     * file is stored under My Documents/My Games/Last Sudoku/SavedPuzzles.xml.
+     * All mutating operations immediately flush to disk.
      */
     public static class SavedPuzzleRepository
     {
-        private const string FileName = "saved_puzzles.json";
+        private const string FileName = "SavedPuzzles.xml";
+        private static readonly XmlSerializer PuzzleListSerializer = new XmlSerializer(typeof(PuzzleListData));
 
         /**
          * Optional path override used by unit tests to avoid touching
@@ -21,13 +24,25 @@ namespace Sudoku.Models
         public static string OverrideFilePath { get; set; } = null;
 
         private static string FilePath =>
-            OverrideFilePath ?? Path.Combine(Application.persistentDataPath, FileName);
+            OverrideFilePath ?? GetDefaultFilePath();
 
-        // Unity's JsonUtility cannot serialize a List<T> at the root level,
-        // so we wrap the list in a container class.
-        [Serializable]
-        private class PuzzleListData
+        private static string GetDefaultFilePath()
         {
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+            string documentsPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            return Path.Combine(documentsPath, "My Games", "Last Sudoku", FileName);
+#else
+            return Path.Combine(Application.persistentDataPath, FileName);
+#endif
+        }
+
+        // XmlSerializer requires a concrete root type, so we wrap the list.
+        [Serializable]
+        [XmlRoot("SavedPuzzleList")]
+        public class PuzzleListData
+        {
+            [XmlArray("Puzzles")]
+            [XmlArrayItem("Puzzle")]
             public List<SavedPuzzle> Puzzles = new List<SavedPuzzle>();
         }
 
@@ -46,13 +61,14 @@ namespace Sudoku.Models
                     return new List<SavedPuzzle>();
                 }
 
-                string json = File.ReadAllText(FilePath);
-                if (string.IsNullOrWhiteSpace(json))
+                string xml = File.ReadAllText(FilePath);
+                if (string.IsNullOrWhiteSpace(xml))
                 {
                     return new List<SavedPuzzle>();
                 }
 
-                var data = JsonUtility.FromJson<PuzzleListData>(json);
+                using var stream = File.OpenRead(FilePath);
+                var data = PuzzleListSerializer.Deserialize(stream) as PuzzleListData;
                 return data?.Puzzles ?? new List<SavedPuzzle>();
             }
             catch (Exception ex)
@@ -162,8 +178,14 @@ namespace Sudoku.Models
                     Puzzles = puzzles ?? new List<SavedPuzzle>()
                 };
 
-                string json = JsonUtility.ToJson(data, prettyPrint: false);
-                File.WriteAllText(FilePath, json);
+                string directory = Path.GetDirectoryName(FilePath);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                using var stream = File.Create(FilePath);
+                PuzzleListSerializer.Serialize(stream, data);
             }
             catch (Exception ex)
             {

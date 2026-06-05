@@ -48,7 +48,7 @@ namespace Sudoku.Models
             SolveSteps = 0;
         }
 
-        /** Parameterless constructor required for JSON deserialization. */
+        /** Parameterless constructor required for XML deserialization. */
         public SavedPuzzle() { }
 
         /** The UTC DateTime when this puzzle entry was created. */

@@ -52,7 +52,25 @@ namespace Sudoku.Scripts.UI
          */
         private void Start()
         {
+            PreloadSavedPuzzles();
             EnterMenuMode();
+        }
+
+        /**
+         * Load saved puzzles from disk during startup so Saved Puzzles are
+         * initialized before the panel is first opened.
+         */
+        private void PreloadSavedPuzzles()
+        {
+            // Warm the repository at startup so persistence issues surface
+            // immediately and list metadata (such as count) is ready.
+            var puzzles = SavedPuzzleRepository.LoadAll();
+
+            // Create and initialize the list panel once at startup so it can
+            // render from preloaded data without a first-open setup delay.
+            EnsureSavedPuzzleListPanel();
+
+            Debug.Log($"MainMenuFlowController: Preloaded {puzzles.Count} saved puzzle(s) from disk.");
         }
 
         /**
