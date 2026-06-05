@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Sudoku.Models;
 
 namespace Sudoku.Solver.Rules

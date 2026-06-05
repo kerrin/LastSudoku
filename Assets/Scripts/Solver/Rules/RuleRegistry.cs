@@ -156,7 +156,7 @@ namespace Sudoku.Solver.Rules
                         // Append a deep copy of each recorded change to the board's in-memory change log
                         try
                         {
-                            if (board.ChangeLog == null) board.ChangeLog = new System.Collections.Generic.List<CellChange>();
+                            if (board.ChangeLog == null) board.ChangeLog = new List<CellChange>();
 
                             // If the user previously undid some actions and then a new action occurs,
                             // clear any redo-history beyond the current ChangeLogIndex so the log
@@ -180,8 +180,8 @@ namespace Sudoku.Solver.Rules
                                     NewValue = ch.NewValue,
                                     ClearValue = ch.ClearValue,
                                     ForceSetValue = ch.ForceSetValue,
-                                    RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
-                                    AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
+                                    RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
+                                    AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
                                     GroupId = gid,
                                     SourceRuleName = r.GetType().Name,
                                     SourceRuleDescription = res.Description

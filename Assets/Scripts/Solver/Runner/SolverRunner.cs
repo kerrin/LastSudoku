@@ -13,7 +13,7 @@ namespace Sudoku.Solver
     }
 
     /**
-     * Temporary Simple Unity runner component to load a 9x9 puzzle from inspector rows
+     * Simple Unity runner component to load a 9x9 puzzle from inspector rows
      * and execute the registered rule engine. Use the context menu to run steps.
      * Just used for testing.
      */

@@ -37,7 +37,7 @@ public class CreateModeStatusPanel : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
-        if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
+        if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         BuildUi();
         RefreshStatus(force: true);
     }
@@ -53,7 +53,7 @@ public class CreateModeStatusPanel : MonoBehaviour
 
         if (Runner == null)
         {
-            Runner = Object.FindAnyObjectByType<SolverRunner>();
+            Runner = FindAnyObjectByType<SolverRunner>();
         }
 
         // Visibility is controlled by BoardSidePanel.SyncApplyRulePanelVisibility.
@@ -76,7 +76,7 @@ public class CreateModeStatusPanel : MonoBehaviour
             if (_headerText == null || _statusText == null || _possibilityText == null || _solveStatusText == null) return;
         }
 
-        if (Runner == null) Runner = Object.FindAnyObjectByType<SolverRunner>();
+        if (Runner == null) Runner = FindAnyObjectByType<SolverRunner>();
         if (Runner == null || Runner.CurrentBoard == null)
         {
             _headerText.text = "Board Status";

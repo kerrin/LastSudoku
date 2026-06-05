@@ -43,7 +43,7 @@ namespace Sudoku.Solver.Rules
 
         public string Name => "Y-Wing";
 
-        public Difficulty Difficulty => Difficulty.Medium;
+        public Difficulty Difficulty => Difficulty.Hard;
 
         public bool CanApply(Board board)
         {
