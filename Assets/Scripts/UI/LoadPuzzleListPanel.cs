@@ -724,11 +724,27 @@ namespace Sudoku.Scripts.UI
 
             var metaText = metaGO.GetComponent<Text>();
             string localDate = entry.SavedAtUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm");
-            metaText.text = $"Saved: {localDate}  |  {entry.DifficultyLabel}";
+            string solveTime = FormatElapsedTime(entry.State.ElapsedSeconds);
+            metaText.text = $"Saved: {localDate}  |  {entry.DifficultyLabel}  |  Time: {solveTime}";
             metaText.alignment = TextAnchor.UpperLeft;
             metaText.color = new Color(0.62f, 0.62f, 0.62f, 1f);
             metaText.fontSize = 11;
             metaText.font = GetFont();
+        }
+
+        /**
+         * Convert elapsed seconds to H:MM:SS for list display.
+         *
+         * @param elapsedSeconds Total elapsed seconds from saved solve-state.
+         * @returns Time string formatted as H:MM:SS.
+         */
+        private static string FormatElapsedTime(double elapsedSeconds)
+        {
+            int totalSeconds = elapsedSeconds > 0.0 ? Mathf.FloorToInt((float)elapsedSeconds) : 0;
+            int hours = totalSeconds / 3600;
+            int minutes = (totalSeconds % 3600) / 60;
+            int seconds = totalSeconds % 60;
+            return $"{hours}:{minutes:D2}:{seconds:D2}";
         }
 
         private void BuildActionsColumn(Transform parent, LoadPuzzleEntry entry)

@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
+using Sudoku.Solver.Rules;
 using Sudoku.Models;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,7 @@ namespace Sudoku.Scripts.UI
         private const string PlayPanelName = "PlayModePanel";
         private const string SidePanelName = "SidePanel";
         private const string ChangeLogControlsName = "ChangeLogControls";
+        private const string TimerLabelName = "SolveTimerLabel";
 
         private Canvas _runtimeCanvas;
         private GameObject _menuPanel;
@@ -40,6 +42,9 @@ namespace Sudoku.Scripts.UI
         private float _defaultRulesAreaTopOffset = float.NaN;
         private bool _hasCapturedRulesAreaTopOffset;
         private int _lastObservedBoardFingerprint = int.MinValue;
+        private PuzzleSolveTimer _solveTimer;
+        private Text _timerLabelText;
+        private int _lastTimerBoardFingerprint = int.MinValue;
 
         /**
          * Prepare runtime references and UI containers.
@@ -115,6 +120,7 @@ namespace Sudoku.Scripts.UI
 
         /**
          * Observe board-state changes in create mode so generated code is invalidated after edits.
+         * Also refreshes the solve timer display and checks for puzzle completion.
          */
         private void Update()
         {
@@ -127,6 +133,15 @@ namespace Sudoku.Scripts.UI
                 {
                     EnsureBottomRightExitButton(sidePanel.transform);
                 }
+            }
+
+            // Update timer label in solve mode.
+            UpdateTimerDisplay();
+
+            // Check for puzzle completion in solve mode.
+            if (_solveTimer != null && _solveTimer.IsRunning && _runner != null && !_runner.IsPuzzleCreationMode && _runner.CurrentBoard != null)
+            {
+                CheckAndStopTimerIfPuzzleComplete();
             }
 
             if (_runner == null || !_runner.IsPuzzleCreationMode || _runner.CurrentBoard == null)
@@ -266,6 +281,8 @@ namespace Sudoku.Scripts.UI
             EnsureOverwriteConfirmationRow(_playPanel.transform);
             var actionsRow = EnsurePlayActionsRow(_playPanel.transform);
             EnsureSolvePuzzleCodeRow(sidePanel.transform);
+            EnsureTimerLabel(sidePanel.transform);
+            EnsureSolveTimer();
 
             EnsurePlayActionButton(actionsRow, "LoadPuzzleCodeButton", "Load Code", ApplyPuzzleCodeFromInput, false);
             EnsurePlayActionButton(actionsRow, "SaveBoardButton", "", GeneratePuzzleCode, false);
@@ -313,6 +330,9 @@ namespace Sudoku.Scripts.UI
             {
                 exitButton.SetActive(false);
             }
+
+            // Pause the timer when returning to menu so time does not accumulate while idle.
+            _solveTimer?.Pause();
 
             SetPlayUiVisible(false);
         }
@@ -663,6 +683,12 @@ namespace Sudoku.Scripts.UI
             CacheStartingPuzzleCodeFromCurrentBoard();
             _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
             ConfigureBoardVisualizerForRunnerMode();
+
+            // Start a fresh timer for this new puzzle.
+            EnsureSolveTimer();
+            _solveTimer.StartFresh();
+            _lastTimerBoardFingerprint = int.MinValue;
+
             EnterPlayMode();
 
             ResolveSceneReferences();
@@ -961,6 +987,12 @@ namespace Sudoku.Scripts.UI
             ChangeLogRuntimeControls.RefreshButtonStates();
 
             ConfigureBoardVisualizerForRunnerMode();
+
+            // Restore the timer from saved state so solve time continues where it left off.
+            EnsureSolveTimer();
+            _solveTimer.RestoreAndResume(solvedState.ElapsedSeconds);
+            _lastTimerBoardFingerprint = int.MinValue;
+
             EnterPlayMode();
 
             ResolveSceneReferences();
@@ -1101,7 +1133,8 @@ namespace Sudoku.Scripts.UI
 
             try
             {
-                var exportModel = SolvedPuzzleStateExport.FromBoard(_runner.CurrentBoard, currentPuzzleCode, _startingPuzzleCode);
+                double elapsed = _solveTimer != null ? _solveTimer.ElapsedSeconds : 0.0;
+                var exportModel = SolvedPuzzleStateExport.FromBoard(_runner.CurrentBoard, currentPuzzleCode, _startingPuzzleCode, elapsed);
                 string fullPath = SolvedPuzzleStateXmlExporter.Save(exportModel);
                 Debug.Log($"MainMenuFlowController: Saved solved-state XML to '{fullPath}'.");
             }
@@ -2312,7 +2345,7 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
-         * Offset the side-panel rules area down when the solve puzzle-code row is visible.
+         * Offset the side-panel rules area down when the solve puzzle-code row and timer are visible.
          *
          * @param showSolveRow True when solve-mode row should be visible.
          */
@@ -2336,9 +2369,9 @@ namespace Sudoku.Scripts.UI
                 _hasCapturedRulesAreaTopOffset = true;
             }
 
-            float targetY = showSolveRow
-                ? _defaultRulesAreaTopOffset - 42f
-                : _defaultRulesAreaTopOffset;
+            // Shift down only for the puzzle-code row; the timer now shares that same row.
+            float extraOffset = showSolveRow ? 42f : 0f;
+            float targetY = _defaultRulesAreaTopOffset - extraOffset;
 
             var anchored = rulesArea.anchoredPosition;
             if (!Mathf.Approximately(anchored.y, targetY))
@@ -2349,8 +2382,168 @@ namespace Sudoku.Scripts.UI
         }
 
         /**
-         * Build a clear copy icon from simple UI shapes so it does not depend on font glyph support.
+         * Ensure the PuzzleSolveTimer component exists on this GameObject.
          */
+        private void EnsureSolveTimer()
+        {
+            if (_solveTimer != null)
+            {
+                return;
+            }
+
+            _solveTimer = GetComponent<PuzzleSolveTimer>();
+            if (_solveTimer == null)
+            {
+                _solveTimer = gameObject.AddComponent<PuzzleSolveTimer>();
+            }
+        }
+
+        /**
+         * Ensure the timer label UI element exists in the side panel, positioned between
+         * the puzzle-code row and the rules area (Toggle Rules).
+         * Only visible in Solve Puzzle mode.
+         *
+         * @param sidePanelTransform The SidePanel transform.
+         */
+        private void EnsureTimerLabel(Transform sidePanelTransform)
+        {
+            if (sidePanelTransform == null)
+            {
+                return;
+            }
+
+            var existing = sidePanelTransform.Find(TimerLabelName);
+            GameObject labelGO;
+            if (existing == null)
+            {
+                labelGO = new GameObject(TimerLabelName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGO.transform.SetParent(sidePanelTransform, false);
+            }
+            else
+            {
+                labelGO = existing.gameObject;
+            }
+
+            // Position at top-left on the same row as SolvePuzzleCodeRow.
+            var rect = labelGO.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 1f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 1f);
+            rect.anchoredPosition = new Vector2(8f, -8f);
+            rect.sizeDelta = new Vector2(116f, 34f);
+
+            var text = labelGO.GetComponent<Text>();
+            text.text = "0:00:00";
+            text.alignment = TextAnchor.MiddleLeft;
+            text.color = Color.white;
+            text.fontSize = 22;
+            text.fontStyle = FontStyle.Bold;
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+            text.font = font;
+
+            _timerLabelText = text;
+        }
+
+        /**
+         * Refresh the timer label text from the current timer state.
+         * Only runs in Solve Puzzle mode when the label is visible.
+         */
+        private void UpdateTimerDisplay()
+        {
+            if (_timerLabelText == null)
+            {
+                // Attempt to recover the reference if it was lost (e.g. after scene reload).
+                var sidePanel = FindSidePanelIncludingInactive();
+                if (sidePanel != null)
+                {
+                    var labelTransform = sidePanel.transform.Find(TimerLabelName);
+                    if (labelTransform != null)
+                    {
+                        _timerLabelText = labelTransform.GetComponent<Text>();
+                    }
+                }
+            }
+
+            if (_timerLabelText == null || _solveTimer == null)
+            {
+                return;
+            }
+
+            _timerLabelText.text = _solveTimer.GetDisplayString();
+        }
+
+        /**
+         * Show or hide the timer label based on the current interaction mode.
+         *
+         * @param isSolveMode True when the timer should be visible.
+         */
+        private void UpdateTimerLabelVisibility(bool isSolveMode)
+        {
+            var sidePanel = FindSidePanelIncludingInactive();
+            if (sidePanel == null)
+            {
+                return;
+            }
+
+            var labelTransform = sidePanel.transform.Find(TimerLabelName);
+            if (labelTransform == null)
+            {
+                return;
+            }
+
+            labelTransform.gameObject.SetActive(isSolveMode);
+        }
+
+        /**
+         * Check if every cell on the board has a value, then validate the solution.
+         * If the board is fully filled and valid, stop the timer permanently.
+         */
+        private void CheckAndStopTimerIfPuzzleComplete()
+        {
+            if (_runner == null || _runner.CurrentBoard == null)
+            {
+                return;
+            }
+
+            var board = _runner.CurrentBoard;
+
+            // Compute a fingerprint to skip redundant checks when nothing changed.
+            int fingerprint = ComputeBoardFingerprint(board);
+            if (fingerprint == _lastTimerBoardFingerprint)
+            {
+                return;
+            }
+
+            _lastTimerBoardFingerprint = fingerprint;
+
+            // Only validate once all cells have a value.
+            int size = board.Size;
+            for (int row = 0; row < size; row++)
+            {
+                for (int col = 0; col < size; col++)
+                {
+                    var cell = board.Cells[row, col];
+                    if (cell == null || !cell.Value.HasValue)
+                    {
+                        // Board is not fully filled yet.
+                        return;
+                    }
+                }
+            }
+
+            // All cells filled — validate the solution.
+            if (board.IsValid())
+            {
+                _solveTimer.StopOnCompletion();
+                Debug.Log($"MainMenuFlowController: Puzzle solved! Time: {_solveTimer.GetDisplayString()}");
+            }
+        }
+
+
         private static void EnsureCopyIconGraphic(Transform buttonTransform)
         {
             if (buttonTransform == null)
@@ -2439,6 +2632,7 @@ namespace Sudoku.Scripts.UI
             }
 
             UpdateRulesAreaTopOffset(isSolveMode);
+            UpdateTimerLabelVisibility(isSolveMode);
             UpdateSolvePuzzleCodeDisplay();
 
             if (_playPanel != null)

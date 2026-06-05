@@ -21,6 +21,8 @@ namespace Sudoku.Models
         public long SavedAtUtcTicks;
         public int ChangeLogIndex;
         public int NextChangeGroupId;
+        /** Accumulated solve time in seconds, persisted so the timer continues after loading. */
+        public double ElapsedSeconds;
         public List<SolvedPuzzleCellExport> Cells = new List<SolvedPuzzleCellExport>();
         public List<SolvedPuzzleChangeLogEntryExport> ChangeLog = new List<SolvedPuzzleChangeLogEntryExport>();
 
@@ -33,9 +35,10 @@ namespace Sudoku.Models
          * @param board Source board to snapshot.
          * @param puzzleCode Encoded puzzle code representing the current values.
          * @param initialPuzzleCode Encoded puzzle code captured at solve start.
+         * @param elapsedSeconds Accumulated solve time in seconds to persist.
          * @returns A new export model containing values, candidates, and changelog.
          */
-        public static SolvedPuzzleStateExport FromBoard(Board board, string puzzleCode, string initialPuzzleCode)
+        public static SolvedPuzzleStateExport FromBoard(Board board, string puzzleCode, string initialPuzzleCode, double elapsedSeconds = 0.0)
         {
             if (board == null)
             {
@@ -52,6 +55,7 @@ namespace Sudoku.Models
                 SavedAtUtcTicks = DateTime.UtcNow.Ticks,
                 ChangeLogIndex = board.ChangeLogIndex,
                 NextChangeGroupId = board.NextChangeGroupId,
+                ElapsedSeconds = elapsedSeconds >= 0.0 ? elapsedSeconds : 0.0,
             };
 
             if (board.Cells != null)
