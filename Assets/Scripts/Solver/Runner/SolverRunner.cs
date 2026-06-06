@@ -232,7 +232,7 @@ namespace Sudoku.Solver
             var result = new RuleResult
             {
                 Apply = false,
-                Description = "Initialise Candidates"
+                Description = "Reinitialise Candidates"
             };
 
             // Step over each cell and initialize candidates for empty cells
@@ -250,18 +250,7 @@ namespace Sudoku.Solver
                     }
 
                     var oldCandidates = new HashSet<int>(cell.Candidates);
-                    var newCandidates = new HashSet<int>();
-                    for (int v = 1; v <= _board.Size; v++) newCandidates.Add(v);
-
-                    // Eliminate candidates based on peers' values
-                    var peers = _board.GetPeers(cell);
-                    foreach (var peer in peers)
-                    {
-                        if (peer.Value.HasValue)
-                        {
-                            newCandidates.Remove(peer.Value.Value);
-                        }
-                    }
+                    var newCandidates = BuildLegalCandidatesForCell(cell);
 
                     var removedCandidates = new List<int>();
                     foreach (var candidate in oldCandidates)
@@ -301,7 +290,7 @@ namespace Sudoku.Solver
             result.Apply = result.Changes.Count > 0;
             if (result.Apply)
             {
-                result.Description = $"Initialise Candidates ({result.Changes.Count} cells updated)";
+                result.Description = $"Reinitialise Candidates ({result.Changes.Count} cells updated)";
 
                 try
                 {
@@ -347,6 +336,78 @@ namespace Sudoku.Solver
             PreviewRuleResult = null;
             CandidatesInitialised = true;
             Debug.Log($"SolverRunner.InitialiseCandidates: runner.EntityId={this.GetEntityId()} board.hash={_board?.GetHashCode() ?? 0} candidatesInitialised={CandidatesInitialised}");
+        }
+
+        /**
+         * Determine whether reinitialising candidates would remove at least one
+         * currently-marked candidate from any unsolved cell.
+         *
+         * @returns True when at least one existing candidate is currently illegal.
+         */
+        public bool CanReinitialiseCandidatesRemoveAny()
+        {
+            if (_board == null)
+            {
+                LoadBoardFromRows();
+            }
+
+            if (_board == null || _board.Cells == null)
+            {
+                return false;
+            }
+
+            for (int r = 0; r < _board.Size; r++)
+            {
+                for (int c = 0; c < _board.Size; c++)
+                {
+                    var cell = _board.Cells[r, c];
+                    if (cell == null || cell.Value.HasValue || cell.Candidates == null || cell.Candidates.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var legalCandidates = BuildLegalCandidatesForCell(cell);
+                    foreach (int existingCandidate in cell.Candidates)
+                    {
+                        if (!legalCandidates.Contains(existingCandidate))
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Build legal candidates for a single cell from board peer values.
+         *
+         * @param cell Target cell on the current board.
+         * @returns Candidate set containing only currently legal digits.
+         */
+        private HashSet<int> BuildLegalCandidatesForCell(Cell cell)
+        {
+            var legalCandidates = new HashSet<int>();
+            if (cell == null || _board == null)
+            {
+                return legalCandidates;
+            }
+
+            for (int v = 1; v <= _board.Size; v++)
+            {
+                legalCandidates.Add(v);
+            }
+
+            foreach (var peer in _board.GetPeers(cell))
+            {
+                if (peer != null && peer.Value.HasValue)
+                {
+                    legalCandidates.Remove(peer.Value.Value);
+                }
+            }
+
+            return legalCandidates;
         }
 
         [ContextMenu("Run Next Rule Step")]
@@ -473,13 +534,29 @@ namespace Sudoku.Solver
             if (SuppressPreviewRequests) return;
             if (_board == null) LoadBoardFromRows();
             if (_board == null) { PreviewRuleResult = null; return; }
-            var res = new RuleResult { Apply = true, Description = "Initialise Candidates (preview)" };
+            var res = new RuleResult { Apply = true, Description = "Reinitialise Candidates (preview)" };
             for (int r = 0; r < _board.Size; r++)
             {
                 for (int c = 0; c < _board.Size; c++)
                 {
                     var cell = _board.Cells[r, c];
-                    if (cell != null && !cell.Value.HasValue)
+                    if (cell == null || cell.Value.HasValue || cell.Candidates == null || cell.Candidates.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    var legalCandidates = BuildLegalCandidatesForCell(cell);
+                    bool hasRemovableCandidate = false;
+                    foreach (int candidate in cell.Candidates)
+                    {
+                        if (!legalCandidates.Contains(candidate))
+                        {
+                            hasRemovableCandidate = true;
+                            break;
+                        }
+                    }
+
+                    if (hasRemovableCandidate)
                     {
                         res.UsedCells.Add(new UsedCell { Row = r, Column = c });
                     }

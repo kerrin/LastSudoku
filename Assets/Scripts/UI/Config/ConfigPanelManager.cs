@@ -1,22 +1,51 @@
+using System.Text.RegularExpressions;
 using UnityEngine;
-using UnityEngine.UI;
-using Sudoku.UI.Config;
+using Sudoku.Solver;
+using Sudoku.Solver.Rules;
+using Sudoku.UI.Panels;
 
 namespace Sudoku.UI
 {
     /**
-     * Manager for opening and managing the configuration panel.
-     * Handles creation of the config panel as a modal overlay with tabs.
+     * Manages the configuration panel overlay.
      *
-     * To use:
-     * - Call OpenConfigPanel() to display the config panel
-     * - The panel can be closed by pressing Escape or clicking outside
+     * Rendered entirely via IMGUI so it always appears on top of the board,
+     * which is also drawn with IMGUI (OnGUI). GUI.depth = -50000 ensures this
+     * panel is composited after all other OnGUI callers (lower depth = drawn last
+     * = visually on top).
+     *
+     * No uGUI components are created; all interaction is handled through standard
+     * IMGUI controls (GUI.Toggle, GUI.Button, GUI.BeginScrollView, etc.).
      */
     public class ConfigPanelManager : MonoBehaviour
     {
         private static ConfigPanelManager _instance;
-        private GameObject _configPanelRoot;
-        private ConfigPanel _configPanel;
+
+        private bool    _isOpen    = false;
+        private Vector2 _scrollPos = Vector2.zero;
+
+        // Runtime references resolved on open.
+        private SolverRunner   _runner;
+        private RuleRegistry   _registry;
+        private ApplyRulePanel _applyRulePanel;
+
+        // Cached GUIStyles — built once inside OnGUI where GUI.skin is valid.
+        private GUIStyle _titleStyle;
+        private GUIStyle _closeBtnStyle;
+        private GUIStyle _tabBoxStyle;
+        private GUIStyle _ruleNameStyle;
+        private GUIStyle _toggleStyle;
+        private GUIStyle _scrollBgStyle;
+        private bool     _stylesBuilt;
+
+        // Panel layout constants.
+        private const float PanelW  = 500f;
+        private const float PanelH  = 580f;
+        private const float HeaderH = 50f;
+        private const float TabBarH = 38f;
+        private const float RowH    = 42f;
+
+        // ─── Lifecycle ───────────────────────────────────────────────────────
 
         private void Awake()
         {
@@ -30,23 +59,16 @@ namespace Sudoku.UI
             }
         }
 
+        // ─── Public API ──────────────────────────────────────────────────────
+
         /**
-         * Open the configuration panel as a modal overlay.
-         * Creates the panel if it doesn't already exist.
+         * Open the configuration panel.
          */
         public void OpenConfigPanel()
         {
-            if (_configPanelRoot != null && _configPanelRoot.activeSelf)
-            {
-                return; // Already open
-            }
-
-            if (_configPanelRoot == null)
-            {
-                CreateConfigPanel();
-            }
-
-            _configPanelRoot.SetActive(true);
+            if (_isOpen) return;
+            ResolveReferences();
+            _isOpen = true;
         }
 
         /**
@@ -54,134 +76,311 @@ namespace Sudoku.UI
          */
         public void CloseConfigPanel()
         {
-            if (_configPanelRoot != null)
-            {
-                _configPanelRoot.SetActive(false);
-            }
+            _isOpen = false;
         }
 
-        /**
-         * Create the configuration panel UI hierarchy.
-         * Uses a modal-overlay pattern: full-screen dark background (click to close)
-         * with a centred PanelContainer holding the actual ConfigPanel.
-         */
-        private void CreateConfigPanel()
-        {
-            // Prefer an existing high-sortingOrder canvas so the panel draws on top
-            // of all game UI. Fall back to creating a dedicated canvas.
-            Canvas canvas = FindSuitableCanvas();
-
-            // Root overlay — full-screen, no ConfigPanel component here.
-            _configPanelRoot = new GameObject("ConfigPanelOverlay", typeof(RectTransform));
-            _configPanelRoot.transform.SetParent(canvas.transform, false);
-
-            var rootRT = _configPanelRoot.GetComponent<RectTransform>();
-            rootRT.anchorMin = Vector2.zero;
-            rootRT.anchorMax = Vector2.one;
-            rootRT.offsetMin = Vector2.zero;
-            rootRT.offsetMax = Vector2.zero;
-
-            // Semi-transparent backdrop — clicking it closes the panel.
-            var bgGO    = new GameObject("Background", typeof(RectTransform), typeof(Image), typeof(Button));
-            bgGO.transform.SetParent(_configPanelRoot.transform, false);
-
-            var bgRT    = bgGO.GetComponent<RectTransform>();
-            bgRT.anchorMin = Vector2.zero;
-            bgRT.anchorMax = Vector2.one;
-            bgRT.offsetMin = Vector2.zero;
-            bgRT.offsetMax = Vector2.zero;
-
-            var bgImg   = bgGO.GetComponent<Image>();
-            bgImg.color = new Color(0f, 0f, 0f, 0.65f);
-
-            var bgBtn   = bgGO.GetComponent<Button>();
-            bgBtn.transition = Selectable.Transition.None;
-            bgBtn.onClick.AddListener(CloseConfigPanel);
-
-            // Centred, fixed-size container that holds the real panel.
-            var containerGO = new GameObject("PanelContainer", typeof(RectTransform));
-            containerGO.transform.SetParent(_configPanelRoot.transform, false);
-
-            var containerRT = containerGO.GetComponent<RectTransform>();
-            containerRT.anchorMin = new Vector2(0.5f, 0.5f);
-            containerRT.anchorMax = new Vector2(0.5f, 0.5f);
-            containerRT.pivot     = new Vector2(0.5f, 0.5f);
-            containerRT.sizeDelta = new Vector2(480f, 580f);
-
-            // The ConfigPanel fills the container.
-            var panelGO = new GameObject("Panel", typeof(RectTransform), typeof(ConfigPanel), typeof(Image));
-            panelGO.transform.SetParent(containerGO.transform, false);
-
-            var panelRT = panelGO.GetComponent<RectTransform>();
-            panelRT.anchorMin = Vector2.zero;
-            panelRT.anchorMax = Vector2.one;
-            panelRT.offsetMin = Vector2.zero;
-            panelRT.offsetMax = Vector2.zero;
-
-            _configPanel = panelGO.GetComponent<ConfigPanel>();
-            _configPanel.OnCloseRequested = CloseConfigPanel;
-
-            // Register tabs — add more here for Audio, Graphics, etc.
-            var rulesTab = panelGO.AddComponent<RulesConfigTab>();
-            _configPanel.RegisterTab(rulesTab);
-
-            // Build the panel (creates header with tabs+close and content area).
-            _configPanel.BuildPanel();
-
-            // Keyboard shortcut (Escape) to close.
-            var keyHandler = panelGO.AddComponent<ConfigPanelKeyHandler>();
-            keyHandler.OnEscapePressed += CloseConfigPanel;
-        }
-
-        /**
-         * Find an existing canvas, preferring one with a higher sortingOrder
-         * so the config panel renders on top. Creates a dedicated canvas if none exists.
-         *
-         * @returns A canvas to attach the panel to.
-         */
-        private Canvas FindSuitableCanvas()
-        {
-            Canvas best = null;
-            foreach (var c in Object.FindObjectsByType<Canvas>())
-            {
-                if (c.renderMode != RenderMode.ScreenSpaceOverlay) continue;
-                if (best == null || c.sortingOrder > best.sortingOrder)
-                    best = c;
-            }
-
-            if (best != null) return best;
-
-            // No overlay canvas found — create a dedicated one.
-            var canvasGO   = new GameObject("ConfigPanelCanvas",
-                                 typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            var canvas     = canvasGO.GetComponent<Canvas>();
-            canvas.renderMode    = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder  = 200;
-
-            var scaler = canvasGO.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode        = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-
-            return canvas;
-        }
-    }
-
-    /**
-     * Helper component to handle keyboard input for closing the config panel.
-     * Uses the new Input System (UnityEngine.InputSystem) which is the active
-     * input handler for this project.
-     */
-    public class ConfigPanelKeyHandler : MonoBehaviour
-    {
-        public System.Action OnEscapePressed;
+        // ─── Input ───────────────────────────────────────────────────────────
 
         private void Update()
         {
+            if (!_isOpen) return;
             var keyboard = UnityEngine.InputSystem.Keyboard.current;
             if (keyboard != null && keyboard.escapeKey.wasPressedThisFrame)
             {
-                OnEscapePressed?.Invoke();
+                CloseConfigPanel();
             }
+        }
+
+        // ─── IMGUI Rendering ─────────────────────────────────────────────────
+
+        private void OnGUI()
+        {
+            if (!_isOpen) return;
+
+            // Lower GUI.depth value = drawn later = visually on top.
+            // BoardVisualizer uses default depth (0); -50000 puts us above it.
+            GUI.depth = -50000;
+
+            EnsureStyles();
+
+            float sw = Screen.width;
+            float sh = Screen.height;
+
+            // Scale panel to fit smaller screens.
+            float pw = Mathf.Min(PanelW, sw * 0.92f);
+            float ph = Mathf.Min(PanelH, sh * 0.92f);
+            float px = (sw - pw) * 0.5f;
+            float py = (sh - ph) * 0.5f;
+            var panelRect = new Rect(px, py, pw, ph);
+
+            // ── Semi-transparent backdrop ─────────────────────────────────────
+            Color prev = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.72f);
+            GUI.DrawTexture(new Rect(0f, 0f, sw, sh), Texture2D.whiteTexture, ScaleMode.StretchToFill, alphaBlend: true);
+            GUI.color = prev;
+
+            // ── Close when clicking outside the panel ─────────────────────────
+            // Set a flag and close after GUILayout groups are ended to avoid
+            // mismatched BeginArea/EndArea when returning early.
+            bool closeRequested = false;
+            if (Event.current.type == EventType.MouseDown &&
+                !panelRect.Contains(Event.current.mousePosition))
+            {
+                closeRequested = true;
+                Event.current.Use();
+            }
+
+            // ── Panel background ──────────────────────────────────────────────
+            GUI.color = new Color(0.10f, 0.10f, 0.16f, 1f);
+            GUI.DrawTexture(panelRect, Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            // ── Panel content ─────────────────────────────────────────────────
+            GUILayout.BeginArea(panelRect);
+            bool closedViaButton = DrawPanelContent(pw);
+            GUILayout.EndArea();
+
+            if (closeRequested || closedViaButton)
+            {
+                CloseConfigPanel();
+            }
+        }
+
+        // ─── Panel Content ────────────────────────────────────────────────────
+
+        /**
+         * Draw the full panel interior (header, tab bar, rule toggles).
+         *
+         * @param panelWidth Width of the panel area in pixels.
+         * @returns True when the close button was clicked.
+         */
+        private bool DrawPanelContent(float panelWidth)
+        {
+            bool closeClicked = false;
+
+            // ── Header ────────────────────────────────────────────────────────
+            Color prev = GUI.color;
+            GUI.color = new Color(0.07f, 0.07f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(0f, 0f, panelWidth, HeaderH), Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            GUILayout.BeginHorizontal(GUILayout.Height(HeaderH));
+            GUILayout.Space(14f);
+            GUILayout.Label("\u2699  Configuration", _titleStyle, GUILayout.ExpandWidth(true));
+            if (GUILayout.Button("\u00d7", _closeBtnStyle, GUILayout.Width(36f), GUILayout.Height(36f)))
+            {
+                closeClicked = true;
+            }
+            GUILayout.Space(6f);
+            GUILayout.EndHorizontal();
+
+            // ── Tab bar ───────────────────────────────────────────────────────
+            GUI.color = new Color(0.07f, 0.07f, 0.12f, 1f);
+            GUI.DrawTexture(new Rect(0f, HeaderH, panelWidth, TabBarH), Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            GUILayout.BeginHorizontal(GUILayout.Height(TabBarH));
+            GUILayout.Space(10f);
+            GUILayout.Box("Rules", _tabBoxStyle, GUILayout.Width(84f), GUILayout.Height(TabBarH - 8f));
+            GUILayout.FlexibleSpace();
+            GUILayout.EndHorizontal();
+
+            // ── Separator ─────────────────────────────────────────────────────
+            GUI.color = new Color(0.22f, 0.22f, 0.35f, 1f);
+            GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1f));
+            GUI.color = prev;
+
+            // ── Scrollable rule toggles ───────────────────────────────────────
+            _scrollPos = GUILayout.BeginScrollView(_scrollPos, _scrollBgStyle, GUILayout.ExpandHeight(true));
+            DrawRuleToggles();
+            GUILayout.EndScrollView();
+
+            GUILayout.Space(6f);
+            return closeClicked;
+        }
+
+        /**
+         * Draw one row per registered rule with a toggle checkbox.
+         */
+        private void DrawRuleToggles()
+        {
+            if (_registry == null)
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("  No rule registry found.", _ruleNameStyle);
+                return;
+            }
+
+            var rules = _registry.GetRulesWithStatus();
+            if (rules.Count == 0)
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("  No rules available.", _ruleNameStyle);
+                return;
+            }
+
+            GUILayout.Space(4f);
+            for (int i = 0; i < rules.Count; i++)
+            {
+                var (rule, enabled) = rules[i];
+                string typeName    = rule.GetType().Name;
+                string displayName = SplitPascalCase(rule.Name ?? typeName);
+
+                // Subtle alternating row tint drawn behind the toggle.
+                if (i % 2 == 0)
+                {
+                    Color prev = GUI.color;
+                    GUI.color = new Color(1f, 1f, 1f, 0.05f);
+                    var rowRect = GUILayoutUtility.GetRect(0f, RowH, GUILayout.ExpandWidth(true));
+                    GUI.DrawTexture(rowRect, Texture2D.whiteTexture);
+                    GUI.color = prev;
+
+                    // Draw the toggle control on top of the tinted background.
+                    var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
+                    bool newEnabledA = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
+                    ApplyToggleChange(typeName, enabled, newEnabledA);
+                    continue;
+                }
+
+                GUILayout.BeginHorizontal(GUILayout.Height(RowH));
+                GUILayout.Space(10f);
+                bool newEnabled = GUILayout.Toggle(enabled, "  " + displayName, _toggleStyle, GUILayout.ExpandWidth(true));
+                GUILayout.Space(8f);
+                GUILayout.EndHorizontal();
+
+                ApplyToggleChange(typeName, enabled, newEnabled);
+            }
+
+            GUILayout.Space(6f);
+        }
+
+        /**
+         * Apply a rule enabled-state change if the value differs.
+         *
+         * @param typeName   Rule type name.
+         * @param oldEnabled Previous state.
+         * @param newEnabled Desired new state.
+         */
+        private void ApplyToggleChange(string typeName, bool oldEnabled, bool newEnabled)
+        {
+            if (newEnabled == oldEnabled) return;
+            _registry.SetEnabled(typeName, newEnabled);
+            _runner?.HandleRuleToggleChanged(typeName, newEnabled);
+            RefreshApplyRulesPanel();
+            RefreshCreateModeStatusPanels();
+        }
+
+        // ─── Helpers ─────────────────────────────────────────────────────────
+
+        private void ResolveReferences()
+        {
+            if (_runner == null)
+            {
+                _runner = Object.FindAnyObjectByType<SolverRunner>();
+            }
+
+            if (_runner != null && _registry == null)
+            {
+                _runner.EnsureEngine();
+                _registry = _runner.Registry;
+            }
+
+            if (_applyRulePanel == null)
+            {
+                _applyRulePanel = Object.FindAnyObjectByType<ApplyRulePanel>();
+            }
+        }
+
+        private void RefreshApplyRulesPanel()
+        {
+            if (_applyRulePanel != null)
+            {
+                _applyRulePanel.RefreshList();
+            }
+        }
+
+        private static void RefreshCreateModeStatusPanels()
+        {
+            var panels = Resources.FindObjectsOfTypeAll<CreateModeStatusPanel>();
+            for (int i = 0; i < panels.Length; i++)
+            {
+                var panel = panels[i];
+                if (panel == null) continue;
+                var go = panel.gameObject;
+                if (go == null || !go.scene.IsValid() || !go.scene.isLoaded) continue;
+                panel.RefreshStatus(force: true);
+            }
+        }
+
+        /**
+         * Split a PascalCase or camelCase identifier into space-separated words.
+         *
+         * @param input  Source string.
+         * @returns Human-readable label.
+         */
+        private static string SplitPascalCase(string input)
+        {
+            if (string.IsNullOrEmpty(input)) return input;
+            var s = Regex.Replace(input, "(?<!^)(?=[A-Z][a-z])", " ");
+            s = Regex.Replace(s, "(?<!^)(?=[A-Z]{2,})", " ");
+            return s.Replace('_', ' ');
+        }
+
+        // ─── GUIStyle Construction ────────────────────────────────────────────
+
+        /**
+         * Build and cache GUIStyles on the first OnGUI call.
+         * Must be called from within OnGUI so GUI.skin is valid.
+         */
+        private void EnsureStyles()
+        {
+            if (_stylesBuilt) return;
+            _stylesBuilt = true;
+
+            _titleStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize  = 20,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleLeft,
+            };
+            _titleStyle.normal.textColor = Color.white;
+
+            _closeBtnStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontSize  = 22,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+            };
+            _closeBtnStyle.normal.textColor = Color.white;
+            _closeBtnStyle.hover.textColor  = Color.white;
+            _closeBtnStyle.active.textColor = Color.white;
+
+            _tabBoxStyle = new GUIStyle(GUI.skin.box)
+            {
+                fontSize  = 14,
+                fontStyle = FontStyle.Bold,
+                alignment = TextAnchor.MiddleCenter,
+            };
+            _tabBoxStyle.normal.textColor = Color.white;
+
+            _ruleNameStyle = new GUIStyle(GUI.skin.label)
+            {
+                fontSize  = 15,
+                alignment = TextAnchor.MiddleLeft,
+            };
+            _ruleNameStyle.normal.textColor = new Color(0.92f, 0.92f, 0.92f, 1f);
+
+            _toggleStyle = new GUIStyle(GUI.skin.toggle)
+            {
+                fontSize  = 15,
+                alignment = TextAnchor.MiddleLeft,
+            };
+            _toggleStyle.normal.textColor  = new Color(0.92f, 0.92f, 0.92f, 1f);
+            _toggleStyle.onNormal.textColor = Color.white;
+            _toggleStyle.hover.textColor    = Color.white;
+            _toggleStyle.onHover.textColor  = Color.white;
+
+            _scrollBgStyle = new GUIStyle(GUI.skin.scrollView);
         }
     }
 }

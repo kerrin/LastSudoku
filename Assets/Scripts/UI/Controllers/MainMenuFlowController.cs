@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using Object = UnityEngine.Object;
 using Sudoku.UI.Panels;
 using Sudoku.UI.Menus;
+using Sudoku.Solver.Unsolver;
 
 namespace Sudoku.UI.Controllers
 {
@@ -205,8 +206,8 @@ namespace Sudoku.UI.Controllers
             fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
-            CreateLabel(_menuPanel.transform, "Title", "Sudoku", 44, FontStyle.Bold, 56f);
-            CreateLabel(_menuPanel.transform, "Subtitle", "Choose an option to begin", 20, FontStyle.Normal, 36f);
+            CreateLabel(_menuPanel.transform, "Title", "Sudoku", 54, FontStyle.Bold, 70f);
+            CreateLabel(_menuPanel.transform, "Subtitle", "Choose an option to begin", 26, FontStyle.Normal, 46f);
             EnsureMenuPuzzleCodeRow(_menuPanel.transform);
 
             CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Puzzle", StartPuzzleFromCodeOrExisting, true);
@@ -214,7 +215,9 @@ namespace Sudoku.UI.Controllers
             CreateMenuButton(_menuPanel.transform, "LoadPuzzleButton", "Load Puzzle", OpenLoadPuzzleList, false);
             CreateMenuButton(_menuPanel.transform, "SavedPuzzlesButton", "Saved Puzzles", OpenSavedPuzzleList, false);
             CreateMenuButton(_menuPanel.transform, "CreatePuzzleButton", "Create New Puzzle", CreateNewPuzzleStub, false);
-            CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Open Configuration", OpenConfigurationStub, false);
+            CreateMenuButton(_menuPanel.transform, "OpenConfigurationButton", "Config", OpenConfigurationStub, false);
+            EnsureButtonTextPadding(_menuPanel.transform.Find("OpenConfigurationButton"), 0f, 0f);
+            EnsureIconNearCenteredText(_menuPanel.transform.Find("OpenConfigurationButton"), "ConfigIconLabel", "⚙", 30, 18f, 2f);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
         }
 
@@ -299,6 +302,7 @@ namespace Sudoku.UI.Controllers
             ConfigurePlayButtonLayout(actionsRow, "SaveSolvedStateButton", 168f, 34f, 148f);
 
             EnsureBottomRightExitButton(sidePanel.transform);
+            EnsureConfigCornerButton(sidePanel.transform);
 
             UpdatePlayPanelCreateModeControls();
         }
@@ -681,6 +685,10 @@ namespace Sudoku.UI.Controllers
                     Debug.LogWarning("MainMenuFlowController: Entered puzzle code is invalid. Using the existing board.");
                 }
             }
+            else if (TryGenerateRandomPuzzleFromEnabledRules(out var generatedPuzzle))
+            {
+                ApplyGeneratedBoardValuesToCurrentBoard(generatedPuzzle);
+            }
 
             CacheStartingPuzzleCodeFromCurrentBoard();
             _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
@@ -698,6 +706,99 @@ namespace Sudoku.UI.Controllers
             {
                 _boardSidePanel.RefreshPanelVisibilityForCurrentMode();
             }
+        }
+
+        /**
+         * Generate a random puzzle by unsolving a random solved board with currently enabled rules.
+         *
+         * @param generatedPuzzle Outputs the generated puzzle board when successful.
+         * @returns True when generation succeeds; otherwise false.
+         */
+        private bool TryGenerateRandomPuzzleFromEnabledRules(out Sudoku.Models.Board generatedPuzzle)
+        {
+            generatedPuzzle = null;
+
+            if (_runner == null)
+            {
+                return false;
+            }
+
+            _runner.EnsureEngine();
+            if (_runner.Registry == null)
+            {
+                Debug.LogWarning("MainMenuFlowController: Rule registry is unavailable. Using existing board.");
+                return false;
+            }
+
+            var enabledRules = new List<ISudokuRule>();
+            var rulesWithStatus = _runner.Registry.GetRulesWithStatus();
+            for (int i = 0; i < rulesWithStatus.Count; i++)
+            {
+                var entry = rulesWithStatus[i];
+                if (entry.enabled && entry.rule != null)
+                {
+                    enabledRules.Add(entry.rule);
+                }
+            }
+
+            if (enabledRules.Count == 0)
+            {
+                Debug.LogWarning("MainMenuFlowController: No rules are enabled for random puzzle generation. Using existing board.");
+                return false;
+            }
+
+            try
+            {
+                var random = new System.Random();
+                var solved = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(random);
+                var generator = new PuzzleGenerator();
+                generatedPuzzle = generator.Generate(solved, enabledRules, random);
+                return generatedPuzzle != null;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"MainMenuFlowController: Random puzzle generation failed. Using existing board. {ex.Message}");
+                return false;
+            }
+        }
+
+        /**
+         * Apply a generated board to the current runner board, preserving generated given flags.
+         *
+         * @param generated Generated puzzle board to copy from.
+         */
+        private void ApplyGeneratedBoardValuesToCurrentBoard(Sudoku.Models.Board generated)
+        {
+            ResolveSceneReferences();
+            if (_runner == null || generated == null)
+            {
+                return;
+            }
+
+            var board = _runner.CurrentBoard;
+            if (board == null || board.Cells == null || generated.Cells == null || board.Size != generated.Size)
+            {
+                Debug.LogWarning("MainMenuFlowController: Generated board dimensions do not match the active board.");
+                return;
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int col = 0; col < board.Size; col++)
+                {
+                    var target = board.Cells[row, col];
+                    var source = generated.Cells[row, col];
+                    if (target == null || source == null)
+                    {
+                        continue;
+                    }
+
+                    target.Value = source.Value;
+                    target.IsGiven = source.IsGiven;
+                }
+            }
+
+            _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
         }
 
         /**
@@ -1634,7 +1735,7 @@ namespace Sudoku.UI.Controllers
             buttonGO.transform.SetParent(parent, false);
 
             var layout = buttonGO.AddComponent<LayoutElement>();
-            layout.preferredHeight = 52f;
+            layout.preferredHeight = 64f;
 
             var image = buttonGO.GetComponent<Image>();
             image.color = primaryStyle ? new Color(0.90f, 0.70f, 0.18f, 1f) : new Color(0.83f, 0.85f, 0.88f, 1f);
@@ -1655,7 +1756,7 @@ namespace Sudoku.UI.Controllers
             label.text = text;
             label.alignment = TextAnchor.MiddleCenter;
             label.color = primaryStyle ? Color.black : new Color(0.1f, 0.1f, 0.1f, 1f);
-            label.fontSize = 20;
+            label.fontSize = 26;
             label.fontStyle = FontStyle.Bold;
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (font == null)
@@ -2704,6 +2805,7 @@ namespace Sudoku.UI.Controllers
                         ConfigurePlayButtonLayout(_playPanel.transform.Find("PlayActionsRow"), "SaveSolvedStateButton", 168f, 34f, 148f);
                     }
                 }
+
             }
 
             if (!isCreateMode && _generatedCodeInput != null)
@@ -2886,6 +2988,48 @@ namespace Sudoku.UI.Controllers
         }
 
         /**
+         * Ensure a Config button appears immediately to the left of ExitCornerButton.
+         * Uses the same absolute-positioned anchoring so it sits flush at the bottom of the side panel.
+         *
+         * @param sidePanelTransform The side panel's transform to host the button.
+         */
+        private void EnsureConfigCornerButton(Transform sidePanelTransform)
+        {
+            if (sidePanelTransform == null)
+            {
+                return;
+            }
+
+            EnsurePlayActionButton(sidePanelTransform, "ConfigCornerButton", "Config", OpenConfigurationStub, false);
+            ConfigurePlayButtonLayout(sidePanelTransform, "ConfigCornerButton", 80f, 36f, 80f);
+
+            var configTransform = sidePanelTransform.Find("ConfigCornerButton");
+            if (configTransform == null)
+            {
+                return;
+            }
+
+            // Position: same baseline as ExitCornerButton, immediately to its left.
+            // ExitCornerButton: anchoredPosition=(-8,8), width=112 → left edge at -120 from right.
+            // Config button right edge: -120 - 8 = -128 from right, with pivot=(1,0).
+            var configRect = configTransform.GetComponent<RectTransform>();
+            if (configRect != null)
+            {
+                configRect.anchorMin = new Vector2(1f, 0f);
+                configRect.anchorMax = new Vector2(1f, 0f);
+                configRect.pivot = new Vector2(1f, 0f);
+                configRect.anchoredPosition = new Vector2(-128f, 8f);
+                configRect.sizeDelta = new Vector2(80f, 36f);
+            }
+
+            EnsureButtonTextPadding(configTransform, 22f, 6f);
+            EnsureLeadingIconLabel(configTransform, "ConfigIconLabel", "⚙", 16, 6f);
+
+            configTransform.SetAsLastSibling();
+            configTransform.gameObject.SetActive(true);
+        }
+
+        /**
          * Ensure Exit To Menu appears at the bottom-right corner of the side panel.
          */
         private void EnsureBottomRightExitButton(Transform sidePanelTransform)
@@ -2916,6 +3060,193 @@ namespace Sudoku.UI.Controllers
 
             exitTransform.SetAsLastSibling();
             exitTransform.gameObject.SetActive(true);
+        }
+
+        /**
+         * Ensure a left-aligned icon label exists on a button.
+         *
+         * @param buttonTransform Target button transform.
+         * @param labelName Child label object name.
+         * @param glyph Icon glyph text.
+         * @param fontSize Icon font size.
+         * @param leftInset Left inset in pixels from the button edge.
+         */
+        private static void EnsureLeadingIconLabel(Transform buttonTransform, string labelName, string glyph, int fontSize = 16, float leftInset = 14f)
+        {
+            if (buttonTransform == null)
+            {
+                return;
+            }
+
+            var labelTransform = buttonTransform.Find(labelName);
+            GameObject labelGO;
+            if (labelTransform == null)
+            {
+                labelGO = new GameObject(labelName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGO.transform.SetParent(buttonTransform, false);
+            }
+            else
+            {
+                labelGO = labelTransform.gameObject;
+            }
+
+            var rect = labelGO.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.anchoredPosition = new Vector2(leftInset, 0f);
+            rect.sizeDelta = new Vector2(18f, 0f);
+
+            var text = labelGO.GetComponent<Text>();
+            text.text = glyph;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+            text.fontSize = fontSize;
+            text.fontStyle = FontStyle.Bold;
+            text.raycastTarget = false;
+
+            Font font = null;
+            try
+            {
+                font = Font.CreateDynamicFontFromOSFont(new[]
+                {
+                    "Segoe Fluent Icons",
+                    "Segoe MDL2 Assets",
+                    "Segoe UI Symbol",
+                    "Arial Unicode MS",
+                    "Noto Sans Symbols"
+                }, fontSize);
+            }
+            catch
+            {
+                // Ignore and fallback to built-in fonts below.
+            }
+
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            }
+
+            text.font = font;
+        }
+
+        /**
+         * Ensure an icon label is positioned immediately left of centered button text.
+         *
+         * @param buttonTransform Target button transform.
+         * @param labelName Child label object name.
+         * @param glyph Icon glyph text.
+         * @param fontSize Icon font size.
+         * @param gap Horizontal gap in pixels between icon and text.
+         */
+        private static void EnsureIconNearCenteredText(Transform buttonTransform, string labelName, string glyph, int fontSize = 24, float gap = 8f, float verticalOffset = 0f)
+        {
+            if (buttonTransform == null)
+            {
+                return;
+            }
+
+            var textTransform = buttonTransform.Find("Text");
+            var text = textTransform != null ? textTransform.GetComponent<Text>() : null;
+
+            var labelTransform = buttonTransform.Find(labelName);
+            GameObject labelGO;
+            if (labelTransform == null)
+            {
+                labelGO = new GameObject(labelName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGO.transform.SetParent(buttonTransform, false);
+            }
+            else
+            {
+                labelGO = labelTransform.gameObject;
+            }
+
+            var rect = labelGO.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+
+            float textWidth = 46f;
+            if (text != null)
+            {
+                textWidth = Mathf.Max(20f, text.preferredWidth);
+            }
+
+            float iconAdvance = Mathf.Max(16f, fontSize - 2f);
+            rect.anchoredPosition = new Vector2(-(textWidth * 0.5f + gap), verticalOffset);
+            rect.sizeDelta = new Vector2(iconAdvance, fontSize + 6f);
+
+            var iconText = labelGO.GetComponent<Text>();
+            iconText.text = glyph;
+            iconText.alignment = TextAnchor.MiddleCenter;
+            iconText.color = new Color(0.1f, 0.1f, 0.1f, 1f);
+            iconText.fontSize = fontSize;
+            iconText.fontStyle = FontStyle.Bold;
+            iconText.raycastTarget = false;
+
+            Font font = null;
+            try
+            {
+                font = Font.CreateDynamicFontFromOSFont(new[]
+                {
+                    "Segoe Fluent Icons",
+                    "Segoe MDL2 Assets",
+                    "Segoe UI Symbol",
+                    "Arial Unicode MS",
+                    "Noto Sans Symbols"
+                }, fontSize);
+            }
+            catch
+            {
+                // Ignore and fallback to built-in fonts below.
+            }
+
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            }
+
+            iconText.font = font;
+        }
+
+        /**
+         * Add horizontal padding to a button's text child so leading icons do not overlap labels.
+         *
+         * @param buttonTransform Target button transform.
+         * @param leftPadding Left text inset.
+         * @param rightPadding Right text inset.
+         */
+        private static void EnsureButtonTextPadding(Transform buttonTransform, float leftPadding, float rightPadding)
+        {
+            if (buttonTransform == null)
+            {
+                return;
+            }
+
+            var textTransform = buttonTransform.Find("Text");
+            if (textTransform == null)
+            {
+                return;
+            }
+
+            var rect = textTransform.GetComponent<RectTransform>();
+            if (rect == null)
+            {
+                return;
+            }
+
+            rect.offsetMin = new Vector2(leftPadding, rect.offsetMin.y);
+            rect.offsetMax = new Vector2(-rightPadding, rect.offsetMax.y);
         }
 
         /**

@@ -25,6 +25,11 @@ public class ApplyRulePanel : MonoBehaviour
     private RuleRegistry _registry;
     private Transform _contentRoot;
     private Board _lastBoard;
+    private Coroutine _pendingBuildListCoroutine;
+    private int _buildListRequestVersion;
+    private int _lastChangeLogIndex = -1;
+    private bool _lastCandidatesInitialised;
+    private bool _lastCanReinitialiseCandidatesRemoveAny;
     
 
     private void OnEnable()
@@ -42,6 +47,7 @@ public class ApplyRulePanel : MonoBehaviour
         {
             BuildList();
             _lastBoard = Runner != null ? Runner.CurrentBoard : null;
+            CacheRefreshState();
         }
     }
 
@@ -80,6 +86,7 @@ public class ApplyRulePanel : MonoBehaviour
 
         // watch for board changes
         _lastBoard = Runner.CurrentBoard;
+        CacheRefreshState();
 
         yield break;
     }
@@ -87,10 +94,13 @@ public class ApplyRulePanel : MonoBehaviour
     private void Update()
     {
         if (Runner == null) return;
-        if (Runner.CurrentBoard != _lastBoard)
+
+        bool needsRefresh = Runner.CurrentBoard != _lastBoard || HasRefreshStateChanged();
+        if (needsRefresh)
         {
             BuildList();
             _lastBoard = Runner.CurrentBoard;
+            CacheRefreshState();
         }
     }
 
@@ -107,11 +117,20 @@ public class ApplyRulePanel : MonoBehaviour
         // don't become stale. In edit-mode we can rebuild synchronously.
         if (Application.isPlaying)
         {
+            _buildListRequestVersion++;
+
             for (int i = _contentRoot.childCount - 1; i >= 0; i--)
             {
                 Destroy(_contentRoot.GetChild(i).gameObject);
             }
-            StartCoroutine(BuildListAsync());
+
+            if (_pendingBuildListCoroutine != null)
+            {
+                StopCoroutine(_pendingBuildListCoroutine);
+                _pendingBuildListCoroutine = null;
+            }
+
+            _pendingBuildListCoroutine = StartCoroutine(BuildListAsync(_buildListRequestVersion));
         }
         else
         {
@@ -121,11 +140,22 @@ public class ApplyRulePanel : MonoBehaviour
         }
     }
 
-    private System.Collections.IEnumerator BuildListAsync()
+    private System.Collections.IEnumerator BuildListAsync(int requestVersion)
     {
         // allow destruction to complete and the UI system to settle
         yield return null;
+
+        if (requestVersion != _buildListRequestVersion)
+        {
+            yield break;
+        }
+
         BuildListInternal();
+
+        if (requestVersion == _buildListRequestVersion)
+        {
+            _pendingBuildListCoroutine = null;
+        }
     }
 
     private void BuildListInternal()
@@ -139,12 +169,10 @@ public class ApplyRulePanel : MonoBehaviour
 
         var usedRuleNames = new System.Collections.Generic.HashSet<string>();
 
-        // If candidates have not yet been initialised, show only the Initialise
-        // Candidates entry and hide other rules until it has been run.
-        if (!Runner.CandidatesInitialised)
+        bool canReinitialiseCandidates = Runner.CanReinitialiseCandidatesRemoveAny();
+        if (canReinitialiseCandidates)
         {
-            CreateInitialiseCandidatesRow(_contentRoot);
-            return;
+            CreateReinitialiseCandidatesRow(_contentRoot);
         }
 
         var rules = _registry.GetRulesWithStatus();
@@ -170,7 +198,7 @@ public class ApplyRulePanel : MonoBehaviour
         }
 
         // Ensure the panel is never empty in Solve mode.
-        if (created == 0)
+        if (created == 0 && !canReinitialiseCandidates)
         {
             CreateInfoRow(_contentRoot, "No applicable rules right now.");
         }
@@ -339,9 +367,9 @@ public class ApplyRulePanel : MonoBehaviour
         // Description/tooltips removed: list shows only the rule name.
     }
 
-    private void CreateInitialiseCandidatesRow(Transform parent)
+    private void CreateReinitialiseCandidatesRow(Transform parent)
     {
-        var ruleGO = new GameObject("InitialiseCandidates_Row", typeof(RectTransform));
+        var ruleGO = new GameObject("ReinitialiseCandidates_Row", typeof(RectTransform));
         ruleGO.transform.SetParent(parent, false);
         var rt = ruleGO.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f);
@@ -358,7 +386,7 @@ public class ApplyRulePanel : MonoBehaviour
         var labelGO = new GameObject("Label", typeof(RectTransform));
         labelGO.transform.SetParent(ruleGO.transform, false);
         var label = labelGO.AddComponent<Text>();
-        label.text = "Initialise Candidates";
+        label.text = "Reinitialise Candidates";
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.fontSize = 16;
         label.color = Color.white;
@@ -378,7 +406,7 @@ public class ApplyRulePanel : MonoBehaviour
         });
 
         // add hover preview via EventTrigger to highlight cells that would be
-        // initialised (empty cells). Exit clears the preview.
+        // affected by reinitialisation. Exit clears the preview.
         var trigger = ruleGO.AddComponent<EventTrigger>();
         var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
         entryEnter.callback.AddListener((data) => { Runner.PreviewInitialiseCandidates(); });
@@ -503,6 +531,37 @@ public class ApplyRulePanel : MonoBehaviour
             if (r != null) return r;
         }
         return null;
+    }
+
+    /**
+     * Capture panel refresh-related state to detect in-place board changes.
+     */
+    private void CacheRefreshState()
+    {
+        _lastCandidatesInitialised = Runner != null && Runner.CandidatesInitialised;
+        _lastCanReinitialiseCandidatesRemoveAny = Runner != null && Runner.CanReinitialiseCandidatesRemoveAny();
+        _lastChangeLogIndex = Runner != null && Runner.CurrentBoard != null ? Runner.CurrentBoard.ChangeLogIndex : -1;
+    }
+
+    /**
+     * Determine whether any non-reference state changed that affects row visibility.
+     *
+     * @returns True when the panel should be rebuilt.
+     */
+    private bool HasRefreshStateChanged()
+    {
+        if (Runner == null)
+        {
+            return false;
+        }
+
+        bool candidatesInitialised = Runner.CandidatesInitialised;
+        bool canReinitialiseCandidates = Runner.CanReinitialiseCandidatesRemoveAny();
+        int changeLogIndex = Runner.CurrentBoard != null ? Runner.CurrentBoard.ChangeLogIndex : -1;
+
+        return candidatesInitialised != _lastCandidatesInitialised
+            || canReinitialiseCandidates != _lastCanReinitialiseCandidatesRemoveAny
+            || changeLogIndex != _lastChangeLogIndex;
     }
 
     /**

@@ -269,6 +269,7 @@ namespace Sudoku.UI.Config
                 _registry.SetEnabled(ruleTypeName, val);
                 _runner?.HandleRuleToggleChanged(ruleTypeName, val);
                 RefreshApplyRulesPanel();
+                RefreshCreateModeStatusPanels();
 
                 // Update checkmark visibility
                 if (toggle.graphic != null)
@@ -367,6 +368,30 @@ namespace Sudoku.UI.Config
             if (_applyRulePanel != null)
             {
                 _applyRulePanel.RefreshList();
+            }
+        }
+
+        /**
+         * Force all create-mode status panels to refresh immediately after config changes.
+         */
+        private static void RefreshCreateModeStatusPanels()
+        {
+            var panels = Resources.FindObjectsOfTypeAll<CreateModeStatusPanel>();
+            for (int i = 0; i < panels.Length; i++)
+            {
+                var panel = panels[i];
+                if (panel == null)
+                {
+                    continue;
+                }
+
+                var go = panel.gameObject;
+                if (go == null || !go.scene.IsValid() || !go.scene.isLoaded)
+                {
+                    continue;
+                }
+
+                panel.RefreshStatus(force: true);
             }
         }
     }
