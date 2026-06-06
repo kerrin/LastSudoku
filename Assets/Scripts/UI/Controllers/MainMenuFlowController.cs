@@ -751,8 +751,15 @@ namespace Sudoku.UI.Controllers
             {
                 var random = new System.Random();
                 var solved = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(random);
-                var generator = new PuzzleGenerator();
+                var generator = new PuzzleGenerator(requireNonNakedContribution: true);
                 generatedPuzzle = generator.Generate(solved, enabledRules, random);
+                if (generatedPuzzle != null)
+                {
+                    string ruleSummary = string.IsNullOrWhiteSpace(generator.LastGenerationRuleUsageSummary)
+                        ? "(no rule applications recorded)"
+                        : generator.LastGenerationRuleUsageSummary;
+                    Debug.Log($"MainMenuFlowController: Generated puzzle unsolve rule usage: {ruleSummary}");
+                }
                 return generatedPuzzle != null;
             }
             catch (Exception ex)

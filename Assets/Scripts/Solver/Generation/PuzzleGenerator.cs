@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Sudoku.Models;
+using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
@@ -14,8 +15,9 @@ namespace Sudoku.Solver.Unsolver
      *   <item>Clone the provided fully-solved board.</item>
      *   <item>Warm-up: repeatedly apply the Naked Single unsolve handler until it can
      *         make no further moves.</item>
-     *   <item>Random passes: shuffle all handlers and apply each in turn; repeat until a
-     *         full pass produces no successful unsolve.</item>
+        *   <item>Non-Naked phase: shuffle and apply only non-Naked handlers in passes,
+        *         targeting at least <see cref="DefaultMinimumOtherRulePasses"/> passes when
+        *         progress continues, or stopping early when no move is available.</item>
      *   <item>Finalize: mark remaining valued cells as givens, recompute candidates for
      *         empty cells, clear the change-log.</item>
      *   <item>Validate uniqueness via backtracking; retry up to
@@ -24,16 +26,31 @@ namespace Sudoku.Solver.Unsolver
      */
     public class PuzzleGenerator
     {
-        public const int DefaultMaxRetries = 5;
+        public const int DefaultMaxRetries = 30;
         public const int DefaultMaxIterations = 500;
+        public const int DefaultMinimumOtherRulePasses = 10;
 
         private readonly int _maxRetries;
         private readonly int _maxIterations;
+        private readonly int _minimumOtherRulePasses;
+        private readonly bool _requireNonNakedContribution;
 
-        public PuzzleGenerator(int maxRetries = DefaultMaxRetries, int maxIterations = DefaultMaxIterations)
+        /** Ordered successful unsolve rule sequence for the last successful generation attempt. */
+        public IReadOnlyList<string> LastGenerationRuleSequence { get; private set; } = Array.Empty<string>();
+
+        /** Grouped summary for <see cref="LastGenerationRuleSequence"/> (e.g. "45 x Naked Single | 3 x Hidden Single"). */
+        public string LastGenerationRuleUsageSummary { get; private set; } = string.Empty;
+
+        public PuzzleGenerator(
+            int maxRetries = DefaultMaxRetries,
+            int maxIterations = DefaultMaxIterations,
+            int minimumOtherRulePasses = DefaultMinimumOtherRulePasses,
+            bool requireNonNakedContribution = false)
         {
             _maxRetries = maxRetries;
             _maxIterations = maxIterations;
+            _minimumOtherRulePasses = Math.Max(0, minimumOtherRulePasses);
+            _requireNonNakedContribution = requireNonNakedContribution;
         }
 
         /**
@@ -54,35 +71,121 @@ namespace Sudoku.Solver.Unsolver
             {
                 var board = CloneBoard(solvedBoard);
                 var handlers = rulesList.Select(UnsolveHandlerRegistry.GetHandler).ToList();
+                bool hasAnyNonNakedValueHandler = handlers.Any(handler =>
+                    handler is not NakedSingleUnsolveHandler
+                    && handler is not CandidateOnlyUnsolveHandler);
+                var appliedRuleSequence = new List<string>(128);
+                bool usedAnyNonNakedRule = false;
 
-                // Warm-up: drain Naked Single unsolve first to maximise removals.
+                // Phase 1: drain Naked Single unsolve first to maximise removals.
                 var nakedHandler = handlers.OfType<NakedSingleUnsolveHandler>().FirstOrDefault();
                 if (nakedHandler != null)
-                    while (nakedHandler.TryUnsolve(board, random) == UnsolveResult.Success) { }
+                {
+                    while (nakedHandler.TryUnsolve(board, random) == UnsolveResult.Success)
+                    {
+                        appliedRuleSequence.Add(NormalizeRuleDisplayName(nakedHandler.RuleName));
+                    }
+                }
 
-                // Random passes until no handler makes progress in a full sweep.
+                // Phase 2: try only non-Naked handlers in repeated shuffled passes.
+                // Keep going while progress exists; target at least N passes when possible.
+                var otherHandlers = handlers
+                    .Where(handler => handler is not NakedSingleUnsolveHandler)
+                    .ToList();
+
                 bool anyProgress = true;
                 int iterations = 0;
-                while (anyProgress && iterations < _maxIterations)
+                while (iterations < _maxIterations
+                    && (iterations < _minimumOtherRulePasses || anyProgress))
                 {
                     anyProgress = false;
-                    Shuffle(handlers, random);
-                    foreach (var handler in handlers)
+                    if (otherHandlers.Count == 0)
+                    {
+                        break;
+                    }
+
+                    Shuffle(otherHandlers, random);
+                    foreach (var handler in otherHandlers)
                     {
                         if (handler.TryUnsolve(board, random) == UnsolveResult.Success)
+                        {
                             anyProgress = true;
+                            usedAnyNonNakedRule = true;
+                            appliedRuleSequence.Add(NormalizeRuleDisplayName(handler.RuleName));
+                        }
                     }
                     iterations++;
+
+                    // Early exit when no remaining non-Naked moves are possible.
+                    if (!anyProgress)
+                    {
+                        break;
+                    }
+                }
+
+                if (_requireNonNakedContribution
+                    && hasAnyNonNakedValueHandler
+                    && !usedAnyNonNakedRule)
+                {
+                    continue;
                 }
 
                 FinalizeBoard(board);
 
+                // Reject trivially easy boards when harder rules are available.
+                if (_requireNonNakedContribution
+                    && hasAnyNonNakedValueHandler
+                    && IsSolvableByNakedSingleOnly(board))
+                {
+                    continue;
+                }
+
                 if (HasUniqueSolution(board))
+                {
+                    LastGenerationRuleSequence = appliedRuleSequence;
+                    LastGenerationRuleUsageSummary = BuildConsecutiveRuleSummary(appliedRuleSequence);
                     return board;
+                }
             }
 
             throw new InvalidOperationException(
                 $"Failed to generate a uniquely solvable puzzle after {_maxRetries} attempts.");
+        }
+
+        /**
+         * Build a compact grouped summary from an ordered rule sequence.
+         * Consecutive identical rules are collapsed (e.g. "45 x Naked Single").
+         *
+         * @param orderedRuleSequence Ordered rule names as they were applied.
+         * @returns Grouped summary string, or empty when sequence is empty.
+         */
+        public static string BuildConsecutiveRuleSummary(IReadOnlyList<string> orderedRuleSequence)
+        {
+            if (orderedRuleSequence == null || orderedRuleSequence.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var groups = new List<string>();
+            string current = orderedRuleSequence[0] ?? string.Empty;
+            int count = 1;
+
+            for (int i = 1; i < orderedRuleSequence.Count; i++)
+            {
+                string name = orderedRuleSequence[i] ?? string.Empty;
+                if (string.Equals(name, current, StringComparison.Ordinal))
+                {
+                    count++;
+                    continue;
+                }
+
+                groups.Add($"{count} x {current}");
+                current = name;
+                count = 1;
+            }
+
+            groups.Add($"{count} x {current}");
+            return string.Join(" | ", groups);
         }
 
         // ── Board helpers ──────────────────────────────────────────────────────────
@@ -185,6 +288,40 @@ namespace Sudoku.Solver.Unsolver
             foreach (var peer in board.GetPeers(cell))
                 if (peer.Value == value) return false;
             return true;
+        }
+
+        private static bool IsSolvableByNakedSingleOnly(Board board)
+        {
+            var clone = CloneBoard(board);
+            var registry = new RuleRegistry();
+            registry.Register(new NakedSingleRule());
+            var engine = new SolverEngine(registry);
+            return engine.Solve(clone, out _);
+        }
+
+        private static string NormalizeRuleDisplayName(string rawRuleName)
+        {
+            if (string.IsNullOrWhiteSpace(rawRuleName))
+            {
+                return "Unknown Rule";
+            }
+
+            string trimmed = rawRuleName.EndsWith("Rule", StringComparison.Ordinal)
+                ? rawRuleName.Substring(0, rawRuleName.Length - 4)
+                : rawRuleName;
+
+            var chars = new List<char>(trimmed.Length + 8);
+            for (int i = 0; i < trimmed.Length; i++)
+            {
+                char ch = trimmed[i];
+                if (i > 0 && char.IsUpper(ch) && !char.IsWhiteSpace(trimmed[i - 1]))
+                {
+                    chars.Add(' ');
+                }
+                chars.Add(ch);
+            }
+
+            return new string(chars.ToArray());
         }
 
         // ── Utility ────────────────────────────────────────────────────────────────
