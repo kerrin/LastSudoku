@@ -7,7 +7,7 @@ using Sudoku.Models;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Panels
 {
     /**
      * Runtime-only Change Log panel. Created on demand by `ChangeLogRuntimeControls`.

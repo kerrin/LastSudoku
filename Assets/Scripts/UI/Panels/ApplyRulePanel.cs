@@ -4,7 +4,9 @@ using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 using Sudoku.Models;
-using Sudoku.Scripts.UI;
+
+namespace Sudoku.UI.Panels
+{
 
 /**
  * UI panel that lists all currently enabled rules that can be applied to
@@ -514,4 +516,5 @@ public class ApplyRulePanel : MonoBehaviour
         BuildList();
         _lastBoard = Runner != null ? Runner.CurrentBoard : null;
     }
+}
 }

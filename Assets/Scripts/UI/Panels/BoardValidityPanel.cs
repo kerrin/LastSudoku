@@ -4,6 +4,9 @@ using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 using System.Text;
 
+namespace Sudoku.UI.Panels
+{
+
 /**
  * Runtime status panel that reports whether the current board is valid.
  * This replaces the old Apply Rules panel in the side panel layout.
@@ -295,4 +298,5 @@ public class BoardValidityPanel : MonoBehaviour
 
         return text;
     }
+}
 }

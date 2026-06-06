@@ -6,6 +6,9 @@ using UnityEngine.EventSystems;
 using UnityEditor;
 #endif
 
+namespace Sudoku.UI.Infrastructure
+{
+
 /// <summary>
 /// Ensures EventSystems use the new Input System UI module when available,
 /// or disables legacy StandaloneInputModule to avoid UnityEngine.Input exceptions
@@ -51,7 +54,6 @@ public static class EventSystemSanitizer
             }
         }
     }
-
 #if UNITY_EDITOR
     [InitializeOnLoadMethod]
     private static void EnsureEditorSanitizer()
@@ -59,4 +61,6 @@ public static class EventSystemSanitizer
         EnsureCorrectInputModules();
     }
 #endif
+}
+
 }

@@ -2,6 +2,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 
+namespace Sudoku.UI.Panels
+{
+
 /**
  * Creates and maintains a UI panel that fills the canvas space to the right
  * of the rendered board (IMGUI board rendered by `BoardVisualizer`). The panel
@@ -408,4 +411,5 @@ public class BoardSidePanel : MonoBehaviour
             _panelRect.anchoredPosition = new Vector2(leftPixel, -panelTopOffset);
         }
     }
+}
 }

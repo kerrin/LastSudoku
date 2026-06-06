@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Sudoku.Scripts.UI.Config
+namespace Sudoku.UI.Config
 {
     /**
      * Base class for configuration panel tabs. Tabs are content containers

@@ -2,7 +2,8 @@ using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
-using Sudoku.Scripts.UI;
+using Sudoku.UI.Menus;
+using Sudoku.UI.Panels;
 using UnityEngine;
 
 namespace Sudoku.Tests.Editor

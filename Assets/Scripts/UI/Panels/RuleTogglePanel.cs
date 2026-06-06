@@ -6,7 +6,9 @@ using System.Text.RegularExpressions;
 using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
-using Sudoku.Scripts.UI;
+
+namespace Sudoku.UI.Panels
+{
 
 /** 
  * Runtime UI panel that creates a toggle for each registered rule so the
@@ -673,4 +675,5 @@ public class RuleTogglePanel : MonoBehaviour
 
         ChangeLogRuntimeControls.RefreshButtonStates();
     }
+}
 }

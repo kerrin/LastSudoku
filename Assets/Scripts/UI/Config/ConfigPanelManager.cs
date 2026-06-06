@@ -1,8 +1,8 @@
 using UnityEngine;
 using UnityEngine.UI;
-using Sudoku.Scripts.UI.Config;
+using Sudoku.UI.Config;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI
 {
     /**
      * Manager for opening and managing the configuration panel.
@@ -142,7 +142,7 @@ namespace Sudoku.Scripts.UI
         private Canvas FindSuitableCanvas()
         {
             Canvas best = null;
-            foreach (var c in FindObjectsOfType<Canvas>())
+            foreach (var c in Object.FindObjectsByType<Canvas>())
             {
                 if (c.renderMode != RenderMode.ScreenSpaceOverlay) continue;
                 if (best == null || c.sortingOrder > best.sortingOrder)

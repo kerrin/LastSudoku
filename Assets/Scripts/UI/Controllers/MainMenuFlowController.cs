@@ -6,8 +6,10 @@ using Sudoku.Models;
 using System;
 using System.Collections.Generic;
 using Object = UnityEngine.Object;
+using Sudoku.UI.Panels;
+using Sudoku.UI.Menus;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Controllers
 {
     /**
      * Controls the high-level runtime flow between startup menu and play mode.

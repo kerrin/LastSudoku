@@ -4,7 +4,7 @@ using Sudoku.Models;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Panels
 {
     /**
      * Full-screen modal panel that shows the user's saved puzzle list.

@@ -1,5 +1,9 @@
 using UnityEngine;
 using Sudoku.Solver;
+using Sudoku.UI.Panels;
+
+namespace Sudoku.Core
+{
 
 /** 
  * Small helper that wires scene components at runtime after scripts compile.
@@ -19,4 +23,5 @@ public class SceneWiring : MonoBehaviour
         var panel = Object.FindAnyObjectByType<RuleTogglePanel>();
         if (panel != null && panel.Runner == null) panel.Runner = runner;
     }
+}
 }

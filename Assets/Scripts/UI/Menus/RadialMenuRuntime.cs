@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Menus
 {
     public enum RadialMenuSegmentId
     {

@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Sudoku.Scripts.UI.Config
+namespace Sudoku.UI.Config
 {
     /**
      * Tabbed configuration panel that manages multiple configuration tabs.

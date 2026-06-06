@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
-using Sudoku.Scripts.UI;
+using Sudoku.UI.Panels;
 
 namespace Sudoku.Solver
 {

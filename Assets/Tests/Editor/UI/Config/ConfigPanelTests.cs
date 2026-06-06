@@ -1,8 +1,8 @@
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.UI;
-using Sudoku.Scripts.UI.Config;
-using Sudoku.Scripts.UI;
+using Sudoku.UI.Config;
+using Sudoku.UI;
 
 namespace Sudoku.Tests.Editor.UI.Config
 {

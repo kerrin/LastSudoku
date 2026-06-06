@@ -5,7 +5,8 @@ using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
-using Sudoku.Scripts.UI;
+using Sudoku.UI.Menus;
+using Sudoku.UI.Panels;
 
 namespace Sudoku.Solver
 {

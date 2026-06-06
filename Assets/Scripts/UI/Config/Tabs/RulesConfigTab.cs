@@ -4,8 +4,9 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Panels;
 
-namespace Sudoku.Scripts.UI.Config
+namespace Sudoku.UI.Config
 {
     /**
      * Configuration tab for managing which Sudoku solving rules are enabled.
@@ -341,9 +342,9 @@ namespace Sudoku.Scripts.UI.Config
             {
                 f = Resources.GetBuiltinResource<Font>(preferred);
             }
-            catch (System.Exception ex)
+            catch
             {
-                Debug.LogWarning($"GetBuiltinResource('{preferred}') failed: {ex.Message}. Trying LegacyRuntime.ttf");
+                // Ignore and fall back to LegacyRuntime.ttf below.
             }
 
             if (f == null)

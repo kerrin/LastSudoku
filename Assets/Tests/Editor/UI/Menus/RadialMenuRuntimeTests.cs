@@ -1,5 +1,5 @@
 using NUnit.Framework;
-using Sudoku.Scripts.UI;
+using Sudoku.UI.Menus;
 using UnityEngine;
 using UnityEngine.UI;
 

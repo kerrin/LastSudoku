@@ -6,7 +6,7 @@ using Sudoku.Models;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Panels
 {
     /**
      * Full-screen modal panel that lists solved-state XML puzzle saves.

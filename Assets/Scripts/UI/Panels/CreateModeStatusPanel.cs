@@ -5,6 +5,9 @@ using Sudoku.Models;
 using Sudoku.Solver.Rules;
 using System.Text;
 
+namespace Sudoku.UI.Panels
+{
+
 /**
  * Status panel displayed only during Create Puzzle mode. Shows board validity,
  * possibility, and solve analysis messages.
@@ -294,4 +297,5 @@ public class CreateModeStatusPanel : MonoBehaviour
         return child != null ? child.GetComponent<Text>() : null;
     }
 
+}
 }

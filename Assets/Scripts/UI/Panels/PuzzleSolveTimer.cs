@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Panels
 {
     /**
      * Tracks elapsed time for a Solve Puzzle session.

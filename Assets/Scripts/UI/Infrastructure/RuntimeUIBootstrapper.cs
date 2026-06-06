@@ -1,6 +1,8 @@
 using UnityEngine;
+using Sudoku.UI.Panels;
+using Sudoku.UI.Controllers;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Infrastructure
 {
     public static class RuntimeUIBootstrapper
     {

@@ -3,7 +3,7 @@ using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
-namespace Sudoku.Scripts.UI
+namespace Sudoku.UI.Panels
 {
     /**
      * At runtime (Designer/Play mode) injects three buttons into the SidePanel
