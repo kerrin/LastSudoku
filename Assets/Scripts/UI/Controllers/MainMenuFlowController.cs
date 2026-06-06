@@ -675,6 +675,7 @@ namespace Sudoku.UI.Controllers
             string trimmed = string.IsNullOrWhiteSpace(code) ? string.Empty : code.Trim();
             if (!string.IsNullOrEmpty(trimmed))
             {
+                Debug.LogWarning("MainMenuFlowController: Start Puzzle received an explicit code. Random generation and generation-rule summary are skipped.");
                 var decoded = PuzzleCodeGenerator.DecodeBoardFromCode(trimmed);
                 if (decoded != null)
                 {
@@ -688,6 +689,10 @@ namespace Sudoku.UI.Controllers
             else if (TryGenerateRandomPuzzleFromEnabledRules(out var generatedPuzzle))
             {
                 ApplyGeneratedBoardValuesToCurrentBoard(generatedPuzzle);
+            }
+            else
+            {
+                Debug.LogError("MainMenuFlowController: Random generation was not applied. Existing board is used, so no generation-rule summary is available.");
             }
 
             CacheStartingPuzzleCodeFromCurrentBoard();
@@ -751,14 +756,26 @@ namespace Sudoku.UI.Controllers
             {
                 var random = new System.Random();
                 var solved = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(random);
-                var generator = new PuzzleGenerator(requireNonNakedContribution: true);
+                // Use a higher retry budget in strict mode so generation can still succeed
+                // while enforcing non-Naked contribution for puzzle difficulty.
+                var generator = new PuzzleGenerator(maxRetries: 50, requireNonNakedContribution: true);
                 generatedPuzzle = generator.Generate(solved, enabledRules, random);
                 if (generatedPuzzle != null)
                 {
                     string ruleSummary = string.IsNullOrWhiteSpace(generator.LastGenerationRuleUsageSummary)
                         ? "(no rule applications recorded)"
                         : generator.LastGenerationRuleUsageSummary;
-                    Debug.Log($"MainMenuFlowController: Generated puzzle unsolve rule usage: {ruleSummary}");
+
+                    string sequenceSummary = generator.LastGenerationRuleSequence != null
+                        ? string.Join(" -> ", generator.LastGenerationRuleSequence)
+                        : string.Empty;
+
+                    // Log as warning so it remains visible even when regular Log entries are filtered out.
+                    Debug.LogWarning($"MainMenuFlowController: Generated puzzle unsolve rule usage: {ruleSummary}");
+                    if (!string.IsNullOrWhiteSpace(sequenceSummary))
+                    {
+                        Debug.LogWarning($"MainMenuFlowController: Generated puzzle unsolve rule sequence: {sequenceSummary}");
+                    }
                 }
                 return generatedPuzzle != null;
             }

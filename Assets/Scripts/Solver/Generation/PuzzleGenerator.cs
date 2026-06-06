@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Sudoku.Models;
-using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
@@ -131,14 +130,6 @@ namespace Sudoku.Solver.Unsolver
                 }
 
                 FinalizeBoard(board);
-
-                // Reject trivially easy boards when harder rules are available.
-                if (_requireNonNakedContribution
-                    && hasAnyNonNakedValueHandler
-                    && IsSolvableByNakedSingleOnly(board))
-                {
-                    continue;
-                }
 
                 if (HasUniqueSolution(board))
                 {
@@ -288,15 +279,6 @@ namespace Sudoku.Solver.Unsolver
             foreach (var peer in board.GetPeers(cell))
                 if (peer.Value == value) return false;
             return true;
-        }
-
-        private static bool IsSolvableByNakedSingleOnly(Board board)
-        {
-            var clone = CloneBoard(board);
-            var registry = new RuleRegistry();
-            registry.Register(new NakedSingleRule());
-            var engine = new SolverEngine(registry);
-            return engine.Solve(clone, out _);
         }
 
         private static string NormalizeRuleDisplayName(string rawRuleName)
