@@ -14,9 +14,9 @@ namespace Sudoku.Solver.Unsolver
      *   <item>Clone the provided fully-solved board.</item>
      *   <item>Warm-up: repeatedly apply the Naked Single unsolve handler until it can
      *         make no further moves.</item>
-        *   <item>Non-Naked phase: shuffle and apply only non-Naked handlers in passes,
-        *         targeting at least <see cref="DefaultMinimumOtherRulePasses"/> passes when
-        *         progress continues, or stopping early when no move is available.</item>
+      *   <item>Non-Naked phase: repeatedly attempt enabled non-Naked handlers ordered
+      *         by descending rule difficulty. Harder rules are attempted first; easier
+      *         rules are only attempted when harder ones cannot apply.</item>
      *   <item>Finalize: mark remaining valued cells as givens, recompute candidates for
      *         empty cells, clear the change-log.</item>
      *   <item>Validate uniqueness via backtracking; retry up to
@@ -69,15 +69,21 @@ namespace Sudoku.Solver.Unsolver
             for (int attempt = 0; attempt < _maxRetries; attempt++)
             {
                 var board = CloneBoard(solvedBoard);
-                var handlers = rulesList.Select(UnsolveHandlerRegistry.GetHandler).ToList();
-                bool hasAnyNonNakedValueHandler = handlers.Any(handler =>
-                    handler is not NakedSingleUnsolveHandler
-                    && handler is not CandidateOnlyUnsolveHandler);
+                var handlerPlans = rulesList
+                    .Select(rule => (rule, handler: UnsolveHandlerRegistry.GetHandler(rule)))
+                    .ToList();
+
+                bool hasAnyNonNakedValueHandler = handlerPlans.Any(plan =>
+                    plan.handler is not NakedSingleUnsolveHandler
+                    && plan.handler is not CandidateOnlyUnsolveHandler);
                 var appliedRuleSequence = new List<string>(128);
                 bool usedAnyNonNakedRule = false;
 
                 // Phase 1: drain Naked Single unsolve first to maximise removals.
-                var nakedHandler = handlers.OfType<NakedSingleUnsolveHandler>().FirstOrDefault();
+                var nakedHandler = handlerPlans
+                    .Select(plan => plan.handler)
+                    .OfType<NakedSingleUnsolveHandler>()
+                    .FirstOrDefault();
                 if (nakedHandler != null)
                 {
                     while (nakedHandler.TryUnsolve(board, random) == UnsolveResult.Success)
@@ -86,10 +92,11 @@ namespace Sudoku.Solver.Unsolver
                     }
                 }
 
-                // Phase 2: try only non-Naked handlers in repeated shuffled passes.
-                // Keep going while progress exists; target at least N passes when possible.
-                var otherHandlers = handlers
-                    .Where(handler => handler is not NakedSingleUnsolveHandler)
+                // Phase 2: non-Naked handlers are prioritized by descending difficulty.
+                // Within the same difficulty tier, randomize order for variety.
+                var otherHandlerPlans = handlerPlans
+                    .Where(plan => plan.handler is not NakedSingleUnsolveHandler)
+                    .OrderByDescending(plan => plan.rule.Difficulty)
                     .ToList();
 
                 bool anyProgress = true;
@@ -98,19 +105,41 @@ namespace Sudoku.Solver.Unsolver
                     && (iterations < _minimumOtherRulePasses || anyProgress))
                 {
                     anyProgress = false;
-                    if (otherHandlers.Count == 0)
+                    if (otherHandlerPlans.Count == 0)
                     {
                         break;
                     }
 
-                    Shuffle(otherHandlers, random);
-                    foreach (var handler in otherHandlers)
+                    foreach (Difficulty tier in GetDifficultyDescendingOrder())
                     {
-                        if (handler.TryUnsolve(board, random) == UnsolveResult.Success)
+                        var tierHandlers = otherHandlerPlans
+                            .Where(plan => plan.rule.Difficulty == tier)
+                            .Select(plan => plan.handler)
+                            .ToList();
+
+                        if (tierHandlers.Count == 0)
                         {
-                            anyProgress = true;
-                            usedAnyNonNakedRule = true;
-                            appliedRuleSequence.Add(NormalizeRuleDisplayName(handler.RuleName));
+                            continue;
+                        }
+
+                        Shuffle(tierHandlers, random);
+                        bool tierApplied = false;
+                        foreach (var handler in tierHandlers)
+                        {
+                            if (handler.TryUnsolve(board, random) == UnsolveResult.Success)
+                            {
+                                anyProgress = true;
+                                tierApplied = true;
+                                usedAnyNonNakedRule = true;
+                                appliedRuleSequence.Add(NormalizeRuleDisplayName(handler.RuleName));
+                                break;
+                            }
+                        }
+
+                        // Harder-first policy: once a move is made in a tier, restart from hardest.
+                        if (tierApplied)
+                        {
+                            break;
                         }
                     }
                     iterations++;
@@ -304,6 +333,18 @@ namespace Sudoku.Solver.Unsolver
             }
 
             return new string(chars.ToArray());
+        }
+
+        private static IReadOnlyList<Difficulty> GetDifficultyDescendingOrder()
+        {
+            return new[]
+            {
+                Difficulty.Master,
+                Difficulty.Expert,
+                Difficulty.Hard,
+                Difficulty.Medium,
+                Difficulty.Easy,
+            };
         }
 
         // ── Utility ────────────────────────────────────────────────────────────────
