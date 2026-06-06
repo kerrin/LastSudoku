@@ -1,0 +1,22 @@
+namespace Sudoku.UI.Config
+{
+    /**
+     * Runtime configuration flags for Assistance options shown in the config panel.
+     *
+     * Values are intentionally static so gameplay/UI systems can read the latest
+     * toggle state without needing scene references.
+     */
+    public static class AssistanceSettings
+    {
+        /**
+         * When true, the ApplyRulePanel is hidden even in puzzle mode.
+         */
+        public static bool HideApplyRules { get; set; }
+
+        /**
+         * When true, setting a value applies candidate cleanup to peers.
+         * When false, set-value behaves as value-only placement.
+         */
+        public static bool AutoCandidateOnSetValue { get; set; } = true;
+    }
+}

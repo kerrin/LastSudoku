@@ -1065,6 +1065,7 @@ namespace Sudoku.UI.Controllers
                         NewValue = source.NewValue,
                         ClearValue = source.ClearValue,
                         ForceSetValue = source.ForceSetValue,
+                        ValueOnlySet = source.ValueOnlySet,
                         GroupId = source.GroupId,
                         SourceRuleName = source.SourceRuleName,
                         SourceRuleDescription = source.SourceRuleDescription,

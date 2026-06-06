@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Panels
 {
@@ -275,6 +276,7 @@ public class BoardSidePanel : MonoBehaviour
         if (runner == null) return;
 
         bool isCreation = runner.IsPuzzleCreationMode;
+        bool hideApplyRules = AssistanceSettings.HideApplyRules;
 
         if (_panelRect == null) return;
 
@@ -284,7 +286,7 @@ public class BoardSidePanel : MonoBehaviour
             var p = applyPanels[i];
             if (p != null)
             {
-                p.gameObject.SetActive(!isCreation);
+                p.gameObject.SetActive(!isCreation && !hideApplyRules);
             }
         }
 

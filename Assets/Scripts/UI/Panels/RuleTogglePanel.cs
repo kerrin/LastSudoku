@@ -663,7 +663,7 @@ public class RuleTogglePanel : MonoBehaviour
             _createModeStatusPanel = FindAnyObjectByType<CreateModeStatusPanel>();
         }
 
-        if (_applyRulePanel != null)
+        if (_applyRulePanel != null && _applyRulePanel.gameObject != null && _applyRulePanel.gameObject.activeInHierarchy)
         {
             _applyRulePanel.RefreshList();
         }

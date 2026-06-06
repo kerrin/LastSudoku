@@ -29,6 +29,9 @@ namespace Sudoku.Solver.Rules
         /** True when value placement should bypass peer-conflict safety guards. */
         public bool ForceSetValue;
 
+        /** True when the value change is value-only and should not imply peer candidate removals in UI. */
+        public bool ValueOnlySet;
+
         /** Candidate digits removed from the cell as part of the change. */
         public List<int> RemovedCandidates = new List<int>();
 

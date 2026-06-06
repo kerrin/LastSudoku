@@ -365,7 +365,7 @@ namespace Sudoku.UI.Config
          */
         private void RefreshApplyRulesPanel()
         {
-            if (_applyRulePanel != null)
+            if (_applyRulePanel != null && _applyRulePanel.gameObject != null && _applyRulePanel.gameObject.activeInHierarchy)
             {
                 _applyRulePanel.RefreshList();
             }

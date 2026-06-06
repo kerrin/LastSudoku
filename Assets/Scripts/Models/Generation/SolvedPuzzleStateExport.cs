@@ -112,6 +112,7 @@ namespace Sudoku.Models
                         NewValue = change.NewValue,
                         ClearValue = change.ClearValue,
                         ForceSetValue = change.ForceSetValue,
+                        ValueOnlySet = change.ValueOnlySet,
                         GroupId = change.GroupId,
                         SourceRuleName = change.SourceRuleName ?? string.Empty,
                         SourceRuleDescription = change.SourceRuleDescription ?? string.Empty,
@@ -162,6 +163,7 @@ namespace Sudoku.Models
         public int? NewValue;
         public bool ClearValue;
         public bool ForceSetValue;
+        public bool ValueOnlySet;
         public List<int> RemovedCandidates = new List<int>();
         public List<int> AddedCandidates = new List<int>();
         public int GroupId;

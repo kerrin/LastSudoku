@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Sudoku.Solver;
+using Sudoku.UI.Config;
 using UnityEngine;
 
 namespace Sudoku.Tests.Editor
@@ -82,6 +83,100 @@ namespace Sudoku.Tests.Editor
             }
             finally
             {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void ExecuteManualSetValue_InPuzzleMode_AutoCandidateDisabled_LeavesPeerCandidatesUnchanged()
+        {
+            var root = new GameObject("SolverRunnerCreatePuzzleTests_AutoCandidateOff");
+            bool original = AssistanceSettings.AutoCandidateOnSetValue;
+
+            try
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = false;
+
+                var runner = root.AddComponent<SolverRunner>();
+                runner.CreateBlankBoard();
+                runner.SetInteractionMode(BoardInteractionMode.Puzzle);
+
+                var peer = runner.CurrentBoard.Cells[0, 1];
+                Assert.IsTrue(peer.Candidates.Contains(5));
+
+                var execution = runner.ExecuteManualSetValue(0, 0, 5);
+
+                Assert.IsNotNull(execution);
+                Assert.IsTrue(execution.Applied);
+                Assert.AreEqual(1, execution.RuleResult.Changes.Count, "Value-only set should not emit peer candidate-removal changes.");
+                Assert.IsTrue(execution.RuleResult.Changes[0].ValueOnlySet, "Value-only set should be marked to suppress implied peer-removal highlights.");
+                Assert.AreEqual(5, runner.CurrentBoard.Cells[0, 0].Value);
+                Assert.IsTrue(peer.Candidates.Contains(5), "Peer candidates should remain unchanged when auto-candidate is disabled.");
+            }
+            finally
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = original;
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void ExecuteManualSetValue_InPuzzleMode_AutoCandidateEnabled_RemovesPeerCandidate()
+        {
+            var root = new GameObject("SolverRunnerCreatePuzzleTests_AutoCandidateOn");
+            bool original = AssistanceSettings.AutoCandidateOnSetValue;
+
+            try
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = true;
+
+                var runner = root.AddComponent<SolverRunner>();
+                runner.CreateBlankBoard();
+                runner.SetInteractionMode(BoardInteractionMode.Puzzle);
+
+                var peer = runner.CurrentBoard.Cells[0, 1];
+                Assert.IsTrue(peer.Candidates.Contains(5));
+
+                var execution = runner.ExecuteManualSetValue(0, 0, 5);
+
+                Assert.IsNotNull(execution);
+                Assert.IsTrue(execution.Applied);
+                Assert.AreEqual(5, runner.CurrentBoard.Cells[0, 0].Value);
+                Assert.IsFalse(peer.Candidates.Contains(5), "Peer candidates should be cleaned up when auto-candidate is enabled.");
+            }
+            finally
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = original;
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void ExecuteManualSetValue_InCreationMode_AutoCandidateDisabled_StillClearsPeerCandidates()
+        {
+            var root = new GameObject("SolverRunnerCreatePuzzleTests_CreateModeAutoCandidateOff");
+            bool original = AssistanceSettings.AutoCandidateOnSetValue;
+
+            try
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = false;
+
+                var runner = root.AddComponent<SolverRunner>();
+                runner.CreateBlankBoard();
+
+                var peer = runner.CurrentBoard.Cells[0, 1];
+                Assert.IsTrue(peer.Candidates.Contains(5));
+
+                var execution = runner.ExecuteManualSetValue(0, 0, 5);
+
+                Assert.IsNotNull(execution);
+                Assert.IsTrue(execution.Applied);
+                Assert.AreEqual(5, runner.CurrentBoard.Cells[0, 0].Value);
+                Assert.IsFalse(peer.Candidates.Contains(5), "Creation mode candidate sync should be unaffected by the puzzle-mode auto-candidate toggle.");
+            }
+            finally
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = original;
                 Object.DestroyImmediate(root);
             }
         }

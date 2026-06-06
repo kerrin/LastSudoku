@@ -85,7 +85,8 @@ namespace Sudoku.Solver
                 Row = row,
                 Column = column,
                 NewValue = value,
-                ForceSetValue = true
+                ForceSetValue = true,
+                ValueOnlySet = true
             });
 
             return ApplyAndRecord(board, result, "ManualSetValueValueOnly");
@@ -502,6 +503,7 @@ namespace Sudoku.Solver
                     NewValue = change.NewValue,
                     ClearValue = change.ClearValue,
                     ForceSetValue = change.ForceSetValue,
+                    ValueOnlySet = change.ValueOnlySet,
                     RemovedCandidates = change.RemovedCandidates != null ? new List<int>(change.RemovedCandidates) : new List<int>(),
                     AddedCandidates = change.AddedCandidates != null ? new List<int>(change.AddedCandidates) : new List<int>(),
                     GroupId = groupId,

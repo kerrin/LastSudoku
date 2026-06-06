@@ -1,7 +1,9 @@
 using System.Text.RegularExpressions;
 using UnityEngine;
+using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Config;
 using Sudoku.UI.Panels;
 
 namespace Sudoku.UI
@@ -19,10 +21,18 @@ namespace Sudoku.UI
      */
     public class ConfigPanelManager : MonoBehaviour
     {
+        private enum ConfigTabId
+        {
+            Rules = 0,
+            Assistance = 1
+        }
+
         private static ConfigPanelManager _instance;
 
         private bool    _isOpen    = false;
         private Vector2 _scrollPos = Vector2.zero;
+        private readonly System.Collections.Generic.List<(GraphicRaycaster raycaster, bool wasEnabled)> _raycasterStates
+            = new System.Collections.Generic.List<(GraphicRaycaster raycaster, bool wasEnabled)>();
 
         // Runtime references resolved on open.
         private SolverRunner   _runner;
@@ -36,7 +46,9 @@ namespace Sudoku.UI
         private GUIStyle _ruleNameStyle;
         private GUIStyle _toggleStyle;
         private GUIStyle _scrollBgStyle;
+        private GUIStyle _assistanceSectionStyle;
         private bool     _stylesBuilt;
+        private ConfigTabId _activeTab = ConfigTabId.Rules;
 
         // Panel layout constants.
         private const float PanelW  = 500f;
@@ -68,6 +80,7 @@ namespace Sudoku.UI
         {
             if (_isOpen) return;
             ResolveReferences();
+            SetUnderlyingUiInputEnabled(false);
             _isOpen = true;
         }
 
@@ -76,7 +89,14 @@ namespace Sudoku.UI
          */
         public void CloseConfigPanel()
         {
+            SetUnderlyingUiInputEnabled(true);
             _isOpen = false;
+        }
+
+        private void OnDestroy()
+        {
+            // Safety: if this object is destroyed while open, restore any disabled raycasters.
+            SetUnderlyingUiInputEnabled(true);
         }
 
         // ─── Input ───────────────────────────────────────────────────────────
@@ -181,7 +201,9 @@ namespace Sudoku.UI
 
             GUILayout.BeginHorizontal(GUILayout.Height(TabBarH));
             GUILayout.Space(10f);
-            GUILayout.Box("Rules", _tabBoxStyle, GUILayout.Width(84f), GUILayout.Height(TabBarH - 8f));
+            DrawTabButton(ConfigTabId.Rules, "Rules", 84f);
+            GUILayout.Space(6f);
+            DrawTabButton(ConfigTabId.Assistance, "Assistance", 108f);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -192,11 +214,42 @@ namespace Sudoku.UI
 
             // ── Scrollable rule toggles ───────────────────────────────────────
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, _scrollBgStyle, GUILayout.ExpandHeight(true));
-            DrawRuleToggles();
+            DrawActiveTabContent();
             GUILayout.EndScrollView();
 
             GUILayout.Space(6f);
             return closeClicked;
+        }
+
+        /**
+         * Draw a tab-button-like control in the config tab bar.
+         *
+         * @param tab Tab identifier for selection state.
+         * @param label Visible tab title.
+         * @param width Preferred tab button width.
+         */
+        private void DrawTabButton(ConfigTabId tab, string label, float width)
+        {
+            var style = tab == _activeTab ? _tabBoxStyle : GUI.skin.button;
+            if (GUILayout.Button(label, style, GUILayout.Width(width), GUILayout.Height(TabBarH - 8f)))
+            {
+                _activeTab = tab;
+                _scrollPos = Vector2.zero;
+            }
+        }
+
+        /**
+         * Draw the currently selected tab content area.
+         */
+        private void DrawActiveTabContent()
+        {
+            if (_activeTab == ConfigTabId.Assistance)
+            {
+                DrawAssistanceOptions();
+                return;
+            }
+
+            DrawRuleToggles();
         }
 
         /**
@@ -255,6 +308,47 @@ namespace Sudoku.UI
         }
 
         /**
+         * Draw Assistance settings and keep this section extensible for future options.
+         */
+        private void DrawAssistanceOptions()
+        {
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical(_assistanceSectionStyle);
+            GUILayout.Space(4f);
+
+            bool hideApplyRules = GUILayout.Toggle(
+                AssistanceSettings.HideApplyRules,
+                "Hide Apply Rules",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            if (hideApplyRules != AssistanceSettings.HideApplyRules)
+            {
+                AssistanceSettings.HideApplyRules = hideApplyRules;
+                RefreshBoardSidePanelVisibility();
+            }
+
+            bool autoCandidateOnSetValue = GUILayout.Toggle(
+                AssistanceSettings.AutoCandidateOnSetValue,
+                "Enable Auto Candidate on set Value",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            if (autoCandidateOnSetValue != AssistanceSettings.AutoCandidateOnSetValue)
+            {
+                AssistanceSettings.AutoCandidateOnSetValue = autoCandidateOnSetValue;
+            }
+
+            // Reserve visual room for upcoming Assistance options.
+            GUILayout.Space(16f);
+            GUILayout.EndVertical();
+
+            GUILayout.FlexibleSpace();
+        }
+
+        /**
          * Apply a rule enabled-state change if the value differs.
          *
          * @param typeName   Rule type name.
@@ -293,9 +387,33 @@ namespace Sudoku.UI
 
         private void RefreshApplyRulesPanel()
         {
-            if (_applyRulePanel != null)
+            if (_applyRulePanel != null && _applyRulePanel.gameObject != null && _applyRulePanel.gameObject.activeInHierarchy)
             {
                 _applyRulePanel.RefreshList();
+            }
+        }
+
+        /**
+         * Force all side panels to reevaluate visibility after Assistance toggle changes.
+         */
+        private static void RefreshBoardSidePanelVisibility()
+        {
+            var sidePanels = Resources.FindObjectsOfTypeAll<BoardSidePanel>();
+            for (int i = 0; i < sidePanels.Length; i++)
+            {
+                var sidePanel = sidePanels[i];
+                if (sidePanel == null)
+                {
+                    continue;
+                }
+
+                var go = sidePanel.gameObject;
+                if (go == null || !go.scene.IsValid() || !go.scene.isLoaded)
+                {
+                    continue;
+                }
+
+                sidePanel.RefreshPanelVisibilityForCurrentMode();
             }
         }
 
@@ -309,6 +427,49 @@ namespace Sudoku.UI
                 var go = panel.gameObject;
                 if (go == null || !go.scene.IsValid() || !go.scene.isLoaded) continue;
                 panel.RefreshStatus(force: true);
+            }
+        }
+
+        /**
+         * Enable or disable uGUI raycasters so clicks don't pass through the IMGUI config panel.
+         *
+         * @param enabled True to restore previous raycaster states; false to disable all active raycasters.
+         */
+        private void SetUnderlyingUiInputEnabled(bool enabled)
+        {
+            if (enabled)
+            {
+                for (int i = 0; i < _raycasterStates.Count; i++)
+                {
+                    var entry = _raycasterStates[i];
+                    if (entry.raycaster != null)
+                    {
+                        entry.raycaster.enabled = entry.wasEnabled;
+                    }
+                }
+
+                _raycasterStates.Clear();
+                return;
+            }
+
+            _raycasterStates.Clear();
+            var raycasters = Resources.FindObjectsOfTypeAll<GraphicRaycaster>();
+            for (int i = 0; i < raycasters.Length; i++)
+            {
+                var raycaster = raycasters[i];
+                if (raycaster == null)
+                {
+                    continue;
+                }
+
+                var go = raycaster.gameObject;
+                if (go == null || !go.scene.IsValid() || !go.scene.isLoaded)
+                {
+                    continue;
+                }
+
+                _raycasterStates.Add((raycaster, raycaster.enabled));
+                raycaster.enabled = false;
             }
         }
 
@@ -381,6 +542,12 @@ namespace Sudoku.UI
             _toggleStyle.onHover.textColor  = Color.white;
 
             _scrollBgStyle = new GUIStyle(GUI.skin.scrollView);
+
+            _assistanceSectionStyle = new GUIStyle(GUI.skin.box)
+            {
+                padding = new RectOffset(10, 10, 10, 10)
+            };
+            _assistanceSectionStyle.normal.textColor = Color.white;
         }
     }
 }

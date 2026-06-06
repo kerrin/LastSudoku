@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Config;
 using Sudoku.UI.Panels;
 
 namespace Sudoku.Solver
@@ -313,6 +314,7 @@ namespace Sudoku.Solver
                             NewValue = ch.NewValue,
                             ClearValue = ch.ClearValue,
                             ForceSetValue = ch.ForceSetValue,
+                            ValueOnlySet = ch.ValueOnlySet,
                             RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
                             AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
                             GroupId = gid,
@@ -475,6 +477,7 @@ namespace Sudoku.Solver
                     NewValue = ch.NewValue,
                     ClearValue = ch.ClearValue,
                     ForceSetValue = ch.ForceSetValue,
+                    ValueOnlySet = ch.ValueOnlySet,
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
@@ -511,6 +514,7 @@ namespace Sudoku.Solver
                     NewValue = ch.NewValue,
                     ClearValue = ch.ClearValue,
                     ForceSetValue = ch.ForceSetValue,
+                    ValueOnlySet = ch.ValueOnlySet,
                     GroupId = ch.GroupId,
                     SourceRuleName = ch.SourceRuleName,
                     SourceRuleDescription = ch.SourceRuleDescription,
@@ -673,13 +677,103 @@ namespace Sudoku.Solver
             }
             else
             {
-                execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
+                if (AssistanceSettings.AutoCandidateOnSetValue)
+                {
+                    execution = ManualCellEditCore.ApplySetValue(_board, row, column, value);
+                }
+                else
+                {
+                    var peerCandidateSnapshot = CapturePeerCandidates(row, column);
+                    execution = ManualCellEditCore.ApplySetValueValueOnly(_board, row, column, value);
+                    if (execution != null && execution.Applied)
+                    {
+                        RestorePeerCandidates(peerCandidateSnapshot);
+                    }
+                }
             }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
             PreviewRuleResult = null;
             FinalizeManualExecution(execution);
             return execution;
+        }
+
+        /**
+         * Capture peer candidate sets for a target cell so value-only edits can
+         * preserve peer markings when assistance auto-candidate is disabled.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @returns Snapshot map keyed by peer cell reference.
+         */
+        private Dictionary<Cell, HashSet<int>> CapturePeerCandidates(int row, int column)
+        {
+            var snapshot = new Dictionary<Cell, HashSet<int>>();
+            if (_board == null || _board.Cells == null)
+            {
+                return snapshot;
+            }
+
+            if (row < 0 || row >= _board.Size || column < 0 || column >= _board.Size)
+            {
+                return snapshot;
+            }
+
+            var cell = _board.Cells[row, column];
+            if (cell == null)
+            {
+                return snapshot;
+            }
+
+            foreach (var peer in _board.GetPeers(cell))
+            {
+                if (peer == null)
+                {
+                    continue;
+                }
+
+                snapshot[peer] = peer.Candidates != null
+                    ? new HashSet<int>(peer.Candidates)
+                    : new HashSet<int>();
+            }
+
+            return snapshot;
+        }
+
+        /**
+         * Restore peer candidate sets captured before a value-only placement.
+         *
+         * @param snapshot Snapshot map returned by CapturePeerCandidates.
+         */
+        private static void RestorePeerCandidates(Dictionary<Cell, HashSet<int>> snapshot)
+        {
+            if (snapshot == null || snapshot.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var pair in snapshot)
+            {
+                var peer = pair.Key;
+                if (peer == null)
+                {
+                    continue;
+                }
+
+                if (peer.Candidates == null)
+                {
+                    peer.Candidates = new HashSet<int>();
+                }
+                else
+                {
+                    peer.Candidates.Clear();
+                }
+
+                foreach (int candidate in pair.Value)
+                {
+                    peer.Candidates.Add(candidate);
+                }
+            }
         }
 
         /**
@@ -1732,6 +1826,7 @@ namespace Sudoku.Solver
                         NewValue = ch.NewValue,
                         ClearValue = ch.ClearValue,
                         ForceSetValue = ch.ForceSetValue,
+                        ValueOnlySet = ch.ValueOnlySet,
                         RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
                         AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
                         GroupId = gid,

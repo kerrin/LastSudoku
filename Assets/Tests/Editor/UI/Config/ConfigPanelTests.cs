@@ -49,6 +49,25 @@ namespace Sudoku.Tests.Editor.UI.Config
         }
 
         [Test]
+        public void ConfigPanelManager_OpenClose_TogglesUnderlyingGraphicRaycasters()
+        {
+            Assert.IsNotNull(_testCanvasGO);
+
+            var raycaster = _testCanvasGO.GetComponent<GraphicRaycaster>();
+            Assert.IsNotNull(raycaster);
+            raycaster.enabled = true;
+
+            var managerGO = new GameObject("ConfigPanelManager", typeof(ConfigPanelManager));
+            _configManager = managerGO.GetComponent<ConfigPanelManager>();
+
+            _configManager.OpenConfigPanel();
+            Assert.IsFalse(raycaster.enabled, "Opening config should block click-through to underlying uGUI.");
+
+            _configManager.CloseConfigPanel();
+            Assert.IsTrue(raycaster.enabled, "Closing config should restore prior raycaster state.");
+        }
+
+        [Test]
         public void ConfigPanel_CanBuildWithRulesTab()
         {
             // Create config panel

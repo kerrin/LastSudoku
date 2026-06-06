@@ -1005,7 +1005,7 @@ namespace Sudoku.Solver
                         // implied removals: if the rule placed `d` in another cell, that
                         // placement removes `d` from all its peers. Treat peers as recently
                         // removed even if the rule didn't emit explicit RemovedCandidates.
-                        if (ch.NewValue.HasValue && ch.NewValue.Value == d)
+                        if (ch.NewValue.HasValue && ch.NewValue.Value == d && !ch.ValueOnlySet)
                         {
                             var board = Runner != null ? Runner.CurrentBoard : null;
                             if (board != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < board.Size && ch.Column < board.Size)

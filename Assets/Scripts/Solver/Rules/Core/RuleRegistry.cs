@@ -188,6 +188,7 @@ namespace Sudoku.Solver.Rules
                                     NewValue = ch.NewValue,
                                     ClearValue = ch.ClearValue,
                                     ForceSetValue = ch.ForceSetValue,
+                                    ValueOnlySet = ch.ValueOnlySet,
                                     RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
                                     AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
                                     GroupId = gid,
