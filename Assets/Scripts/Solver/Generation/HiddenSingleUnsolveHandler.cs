@@ -33,6 +33,7 @@ namespace Sudoku.Solver.Unsolver
             var chosen = candidates[random.Next(candidates.Count)];
             chosen.Value = null;
             chosen.IsGiven = false;
+            RecomputeCandidates(board);
             return UnsolveResult.Success;
         }
 
@@ -54,6 +55,10 @@ namespace Sudoku.Solver.Unsolver
 
                     // Skip cells that NakedSingle can already handle.
                     if (NakedSingleWouldFire(board, cell)) continue;
+
+                    // Only remove cells that would still have a meaningful candidate set
+                    // after the value is cleared.
+                    if (!WouldLeaveUsefulCandidateState(board, cell, value)) continue;
 
                     if (WouldBeHiddenSingleInRow(board, cell, value)
                         || WouldBeHiddenSingleInColumn(board, cell, value)
@@ -99,6 +104,7 @@ namespace Sudoku.Solver.Unsolver
         {
             if (!CanSolveTarget(board, targetCell, targetValue))
             {
+                context?.Trace("HiddenSingle: target already not solvable; no action needed.");
                 return true;
             }
 
@@ -115,6 +121,7 @@ namespace Sudoku.Solver.Unsolver
             foreach (var blocker in blockerOptions)
             {
                 int previousValue = blocker.Value.Value;
+                var beforeAttempt = PuzzleGenerator.CloneBoard(board);
                 blocker.Value = null;
                 blocker.IsGiven = false;
 
@@ -128,14 +135,125 @@ namespace Sudoku.Solver.Unsolver
                         random,
                         context))
                 {
+                    context?.TraceTransition(
+                        "HiddenSingle blocker removal",
+                        $"Removed blocker r{blocker.Row + 1}c{blocker.Column + 1}={previousValue}. Hidden Single no longer solves the target, and recursive hardening succeeded.",
+                        beforeAttempt,
+                        board,
+                        failed: false,
+                        usedCells: new List<UsedCell>
+                        {
+                            new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                            new UsedCell { Row = blocker.Row, Column = blocker.Column, HighlightTag = "Deduction" }
+                        });
                     return true;
                 }
 
-                blocker.Value = previousValue;
+                context?.TraceTransition(
+                    "HiddenSingle blocker removal failed",
+                    $"Removed blocker r{blocker.Row + 1}c{blocker.Column + 1}={previousValue}, but Hidden Single still held or recursive hardening failed; reverting.",
+                    beforeAttempt,
+                    board,
+                    failed: true,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                        new UsedCell { Row = blocker.Row, Column = blocker.Column, HighlightTag = "Failure" }
+                    });
+
+                RestoreBoardState(beforeAttempt, board);
+            }
+
+            // Escalation path: if direct removable blockers did not work, try opening
+            // candidate space by force-unsolving seen blocker cells through Naked Single.
+            var preferredKeys = new HashSet<int>();
+            foreach (var cell in blockerOptions)
+            {
+                preferredKeys.Add(ToCellKey(board.Size, cell.Row, cell.Column));
+            }
+
+            var allSeenBlockers = CollectTargetValueBlockers(board, targetCell, targetValue, removableKeys: null);
+            var escalatedBlockers = new List<Cell>();
+            foreach (var blocker in allSeenBlockers)
+            {
+                int key = ToCellKey(board.Size, blocker.Row, blocker.Column);
+                if (!preferredKeys.Contains(key))
+                {
+                    escalatedBlockers.Add(blocker);
+                }
+            }
+
+            Shuffle(escalatedBlockers, random);
+            foreach (var blocker in escalatedBlockers)
+            {
+                int previousValue = blocker.Value.Value;
+                var beforeAttempt = PuzzleGenerator.CloneBoard(board);
+
+                blocker.Value = null;
                 blocker.IsGiven = false;
+                RecomputeCandidates(board);
+
+                bool blockerForceUnsolved = _nakedSingleUnsolve.TryMakeTargetNotSolvable(
+                    board,
+                    blocker,
+                    targetValue,
+                    random,
+                    coordinator,
+                    context);
+
+                bool anchorStillPossible = context?.AnchorSolveStillPossible == null
+                    || context.AnchorSolveStillPossible(board);
+
+                if (blockerForceUnsolved
+                    && anchorStillPossible
+                    && !CanSolveTarget(board, targetCell, targetValue)
+                    && coordinator.TryMakeTargetNotSolvableByOtherRules(
+                        board,
+                        targetCell,
+                        targetValue,
+                        RuleName,
+                        random,
+                        context))
+                {
+                    context?.TraceTransition(
+                        "HiddenSingle blocker force-unsolve",
+                        $"Removed seen blocker r{blocker.Row + 1}c{blocker.Column + 1}={previousValue} and force-unsolved it via Naked Single so Hidden Single no longer solves the target.",
+                        beforeAttempt,
+                        board,
+                        failed: false,
+                        usedCells: new List<UsedCell>
+                        {
+                            new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                            new UsedCell { Row = blocker.Row, Column = blocker.Column, HighlightTag = "Deduction" }
+                        });
+                    return true;
+                }
+
+                context?.TraceTransition(
+                    "HiddenSingle blocker force-unsolve failed",
+                    anchorStillPossible
+                        ? $"Tried seen blocker r{blocker.Row + 1}c{blocker.Column + 1}={previousValue} with Naked Single force-unsolve, but Hidden Single still held or downstream hardening failed; reverting."
+                        : $"Tried seen blocker r{blocker.Row + 1}c{blocker.Column + 1}={previousValue} with Naked Single force-unsolve, but this broke anchor viability; reverting.",
+                    beforeAttempt,
+                    board,
+                    failed: true,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                        new UsedCell { Row = blocker.Row, Column = blocker.Column, HighlightTag = "Failure" }
+                    });
+
+                RestoreBoardState(beforeAttempt, board);
             }
 
             RecomputeCandidates(board);
+            context?.Trace(
+                "HiddenSingle: exhausted blocker removals without success.",
+                failed: true,
+                usedCells: new List<UsedCell>
+                {
+                    new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Failure" }
+                });
             return false;
         }
 
@@ -153,6 +271,39 @@ namespace Sudoku.Solver.Unsolver
                 if (d == value) continue;
                 if (!peerValues.Contains(d)) return false;
             }
+            return true;
+        }
+
+        private static bool WouldLeaveUsefulCandidateState(Board board, Cell cell, int value)
+        {
+            int candidateCount = 0;
+            bool hasTargetValue = false;
+
+            for (int digit = 1; digit <= board.Size; digit++)
+            {
+                if (WouldDigitRemainPossibleAfterRemoval(board, cell, digit))
+                {
+                    candidateCount++;
+                    if (digit == value)
+                    {
+                        hasTargetValue = true;
+                    }
+                }
+            }
+
+            return hasTargetValue && candidateCount > 1;
+        }
+
+        private static bool WouldDigitRemainPossibleAfterRemoval(Board board, Cell cell, int digit)
+        {
+            foreach (var peer in board.GetPeers(cell))
+            {
+                if (peer.Value.HasValue && peer.Value.Value == digit)
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 
@@ -269,12 +420,36 @@ namespace Sudoku.Solver.Unsolver
                     }
 
                     int key = ToCellKey(board.Size, peer.Row, peer.Column);
-                    if (!removableKeys.Contains(key) || !seen.Add(key))
+                    if ((removableKeys != null && !removableKeys.Contains(key)) || !seen.Add(key))
                     {
                         continue;
                     }
 
                     output.Add(peer);
+                }
+            }
+        }
+
+        private static void RestoreBoardState(Board source, Board destination)
+        {
+            if (source == null || destination == null)
+            {
+                return;
+            }
+
+            for (int row = 0; row < destination.Size; row++)
+            {
+                for (int column = 0; column < destination.Size; column++)
+                {
+                    var src = source.Cells[row, column];
+                    var dst = destination.Cells[row, column];
+                    dst.Value = src.Value;
+                    dst.IsGiven = src.IsGiven;
+                    dst.Candidates.Clear();
+                    foreach (int candidate in src.Candidates)
+                    {
+                        dst.Candidates.Add(candidate);
+                    }
                 }
             }
         }

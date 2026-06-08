@@ -23,8 +23,11 @@ namespace Sudoku.Solver.Unsolver
             if (candidates.Count == 0) return UnsolveResult.NoApplicableMove;
 
             var chosen = candidates[random.Next(candidates.Count)];
+            int removedValue = chosen.Value.Value;
             chosen.Value = null;
             chosen.IsGiven = false;
+            chosen.Candidates.Clear();
+            chosen.Candidates.Add(removedValue);
             return UnsolveResult.Success;
         }
 
@@ -79,6 +82,7 @@ namespace Sudoku.Solver.Unsolver
         {
             if (!CanSolveTarget(board, targetCell, targetValue))
             {
+                context?.Trace("NakedSingle: target already not solvable; no action needed.");
                 return true;
             }
 
@@ -103,20 +107,57 @@ namespace Sudoku.Solver.Unsolver
             foreach (var option in peerOptions)
             {
                 int previousValue = option.Value.Value;
+                var usedCells = new List<UsedCell>
+                {
+                    new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                    new UsedCell { Row = option.Row, Column = option.Column, HighlightTag = "Deduction" }
+                };
+                var beforeAttempt = PuzzleGenerator.CloneBoard(board);
                 option.Value = null;
                 option.IsGiven = false;
+                RecomputeCandidates(board);
 
                 bool anchorStillPossible = context?.AnchorSolveStillPossible == null
                     || context.AnchorSolveStillPossible(board);
                 if (!CanSolveTarget(board, targetCell, targetValue)
                     && anchorStillPossible)
                 {
+                    context?.TraceTransition(
+                        "NakedSingle removal",
+                        $"Removed r{option.Row + 1}c{option.Column + 1}={previousValue}. Target is no longer naked-single solvable and the Right Angle anchor still holds.",
+                        beforeAttempt,
+                        board,
+                        failed: false,
+                        usedCells: usedCells);
                     return true;
                 }
 
+                context?.TraceTransition(
+                    "NakedSingle removal failed",
+                    anchorStillPossible
+                        ? $"Removed r{option.Row + 1}c{option.Column + 1}={previousValue}, but the target is still naked-single solvable."
+                        : $"Removed r{option.Row + 1}c{option.Column + 1}={previousValue}, but that broke Right Angle anchor viability; reverting.",
+                    beforeAttempt,
+                    board,
+                    failed: true,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" },
+                        new UsedCell { Row = option.Row, Column = option.Column, HighlightTag = "Failure" }
+                    });
+
                 option.Value = previousValue;
                 option.IsGiven = false;
+                RecomputeCandidates(board);
             }
+
+            context?.Trace(
+                "NakedSingle: exhausted all peer removals without success.",
+                failed: true,
+                usedCells: new List<UsedCell>
+                {
+                    new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Failure" }
+                });
 
             return false;
         }
@@ -156,6 +197,50 @@ namespace Sudoku.Solver.Unsolver
             {
                 int j = random.Next(i + 1);
                 (list[i], list[j]) = (list[j], list[i]);
+            }
+        }
+
+        private static void RecomputeCandidates(Board board)
+        {
+            if (board == null || board.Cells == null)
+            {
+                return;
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    cell.Candidates.Clear();
+                    if (!cell.Value.HasValue)
+                    {
+                        for (int value = 1; value <= board.Size; value++)
+                        {
+                            cell.Candidates.Add(value);
+                        }
+                    }
+                }
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    foreach (var peer in board.GetPeers(cell))
+                    {
+                        if (peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
             }
         }
     }

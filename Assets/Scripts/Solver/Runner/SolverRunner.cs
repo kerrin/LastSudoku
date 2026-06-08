@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
+using Sudoku.Solver.Unsolver;
 using Sudoku.UI.Config;
 using Sudoku.UI.Panels;
 
@@ -584,6 +585,26 @@ namespace Sudoku.Solver
         public void SetEmptyPreview()
         {
             PreviewRuleResult = new RuleResult { Apply = true, Description = "Empty preview" };
+        }
+
+        /**
+         * Load a traced generation snapshot into the active runner so play-mode UI can
+         * inspect puzzle generation step-by-step.
+         */
+        public void LoadDebugBoardSnapshot(Board snapshot, RuleResult highlightResult)
+        {
+            if (snapshot == null)
+            {
+                return;
+            }
+
+            _board = PuzzleGenerator.CloneBoard(snapshot);
+            CandidatesInitialised = true;
+            LastAppliedRule = null;
+            LastRuleResult = highlightResult;
+            PreviewRuleResult = null;
+            SetInteractionMode(BoardInteractionMode.PuzzleCreation);
+            ValidateCurrentBoardState(skipFullSolveCheck: true);
         }
 
         /**

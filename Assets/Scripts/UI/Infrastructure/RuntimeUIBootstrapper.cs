@@ -21,6 +21,14 @@ namespace Sudoku.UI.Infrastructure
                 changeLogGo.AddComponent<ChangeLogRuntimeControls>();
             }
 
+            var generationDebugExisting = Object.FindAnyObjectByType<PuzzleGenerationDebugRuntimePanel>();
+            if (generationDebugExisting == null)
+            {
+                var generationDebugGo = new GameObject("PuzzleGenerationDebugRuntimePanel");
+                Object.DontDestroyOnLoad(generationDebugGo);
+                generationDebugGo.AddComponent<PuzzleGenerationDebugRuntimePanel>();
+            }
+
             // Ensure main menu flow host exists.
             var flowExisting = Object.FindAnyObjectByType<MainMenuFlowController>();
             if (flowExisting == null)

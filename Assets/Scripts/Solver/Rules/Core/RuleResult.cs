@@ -173,5 +173,8 @@ namespace Sudoku.Solver.Rules
         public int Column;
         // Optional specific candidate digit relevant to this used cell (null if not applicable)
         public int? Candidate;
+        // Optional semantic tag consumed by BoardVisualizer for custom coloring
+        // (e.g. "Target", "Deduction", "Failure").
+        public string HighlightTag;
     }
 }

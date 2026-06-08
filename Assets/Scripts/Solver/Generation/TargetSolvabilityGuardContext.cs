@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Sudoku.Models;
+using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
 {
@@ -18,6 +19,47 @@ namespace Sudoku.Solver.Unsolver
          * When set, blockers should only keep mutations that preserve anchor solvability.
          */
         public Func<Board, bool> AnchorSolveStillPossible { get; set; }
+
+        /**
+         * Optional debug callback used to trace blocker decisions.
+         */
+        public Action<string, string, bool, List<UsedCell>, Board> TraceSnapshotStep { get; set; }
+
+        /**
+         * Optional debug callback used to trace blocker board mutations.
+         */
+        public Action<string, string, bool, List<UsedCell>, Board, Board> TraceTransitionStep { get; set; }
+
+        public void Trace(string message, bool failed = false, List<UsedCell> usedCells = null)
+        {
+            TraceSnapshotStep?.Invoke(
+                failed ? "Force unsolve failed" : "Force unsolve step",
+                message,
+                failed,
+                usedCells,
+                null);
+        }
+
+        public void TraceSnapshot(
+            string title,
+            string message,
+            Board snapshot,
+            bool failed = false,
+            List<UsedCell> usedCells = null)
+        {
+            TraceSnapshotStep?.Invoke(title, message, failed, usedCells, snapshot);
+        }
+
+        public void TraceTransition(
+            string title,
+            string message,
+            Board before,
+            Board after,
+            bool failed = false,
+            List<UsedCell> usedCells = null)
+        {
+            TraceTransitionStep?.Invoke(title, message, failed, usedCells, before, after);
+        }
 
         public TargetSolvabilityGuardContext(int maxDepth = 16)
         {

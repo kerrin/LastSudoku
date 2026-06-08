@@ -6,308 +6,452 @@ using Sudoku.Solver.Rules;
 namespace Sudoku.Solver.Unsolver
 {
     /**
-     * Unsolve handler for the Right Angle rule.
-     *
-     * The handler prefers removals that are specifically attributable to
-     * <see cref="RightAngleRule"/>, but it can fall back to removals that are also
-     * recoverable by easier value-placement rules when no RightAngle-exclusive option
-     * exists.
+     * Simplified Right Angle unsolve strategy:
+     * 1) Find a 2x2 fully-valued group inside one box.
+     * 2) Try removing one value and check if Right Angle restores it with no other changes.
+     * 3) Otherwise allow one reinstate (same digit) in the deduction row/column derived
+     *    from that 2x2 pair, then re-check Right Angle.
      */
-    public class RightAngleUnsolveHandler : IUnsolveHandler
+    public class RightAngleUnsolveHandler : IUnsolveHandler, IPuzzleGenerationDebugTraceAware
     {
         private readonly RightAngleRule _rightAngleRule = new RightAngleRule();
-        private readonly NakedSingleUnsolveHandler _nakedSingleUnsolve = new NakedSingleUnsolveHandler();
-        private readonly HiddenSingleUnsolveHandler _hiddenSingleUnsolve = new HiddenSingleUnsolveHandler();
-        private readonly TargetSolvabilityCoordinator _targetSolvabilityCoordinator;
+        private IPuzzleGenerationDebugTracer _debugTracer;
         private Board _solvedBoard;
 
         public string RuleName => nameof(RightAngleRule);
 
-        public RightAngleUnsolveHandler()
-        {
-            _targetSolvabilityCoordinator = new TargetSolvabilityCoordinator(
-                new ITargetSolvabilityBlocker[]
-                {
-                    _nakedSingleUnsolve,
-                    _hiddenSingleUnsolve,
-                });
-        }
-
-        /**
-         * Provide solved-board value context so this handler can optionally reinstate
-         * supporting values when a pure removal cannot create a Right Angle deduction.
-         *
-         * @param solvedBoard Solved value map for this generation attempt.
-         */
         public void SetSolvedBoard(Board solvedBoard)
         {
             _solvedBoard = solvedBoard;
         }
 
-        /**
-         * Attempt to remove one value whose restoration is specifically attributable to
-         * the Right Angle rule.
-         *
-         * @param board The working board to modify when a valid removal is found.
-         * @param random Random source used to choose among valid removals.
-         * @returns <see cref="UnsolveResult.Success"/> when a value is removed; otherwise
-         *          <see cref="UnsolveResult.NoApplicableMove"/>.
-         */
-        public UnsolveResult TryUnsolve(Board board, System.Random random)
+        public void SetDebugTracer(IPuzzleGenerationDebugTracer debugTracer)
         {
-            var candidates = BuildMutationCandidates(board);
-            if (candidates.Count == 0)
+            _debugTracer = debugTracer;
+        }
+
+        public UnsolveResult TryUnsolve(Board board, Random random)
+        {
+            var opportunities = BuildOpportunities(board);
+            _debugTracer?.RecordSnapshot(
+                board,
+                "Right Angle discovery",
+                $"Found {opportunities.Count} 2x2 opportunity targets.",
+                RuleName,
+                PuzzleGenerationDebugEventKind.InternalStep,
+                depth: 1);
+
+            if (opportunities.Count == 0)
             {
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Right Angle no candidates",
+                    "No eligible 2x2 in-box targets were found.",
+                    RuleName,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 1);
                 return UnsolveResult.NoApplicableMove;
             }
 
-            Shuffle(candidates, random);
-            Board fallbackBoard = null;
-
-            foreach (var chosen in candidates)
+            Shuffle(opportunities, random);
+            foreach (var opportunity in opportunities)
             {
-                int targetRow = chosen.TargetCell.Row;
-                int targetColumn = chosen.TargetCell.Column;
-                int targetValue = chosen.TargetCell.Value.Value;
-
-                var trial = PuzzleGenerator.CloneBoard(board);
-                var trialTarget = trial.Cells[targetRow, targetColumn];
-
-                foreach (var helper in chosen.HelperPlacements)
-                {
-                    var helperCell = trial.Cells[helper.Row, helper.Column];
-                    helperCell.Value = helper.Value;
-                    helperCell.IsGiven = false;
-                }
-
-                trialTarget.Value = null;
-                trialTarget.IsGiven = false;
-
-                var contextualRemovals = BuildContextualRemovals(trial, chosen, targetValue);
-                foreach (var removal in contextualRemovals)
-                {
-                    var removalCell = trial.Cells[removal.Row, removal.Column];
-                    if (removalCell.IsGiven || !removalCell.Value.HasValue)
-                    {
-                        continue;
-                    }
-
-                    removalCell.Value = null;
-                    removalCell.IsGiven = false;
-                }
-
-                RecomputeCandidates(trial);
-                bool hardened = _targetSolvabilityCoordinator.TryMakeTargetNotSolvableByOtherRules(
-                    trial,
-                    trialTarget,
-                    targetValue,
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Right Angle evaluate target",
+                    BuildOpportunityLabel(opportunity),
                     RuleName,
-                    random,
-                    hardeningBoard => TryGetTargetRightAngleResult(
-                        hardeningBoard,
-                        targetRow,
-                        targetColumn,
-                        targetValue,
-                        out _));
-
-                RecomputeCandidates(trial);
-                if (!TryGetTargetRightAngleResult(trial, targetRow, targetColumn, targetValue, out _))
-                {
-                    continue;
-                }
-
-                if (!hardened)
-                {
-                    if (fallbackBoard == null)
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 1,
+                    usedCells: new List<UsedCell>
                     {
-                        fallbackBoard = trial;
-                    }
+                        new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Target" }
+                    });
 
-                    continue;
+                if (TryApplyDirect(board, opportunity))
+                {
+                    return UnsolveResult.Success;
                 }
 
-                ApplyBoardState(board, trial);
-                return UnsolveResult.Success;
+                if (TryApplyWithSingleReinstate(board, opportunity))
+                {
+                    return UnsolveResult.Success;
+                }
+
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Right Angle opportunity failed",
+                    "Direct removal and all single-helper reinstates failed for this target.",
+                    RuleName,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 1,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Failure" }
+                    });
             }
 
-            if (fallbackBoard != null)
-            {
-                ApplyBoardState(board, fallbackBoard);
-                return UnsolveResult.Success;
-            }
-
+            _debugTracer?.RecordSnapshot(
+                board,
+                "Right Angle exhausted",
+                "All discovered opportunities were evaluated, none produced a valid Right Angle unsolve.",
+                RuleName,
+                PuzzleGenerationDebugEventKind.InternalStep,
+                depth: 1);
             return UnsolveResult.NoApplicableMove;
         }
 
-        private List<CellAddress> BuildContextualRemovals(
-            Board board,
-            RightAngleMutationCandidate chosen,
-            int targetValue)
+        public List<Cell> BuildCandidateList(Board board)
+        {
+            var result = new List<Cell>();
+            var opportunities = BuildOpportunities(board);
+
+            foreach (var opportunity in opportunities)
+            {
+                var trial = PuzzleGenerator.CloneBoard(board);
+                var target = trial.Cells[opportunity.TargetRow, opportunity.TargetColumn];
+                target.Value = null;
+                target.IsGiven = false;
+                RecomputeCandidates(trial);
+
+                if (TryGetTargetRightAngleResult(trial, opportunity.TargetRow, opportunity.TargetColumn, opportunity.TargetValue, out _)
+                    || CanSucceedWithOneReinstate(trial, opportunity))
+                {
+                    result.Add(opportunity.TargetCell);
+                }
+            }
+
+            return result;
+        }
+
+        private bool TryApplyDirect(Board board, Opportunity opportunity)
         {
             var trial = PuzzleGenerator.CloneBoard(board);
-            int targetRow = chosen.TargetCell.Row;
-            int targetColumn = chosen.TargetCell.Column;
-
-            foreach (var helper in chosen.HelperPlacements)
-            {
-                var helperCell = trial.Cells[helper.Row, helper.Column];
-                helperCell.Value = helper.Value;
-                helperCell.IsGiven = false;
-            }
-
-            var trialTarget = trial.Cells[targetRow, targetColumn];
-            trialTarget.Value = null;
-            trialTarget.IsGiven = false;
+            var target = trial.Cells[opportunity.TargetRow, opportunity.TargetColumn];
+            target.Value = null;
+            target.IsGiven = false;
             RecomputeCandidates(trial);
 
-            if (!TryGetTargetRightAngleResult(trial, targetRow, targetColumn, targetValue, out var rightAngleResult))
+            if (!TryGetTargetRightAngleResult(
+                trial,
+                opportunity.TargetRow,
+                opportunity.TargetColumn,
+                opportunity.TargetValue,
+                out _,
+                out string directFailureReason))
             {
-                return new List<CellAddress>();
-            }
-
-            var protectedKeys = new HashSet<int>
-            {
-                ToCellKey(board.Size, targetRow, targetColumn)
-            };
-            foreach (var helper in chosen.HelperPlacements)
-            {
-                protectedKeys.Add(ToCellKey(board.Size, helper.Row, helper.Column));
-            }
-
-            foreach (var used in rightAngleResult.UsedCells)
-            {
-                protectedKeys.Add(ToCellKey(board.Size, used.Row, used.Column));
-            }
-
-            var contextualRemovals = new List<CellAddress>();
-
-            bool progressed;
-            do
-            {
-                progressed = false;
-
-                RecomputeCandidates(trial);
-                var nakedCandidates = _nakedSingleUnsolve.BuildCandidateList(trial);
-
-                var removableKeys = new HashSet<int>();
-                foreach (var nakedCandidate in nakedCandidates)
-                {
-                    removableKeys.Add(ToCellKey(board.Size, nakedCandidate.Row, nakedCandidate.Column));
-                }
-
-                var scopedCandidates = CollectContextualCandidates(
+                _debugTracer?.RecordSnapshot(
                     trial,
-                    chosen,
-                    rightAngleResult,
-                    protectedKeys);
+                    "Right Angle direct failed",
+                    $"Removing target alone did not produce a Right Angle restoration for this target. {directFailureReason}",
+                    RuleName,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 2,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Failure" }
+                    });
+                return false;
+            }
 
-                foreach (var scopedCandidate in scopedCandidates)
+            _debugTracer?.RecordTransition(
+                board,
+                trial,
+                "Right Angle target removal",
+                $"Removed r{opportunity.TargetRow}c{opportunity.TargetColumn}={opportunity.TargetValue}; Right Angle can restore it with no helper reinstates.",
+                RuleName,
+                PuzzleGenerationDebugEventKind.InternalStep,
+                depth: 1,
+                usedCells: new List<UsedCell>
                 {
-                    int key = ToCellKey(board.Size, scopedCandidate.Row, scopedCandidate.Column);
-                    if (!removableKeys.Contains(key))
+                    new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Target" }
+                });
+
+            ApplyBoardState(board, trial);
+            return true;
+        }
+
+        private bool TryApplyWithSingleReinstate(Board board, Opportunity opportunity)
+        {
+            var removedTrial = PuzzleGenerator.CloneBoard(board);
+            var target = removedTrial.Cells[opportunity.TargetRow, opportunity.TargetColumn];
+            target.Value = null;
+            target.IsGiven = false;
+            RecomputeCandidates(removedTrial);
+
+            if (!TryGetReinstateCandidate(
+                removedTrial,
+                opportunity,
+                out var reinstatement,
+                out string helperReason))
+            {
+                _debugTracer?.RecordSnapshot(
+                    removedTrial,
+                    "Right Angle helper search failed",
+                    helperReason,
+                    RuleName,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 2,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Failure" }
+                    });
+                return false;
+            }
+
+            var withHelper = PuzzleGenerator.CloneBoard(removedTrial);
+            var helperCell = withHelper.Cells[reinstatement.Row, reinstatement.Column];
+            helperCell.Value = opportunity.TargetValue;
+            helperCell.IsGiven = false;
+            RecomputeCandidates(withHelper);
+
+            if (!TryGetTargetRightAngleResult(
+                withHelper,
+                opportunity.TargetRow,
+                opportunity.TargetColumn,
+                opportunity.TargetValue,
+                out _,
+                out string helperFailureReason))
+            {
+                _debugTracer?.RecordSnapshot(
+                    withHelper,
+                    "Right Angle helper candidate failed",
+                    $"Tried helper r{reinstatement.Row}c{reinstatement.Column}={opportunity.TargetValue}, but Right Angle still did not restore the target. {helperFailureReason}",
+                    RuleName,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 2,
+                    usedCells: new List<UsedCell>
+                    {
+                        new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Target" },
+                        new UsedCell { Row = reinstatement.Row, Column = reinstatement.Column, HighlightTag = "Failure" }
+                    });
+                return false;
+            }
+
+            _debugTracer?.RecordTransition(
+                board,
+                withHelper,
+                "Right Angle helper reinstate",
+                $"Removed r{opportunity.TargetRow}c{opportunity.TargetColumn}={opportunity.TargetValue} and reinstated r{reinstatement.Row}c{reinstatement.Column}={opportunity.TargetValue} so Right Angle restores the target.",
+                RuleName,
+                PuzzleGenerationDebugEventKind.InternalStep,
+                depth: 1,
+                usedCells: new List<UsedCell>
+                {
+                    new UsedCell { Row = opportunity.TargetRow, Column = opportunity.TargetColumn, HighlightTag = "Target" },
+                    new UsedCell { Row = reinstatement.Row, Column = reinstatement.Column, HighlightTag = "Deduction" }
+                });
+
+            ApplyBoardState(board, withHelper);
+            return true;
+        }
+
+        private static string BuildOpportunityLabel(Opportunity opportunity)
+        {
+            return $"Target r{opportunity.TargetRow}c{opportunity.TargetColumn}={opportunity.TargetValue}; deduction row r{opportunity.DeductionRow}, column c{opportunity.DeductionColumn}.";
+        }
+
+        private bool CanSucceedWithOneReinstate(Board removedTrial, Opportunity opportunity)
+        {
+            return TryGetReinstateCandidate(
+                removedTrial,
+                opportunity,
+                out var reinstatement,
+                out _)
+                && TryRightAngleWithReinstate(removedTrial, opportunity, reinstatement, out _);
+        }
+
+        private List<Opportunity> BuildOpportunities(Board board)
+        {
+            var opportunities = new List<Opportunity>();
+
+            for (int row = 0; row < board.Size - 1; row++)
+            {
+                for (int column = 0; column < board.Size - 1; column++)
+                {
+                    var a = board.Cells[row, column];
+                    var b = board.Cells[row, column + 1];
+                    var c = board.Cells[row + 1, column];
+                    var d = board.Cells[row + 1, column + 1];
+
+                    if (!a.Value.HasValue || !b.Value.HasValue || !c.Value.HasValue || !d.Value.HasValue)
                     {
                         continue;
                     }
 
-                    int previousValue = scopedCandidate.Value.Value;
-                    scopedCandidate.Value = null;
-                    scopedCandidate.IsGiven = false;
-
-                    RecomputeCandidates(trial);
-                    if (TryGetTargetRightAngleResult(trial, targetRow, targetColumn, targetValue, out _))
+                    if (a.Box != b.Box || a.Box != c.Box || a.Box != d.Box)
                     {
-                        protectedKeys.Add(key);
-                        contextualRemovals.Add(new CellAddress(scopedCandidate.Row, scopedCandidate.Column));
-                        progressed = true;
-                        break;
+                        continue;
                     }
 
-                    scopedCandidate.Value = previousValue;
-                    scopedCandidate.IsGiven = false;
+                    int deductionRow = -1;
+                    int deductionColumn = -1;
+                    foreach (var boxCell in board.GetBox(a.Box))
+                    {
+                        if (deductionRow < 0 && boxCell.Row != row && boxCell.Row != row + 1)
+                        {
+                            deductionRow = boxCell.Row;
+                        }
+
+                        if (deductionColumn < 0 && boxCell.Column != column && boxCell.Column != column + 1)
+                        {
+                            deductionColumn = boxCell.Column;
+                        }
+
+                        if (deductionRow >= 0 && deductionColumn >= 0)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (deductionRow < 0 || deductionColumn < 0)
+                    {
+                        continue;
+                    }
+
+                    TryAddOpportunity(opportunities, a, deductionRow, deductionColumn);
+                    TryAddOpportunity(opportunities, b, deductionRow, deductionColumn);
+                    TryAddOpportunity(opportunities, c, deductionRow, deductionColumn);
+                    TryAddOpportunity(opportunities, d, deductionRow, deductionColumn);
                 }
             }
-            while (progressed);
 
-            return contextualRemovals;
+            return opportunities;
         }
 
-        private List<Cell> CollectContextualCandidates(
-            Board board,
-            RightAngleMutationCandidate chosen,
-            RuleResult rightAngleResult,
-            HashSet<int> protectedKeys)
+        private static void TryAddOpportunity(
+            List<Opportunity> opportunities,
+            Cell target,
+            int deductionRow,
+            int deductionColumn)
         {
-            int boardSize = board.Size;
-            int targetKey = ToCellKey(boardSize, chosen.TargetCell.Row, chosen.TargetCell.Column);
+            if (target.IsGiven || !target.Value.HasValue)
+            {
+                return;
+            }
 
-            var ordered = new List<Cell>();
+            opportunities.Add(new Opportunity(target, target.Value.Value, deductionRow, deductionColumn));
+        }
+
+        private bool TryGetReinstateCandidate(
+            Board board,
+            Opportunity opportunity,
+            out CellAddress candidate,
+            out string reason)
+        {
+            candidate = default;
+            reason = string.Empty;
+
+            bool hasFallback = false;
+            CellAddress fallback = default;
             var seen = new HashSet<int>();
 
-            // Priority 1: cells seen by the target cell.
-            foreach (var peer in board.GetPeers(board.Cells[chosen.TargetCell.Row, chosen.TargetCell.Column]))
+            foreach (var cell in board.GetRow(opportunity.DeductionRow))
             {
-                TryAddContextCandidate(peer, boardSize, protectedKeys, seen, ordered);
-            }
-
-            // Priority 2: non-deduction cells in deduction rows/columns/boxes.
-            var deductionRows = new HashSet<int>();
-            var deductionColumns = new HashSet<int>();
-            var deductionBoxes = new HashSet<int>();
-            foreach (var used in rightAngleResult.UsedCells)
-            {
-                deductionRows.Add(used.Row);
-                deductionColumns.Add(used.Column);
-                deductionBoxes.Add(board.Cells[used.Row, used.Column].Box);
-            }
-
-            foreach (int row in deductionRows)
-            {
-                foreach (var rowCell in board.GetRow(row))
+                if (TryCaptureReinstateCandidate(board, cell, opportunity.TargetValue, seen, out var found, out _))
                 {
-                    TryAddContextCandidate(rowCell, boardSize, protectedKeys, seen, ordered);
+                    if (_solvedBoard != null && _solvedBoard.Cells[found.Row, found.Column].Value == opportunity.TargetValue)
+                    {
+                        candidate = found;
+                        return true;
+                    }
+
+                    if (!hasFallback)
+                    {
+                        fallback = found;
+                        hasFallback = true;
+                    }
                 }
             }
 
-            foreach (int column in deductionColumns)
+            foreach (var cell in board.GetColumn(opportunity.DeductionColumn))
             {
-                foreach (var columnCell in board.GetColumn(column))
+                if (TryCaptureReinstateCandidate(board, cell, opportunity.TargetValue, seen, out var found, out _))
                 {
-                    TryAddContextCandidate(columnCell, boardSize, protectedKeys, seen, ordered);
+                    if (_solvedBoard != null && _solvedBoard.Cells[found.Row, found.Column].Value == opportunity.TargetValue)
+                    {
+                        candidate = found;
+                        return true;
+                    }
+
+                    if (!hasFallback)
+                    {
+                        fallback = found;
+                        hasFallback = true;
+                    }
                 }
             }
 
-            foreach (int box in deductionBoxes)
+            if (hasFallback)
             {
-                foreach (var boxCell in board.GetBox(box))
-                {
-                    TryAddContextCandidate(boxCell, boardSize, protectedKeys, seen, ordered);
-                }
+                candidate = fallback;
+                return true;
             }
 
-            // Always protect the target even if it appears in scans.
-            seen.Remove(targetKey);
-            return ordered;
+            reason = "No valid helper cell was available in the deduction row or column.";
+            return false;
         }
 
-        private static void TryAddContextCandidate(
-            Cell candidate,
-            int boardSize,
-            HashSet<int> protectedKeys,
+        private static bool TryCaptureReinstateCandidate(
+            Board board,
+            Cell cell,
+            int value,
             HashSet<int> seen,
-            List<Cell> ordered)
+            out CellAddress found,
+            out string reason)
         {
-            if (!candidate.Value.HasValue || candidate.IsGiven)
+            found = default;
+            reason = string.Empty;
+
+            if (cell.Value.HasValue || cell.IsGiven)
             {
-                return;
+                reason = "occupied/given";
+                return false;
             }
 
-            int key = ToCellKey(boardSize, candidate.Row, candidate.Column);
-            if (protectedKeys.Contains(key) || !seen.Add(key))
+            if (cell.Candidates == null || cell.Candidates.Count <= 1)
             {
-                return;
+                reason = "singleton";
+                return false;
             }
 
-            ordered.Add(candidate);
+            if (!cell.Candidates.Contains(value))
+            {
+                reason = "missing candidate";
+                return false;
+            }
+
+            if (!IsPlacementValid(board, cell, value))
+            {
+                reason = "invalid placement";
+                return false;
+            }
+
+            int key = ToCellKey(board.Size, cell.Row, cell.Column);
+            if (!seen.Add(key))
+            {
+                reason = "duplicate";
+                return false;
+            }
+
+            found = new CellAddress(cell.Row, cell.Column);
+            return true;
+        }
+
+        private bool TryRightAngleWithReinstate(Board removedTrial, Opportunity opportunity, CellAddress reinstatement, out string failureReason)
+        {
+            var withHelper = PuzzleGenerator.CloneBoard(removedTrial);
+            var helperCell = withHelper.Cells[reinstatement.Row, reinstatement.Column];
+            helperCell.Value = opportunity.TargetValue;
+            helperCell.IsGiven = false;
+            RecomputeCandidates(withHelper);
+
+            if (TryGetTargetRightAngleResult(withHelper, opportunity.TargetRow, opportunity.TargetColumn, opportunity.TargetValue, out _, out failureReason))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private bool TryGetTargetRightAngleResult(
@@ -317,365 +461,260 @@ namespace Sudoku.Solver.Unsolver
             int targetValue,
             out RuleResult result)
         {
+            return TryGetTargetRightAngleResult(
+                board,
+                targetRow,
+                targetColumn,
+                targetValue,
+                out result,
+                out _);
+        }
+
+        private bool TryGetTargetRightAngleResult(
+            Board board,
+            int targetRow,
+            int targetColumn,
+            int targetValue,
+            out RuleResult result,
+            out string failureReason)
+        {
+            failureReason = string.Empty;
             result = _rightAngleRule.CalculateChanges(board);
-            if (result == null || !result.Apply)
+            if (result != null && result.Apply)
             {
-                return false;
+                foreach (var change in result.Changes)
+                {
+                    if (change.Row == targetRow
+                        && change.Column == targetColumn
+                        && change.NewValue == targetValue)
+                    {
+                        return true;
+                    }
+                }
+
+                if (result.Changes != null && result.Changes.Count > 0)
+                {
+                    var first = result.Changes[0];
+                    failureReason = $"Rule returned a different target first: r{first.Row}c{first.Column}={first.NewValue}.";
+                }
             }
 
-            foreach (var change in result.Changes)
+            // RightAngleRule returns only the first found elimination in scan order.
+            // A target can still be valid even when another elimination is returned first.
+            if (CanRightAnglePlaceAtTarget(board, targetRow, targetColumn, targetValue, out string specificFailure))
             {
-                if (change.Row == targetRow
-                    && change.Column == targetColumn
-                    && change.NewValue == targetValue)
+                result = new RuleResult
                 {
-                    return true;
-                }
+                    Apply = true,
+                    Description = $"Right-angle can place {targetValue} at r{targetRow}c{targetColumn}.",
+                };
+                result.Changes.Add(new CellChange
+                {
+                    Row = targetRow,
+                    Column = targetColumn,
+                    NewValue = targetValue,
+                });
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(specificFailure))
+            {
+                failureReason = string.IsNullOrWhiteSpace(failureReason)
+                    ? specificFailure
+                    : failureReason + " " + specificFailure;
             }
 
             result = null;
             return false;
         }
 
-        private static int ToCellKey(int boardSize, int row, int column)
-        {
-            return row * boardSize + column;
-        }
-
-        private static void ApplyBoardState(Board destination, Board source)
-        {
-            for (int r = 0; r < destination.Size; r++)
-            {
-                for (int c = 0; c < destination.Size; c++)
-                {
-                    var target = destination.Cells[r, c];
-                    var from = source.Cells[r, c];
-
-                    target.Value = from.Value;
-                    target.IsGiven = from.IsGiven;
-                    target.Candidates.Clear();
-                    foreach (var candidate in from.Candidates)
-                    {
-                        target.Candidates.Add(candidate);
-                    }
-                }
-            }
-        }
-
-        private static void Shuffle<T>(List<T> list, System.Random random)
-        {
-            if (random == null)
-            {
-                return;
-            }
-
-            for (int i = list.Count - 1; i > 0; i--)
-            {
-                int j = random.Next(i + 1);
-                (list[i], list[j]) = (list[j], list[i]);
-            }
-        }
-
-        /**
-         * Collect all non-given cells whose removal creates a Right Angle placement.
-         * RightAngle-exclusive candidates are preferred; candidates that also satisfy
-         * easier rules are returned only when no preferred option exists.
-         *
-         * @param board The board to inspect.
-         * @returns A list of original board cells that can be removed safely.
-         */
-        public List<Cell> BuildCandidateList(Board board)
-        {
-            var preferred = new List<Cell>();
-            var fallback = new List<Cell>();
-            var assistedPreferred = new List<Cell>();
-            var assistedFallback = new List<Cell>();
-
-            foreach (var candidate in BuildMutationCandidates(board))
-            {
-                if (candidate.HelperPlacements.Count == 0)
-                {
-                    if (candidate.AlsoSolvedByEasierRule)
-                    {
-                        fallback.Add(candidate.TargetCell);
-                    }
-                    else
-                    {
-                        preferred.Add(candidate.TargetCell);
-                    }
-                }
-                else
-                {
-                    if (candidate.AlsoSolvedByEasierRule)
-                    {
-                        assistedFallback.Add(candidate.TargetCell);
-                    }
-                    else
-                    {
-                        assistedPreferred.Add(candidate.TargetCell);
-                    }
-                }
-            }
-
-            if (preferred.Count > 0)
-            {
-                return preferred;
-            }
-
-            if (fallback.Count > 0)
-            {
-                return fallback;
-            }
-
-            if (assistedPreferred.Count > 0)
-            {
-                return assistedPreferred;
-            }
-
-            return assistedFallback;
-        }
-
-        private List<RightAngleMutationCandidate> BuildMutationCandidates(Board board)
-        {
-            var preferred = new List<RightAngleMutationCandidate>();
-            var fallback = new List<RightAngleMutationCandidate>();
-
-            for (int r = 0; r < board.Size; r++)
-            {
-                for (int c = 0; c < board.Size; c++)
-                {
-                    var cell = board.Cells[r, c];
-                    if (!cell.Value.HasValue || cell.IsGiven)
-                    {
-                        continue;
-                    }
-
-                    if (!TryClassifyRightAngleOpportunity(board, cell, out bool alsoSolvedByEasierRule))
-                    {
-                        continue;
-                    }
-
-                    if (alsoSolvedByEasierRule)
-                    {
-                        fallback.Add(new RightAngleMutationCandidate(cell, alsoSolvedByEasierRule));
-                    }
-                    else
-                    {
-                        preferred.Add(new RightAngleMutationCandidate(cell, alsoSolvedByEasierRule));
-                    }
-                }
-            }
-
-            if (preferred.Count > 0)
-            {
-                return preferred;
-            }
-
-            if (fallback.Count > 0)
-            {
-                return fallback;
-            }
-
-            // Assisted search is significantly more expensive than direct classification.
-            // Only run it when no direct removal candidate exists.
-            var assistedPreferred = new List<RightAngleMutationCandidate>();
-            var assistedFallback = new List<RightAngleMutationCandidate>();
-            for (int r = 0; r < board.Size; r++)
-            {
-                for (int c = 0; c < board.Size; c++)
-                {
-                    var cell = board.Cells[r, c];
-                    if (!cell.Value.HasValue || cell.IsGiven)
-                    {
-                        continue;
-                    }
-
-                    if (!TryBuildAssistedOpportunity(board, cell, out var helperPlacements, out bool assistedAlsoSolvedByEasierRule))
-                    {
-                        continue;
-                    }
-
-                    var assisted = new RightAngleMutationCandidate(cell, assistedAlsoSolvedByEasierRule);
-                    assisted.HelperPlacements.AddRange(helperPlacements);
-                    if (assistedAlsoSolvedByEasierRule)
-                    {
-                        assistedFallback.Add(assisted);
-                    }
-                    else
-                    {
-                        assistedPreferred.Add(assisted);
-                    }
-                }
-            }
-
-            if (assistedPreferred.Count > 0)
-            {
-                return assistedPreferred;
-            }
-
-            return assistedFallback;
-        }
-
-        private bool TryBuildAssistedOpportunity(
+        private static bool CanRightAnglePlaceAtTarget(
             Board board,
-            Cell sourceCell,
-            out List<HelperPlacement> helperPlacements,
-            out bool alsoSolvedByEasierRule)
-        {
-            helperPlacements = new List<HelperPlacement>();
-            alsoSolvedByEasierRule = false;
-
-            if (_solvedBoard == null)
-            {
-                return false;
-            }
-
-            var trialBoard = PuzzleGenerator.CloneBoard(board);
-            var trialCell = trialBoard.Cells[sourceCell.Row, sourceCell.Column];
-            int targetValue = trialCell.Value.Value;
-
-            trialCell.Value = null;
-            trialCell.IsGiven = false;
-
-            var potentialHelpers = CollectPotentialHelpers(trialBoard, sourceCell);
-            if (potentialHelpers.Count == 0)
-            {
-                return false;
-            }
-
-            // Performance guard: only evaluate single-helper reinstatements.
-            // This covers the common case where one removed support value blocked Right Angle.
-            for (int i = 0; i < potentialHelpers.Count; i++)
-            {
-                var one = new List<HelperPlacement> { potentialHelpers[i] };
-                if (EvaluateAssistedCombo(trialBoard, trialCell, targetValue, one, out alsoSolvedByEasierRule))
-                {
-                    helperPlacements = one;
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private bool EvaluateAssistedCombo(
-            Board baseTrialBoard,
-            Cell sourceCell,
+            int targetRow,
+            int targetColumn,
             int targetValue,
-            List<HelperPlacement> helpers,
-            out bool alsoSolvedByEasierRule)
+            out string failureReason)
         {
-            alsoSolvedByEasierRule = false;
-            var trial = PuzzleGenerator.CloneBoard(baseTrialBoard);
-
-            foreach (var helper in helpers)
+            failureReason = string.Empty;
+            var target = board.Cells[targetRow, targetColumn];
+            if (target == null || target.Value.HasValue)
             {
-                var helperCell = trial.Cells[helper.Row, helper.Column];
-                if (helperCell.Value.HasValue)
-                {
-                    return false;
-                }
-
-                if (!IsPlacementValid(trial, helperCell, helper.Value))
-                {
-                    return false;
-                }
-
-                helperCell.Value = helper.Value;
-                helperCell.IsGiven = false;
-            }
-
-            var trialSource = trial.Cells[sourceCell.Row, sourceCell.Column];
-            RecomputeCandidates(trial);
-
-            bool isNakedSingle = IsNakedSingle(trial, trialSource, targetValue);
-            bool isHiddenSingle = IsHiddenSingle(trial, trialSource, targetValue);
-            alsoSolvedByEasierRule = isNakedSingle || isHiddenSingle;
-
-            var rightAngleResult = _rightAngleRule.CalculateChanges(trial);
-            if (rightAngleResult == null || !rightAngleResult.Apply)
-            {
-                alsoSolvedByEasierRule = false;
+                failureReason = "Target cell is not empty after removal.";
                 return false;
             }
 
-            foreach (var change in rightAngleResult.Changes)
+            int boxesPerRow = board.Size / board.BoxWidth;
+            int boxCount = (board.Size / board.BoxWidth) * (board.Size / board.BoxHeight);
+
+            int testedQuads = 0;
+            int failedSingleEmpty = 0;
+            int failedNotTargetEmpty = 0;
+            int failedCornerContainsTarget = 0;
+            int failedBoxContainsTarget = 0;
+            int failedOutsideRowSupport = 0;
+            int failedOutsideColumnSupport = 0;
+
+            for (int box = 0; box < boxCount; box++)
             {
-                if (change.NewValue == targetValue
-                    && change.Row == trialSource.Row
-                    && change.Column == trialSource.Column)
+                int startBoxRow = (box / boxesPerRow) * board.BoxHeight;
+                int startBoxColumn = (box % boxesPerRow) * board.BoxWidth;
+                var boxCells = board.GetBox(box);
+
+                for (int r0 = startBoxRow; r0 <= startBoxRow + board.BoxHeight - 2; r0++)
                 {
-                    return true;
+                    for (int c0 = startBoxColumn; c0 <= startBoxColumn + board.BoxWidth - 2; c0++)
+                    {
+                        testedQuads++;
+                        var a = board.Cells[r0, c0];
+                        var b = board.Cells[r0, c0 + 1];
+                        var c = board.Cells[r0 + 1, c0];
+                        var d = board.Cells[r0 + 1, c0 + 1];
+                        var quad = new[] { a, b, c, d };
+
+                        int placedCount = 0;
+                        var placedValues = new HashSet<int>();
+                        Cell empty = null;
+
+                        foreach (var cell in quad)
+                        {
+                            // During unsolve we may temporarily carry singleton-candidate cells.
+                            // Treat those as effective placements for corner occupancy only.
+                            if (UnsolveValueSemantics.TryGetEffectiveValue(cell, out int effectiveValue))
+                            {
+                                placedCount++;
+                                placedValues.Add(effectiveValue);
+                            }
+                            else
+                            {
+                                empty = cell;
+                            }
+                        }
+
+                        if (placedCount != 3 || empty == null)
+                        {
+                            failedSingleEmpty++;
+                            continue;
+                        }
+
+                        if (empty.Row != targetRow || empty.Column != targetColumn)
+                        {
+                            failedNotTargetEmpty++;
+                            continue;
+                        }
+
+                        if (placedValues.Contains(targetValue))
+                        {
+                            failedCornerContainsTarget++;
+                            continue;
+                        }
+
+                        bool boxHasTarget = false;
+                        foreach (var cell in boxCells)
+                        {
+                            if (cell.Row == targetRow && cell.Column == targetColumn)
+                            {
+                                continue;
+                            }
+
+                            if (cell.Value.HasValue && cell.Value.Value == targetValue)
+                            {
+                                boxHasTarget = true;
+                                break;
+                            }
+                        }
+                        if (boxHasTarget)
+                        {
+                            failedBoxContainsTarget++;
+                            continue;
+                        }
+
+                        int rowInBox = -1;
+                        for (int rrInBox = startBoxRow; rrInBox < startBoxRow + board.BoxHeight; rrInBox++)
+                        {
+                            if (rrInBox != r0 && rrInBox != r0 + 1)
+                            {
+                                rowInBox = rrInBox;
+                                break;
+                            }
+                        }
+
+                        int columnInBox = -1;
+                        for (int ccInBox = startBoxColumn; ccInBox < startBoxColumn + board.BoxWidth; ccInBox++)
+                        {
+                            if (ccInBox != c0 && ccInBox != c0 + 1)
+                            {
+                                columnInBox = ccInBox;
+                                break;
+                            }
+                        }
+
+                        if (rowInBox < 0 || columnInBox < 0)
+                        {
+                            continue;
+                        }
+
+                        bool rowHasOutside = false;
+                        for (int cc = 0; cc < board.Size; cc++)
+                        {
+                            if (cc >= startBoxColumn && cc < startBoxColumn + board.BoxWidth)
+                            {
+                                continue;
+                            }
+
+                            if (UnsolveValueSemantics.CellRepresentsValue(board.Cells[rowInBox, cc], targetValue))
+                            {
+                                rowHasOutside = true;
+                                break;
+                            }
+                        }
+                        if (!rowHasOutside)
+                        {
+                            failedOutsideRowSupport++;
+                            continue;
+                        }
+
+                        bool columnHasOutside = false;
+                        for (int rr = 0; rr < board.Size; rr++)
+                        {
+                            if (rr >= startBoxRow && rr < startBoxRow + board.BoxHeight)
+                            {
+                                continue;
+                            }
+
+                            if (UnsolveValueSemantics.CellRepresentsValue(board.Cells[rr, columnInBox], targetValue))
+                            {
+                                columnHasOutside = true;
+                                break;
+                            }
+                        }
+                        if (!columnHasOutside)
+                        {
+                            failedOutsideColumnSupport++;
+                            continue;
+                        }
+
+                        return true;
+                    }
                 }
             }
 
-            alsoSolvedByEasierRule = false;
+            failureReason =
+                $"No right-angle match for target after scanning all quads. quads={testedQuads}; " +
+                $"not-single-empty={failedSingleEmpty}; " +
+                $"empty-not-target={failedNotTargetEmpty}; " +
+                $"corner-had-target={failedCornerContainsTarget}; " +
+                $"box-had-target={failedBoxContainsTarget}; " +
+                $"missing-row-support={failedOutsideRowSupport}; " +
+                $"missing-column-support={failedOutsideColumnSupport}.";
+
             return false;
-        }
-
-        private List<HelperPlacement> CollectPotentialHelpers(Board trialBoard, Cell sourceCell)
-        {
-            var helpers = new List<(HelperPlacement placement, int priority)>();
-
-            for (int r = 0; r < trialBoard.Size; r++)
-            {
-                for (int c = 0; c < trialBoard.Size; c++)
-                {
-                    var trialCell = trialBoard.Cells[r, c];
-                    if (trialCell.Value.HasValue || trialCell.IsGiven)
-                    {
-                        continue;
-                    }
-
-                    var solvedCell = _solvedBoard.Cells[r, c];
-                    if (solvedCell == null || !solvedCell.Value.HasValue)
-                    {
-                        continue;
-                    }
-
-                    int solvedValue = solvedCell.Value.Value;
-                    if (!IsPlacementValid(trialBoard, trialCell, solvedValue))
-                    {
-                        continue;
-                    }
-
-                    int priority = GetHelperPriority(sourceCell, trialCell);
-                    helpers.Add((new HelperPlacement(r, c, solvedValue), priority));
-                }
-            }
-
-            helpers.Sort((a, b) => a.priority.CompareTo(b.priority));
-
-            const int maxHelperPool = 6;
-            var result = new List<HelperPlacement>(Math.Min(maxHelperPool, helpers.Count));
-            for (int i = 0; i < helpers.Count && i < maxHelperPool; i++)
-            {
-                result.Add(helpers[i].placement);
-            }
-
-            return result;
-        }
-
-        private static int GetHelperPriority(Cell sourceCell, Cell helperCell)
-        {
-            if (helperCell.Box == sourceCell.Box)
-            {
-                return 0;
-            }
-
-            if (helperCell.Row == sourceCell.Row || helperCell.Column == sourceCell.Column)
-            {
-                return 1;
-            }
-
-            return 2;
         }
 
         private static bool IsPlacementValid(Board board, Cell target, int value)
         {
             foreach (var peer in board.GetPeers(target))
             {
-                if (peer.Value.HasValue && peer.Value.Value == value)
+                if (peer.Value == value)
                 {
                     return false;
                 }
@@ -684,80 +723,29 @@ namespace Sudoku.Solver.Unsolver
             return true;
         }
 
-        /**
-         * Test a single cell by removing it on a clone, rebuilding candidates, and then
-         * checking whether Right Angle restores exactly that value in that cell.
-         *
-         * @param board The source board.
-         * @param sourceCell The valued cell to test.
-         * @param alsoSolvedByEasierRule Set when the removed value is also recoverable by
-         *        Naked Single or Hidden Single.
-         * @returns True when the removed value is restored by Right Angle.
-         */
-        private bool TryClassifyRightAngleOpportunity(Board board, Cell sourceCell, out bool alsoSolvedByEasierRule)
-        {
-            var trialBoard = PuzzleGenerator.CloneBoard(board);
-            var trialCell = trialBoard.Cells[sourceCell.Row, sourceCell.Column];
-            int value = trialCell.Value.Value;
-
-            trialCell.Value = null;
-            trialCell.IsGiven = false;
-            RecomputeCandidates(trialBoard);
-
-            bool isNakedSingle = IsNakedSingle(trialBoard, trialCell, value);
-            bool isHiddenSingle = IsHiddenSingle(trialBoard, trialCell, value);
-            alsoSolvedByEasierRule = isNakedSingle || isHiddenSingle;
-
-            var result = _rightAngleRule.CalculateChanges(trialBoard);
-            if (result == null || !result.Apply)
-            {
-                alsoSolvedByEasierRule = false;
-                return false;
-            }
-
-            foreach (var change in result.Changes)
-            {
-                if (change.NewValue == value
-                    && change.Row == trialCell.Row
-                    && change.Column == trialCell.Column)
-                {
-                    return true;
-                }
-            }
-
-            alsoSolvedByEasierRule = false;
-            return false;
-        }
-
-        /**
-         * Recompute candidates from the current set values so rule checks evaluate against
-         * the same candidate semantics used by the solver on finalized puzzles.
-         *
-         * @param board The board whose candidates should be rebuilt.
-         */
         private static void RecomputeCandidates(Board board)
         {
-            for (int r = 0; r < board.Size; r++)
+            for (int row = 0; row < board.Size; row++)
             {
-                for (int c = 0; c < board.Size; c++)
+                for (int column = 0; column < board.Size; column++)
                 {
-                    var cell = board.Cells[r, c];
+                    var cell = board.Cells[row, column];
                     cell.Candidates.Clear();
                     if (!cell.Value.HasValue)
                     {
-                        for (int digit = 1; digit <= board.Size; digit++)
+                        for (int value = 1; value <= board.Size; value++)
                         {
-                            cell.Candidates.Add(digit);
+                            cell.Candidates.Add(value);
                         }
                     }
                 }
             }
 
-            for (int r = 0; r < board.Size; r++)
+            for (int row = 0; row < board.Size; row++)
             {
-                for (int c = 0; c < board.Size; c++)
+                for (int column = 0; column < board.Size; column++)
                 {
-                    var cell = board.Cells[r, c];
+                    var cell = board.Cells[row, column];
                     if (cell.Value.HasValue)
                     {
                         continue;
@@ -774,108 +762,62 @@ namespace Sudoku.Solver.Unsolver
             }
         }
 
-        /**
-         * Determine whether the tested cell would be immediately placed by Naked Single.
-         *
-         * @param board The candidate-rebuilt trial board.
-         * @param cell The empty cell under test.
-         * @param value The original value removed from the cell.
-         * @returns True when all other digits are already visible among the cell's peers.
-         */
-        private static bool IsNakedSingle(Board board, Cell cell, int value)
+        private static void ApplyBoardState(Board destination, Board source)
         {
-            var peerValues = new HashSet<int>();
-            foreach (var peer in board.GetPeers(cell))
+            for (int row = 0; row < destination.Size; row++)
             {
-                if (peer.Value.HasValue)
+                for (int column = 0; column < destination.Size; column++)
                 {
-                    peerValues.Add(peer.Value.Value);
+                    var dst = destination.Cells[row, column];
+                    var src = source.Cells[row, column];
+                    dst.Value = src.Value;
+                    dst.IsGiven = src.IsGiven;
+                    dst.Candidates.Clear();
+                    foreach (int candidate in src.Candidates)
+                    {
+                        dst.Candidates.Add(candidate);
+                    }
                 }
             }
-
-            for (int digit = 1; digit <= board.Size; digit++)
-            {
-                if (digit == value)
-                {
-                    continue;
-                }
-
-                if (!peerValues.Contains(digit))
-                {
-                    return false;
-                }
-            }
-
-            return true;
         }
 
-        /**
-         * Determine whether the tested cell would already qualify as a Hidden Single.
-         *
-         * @param board The candidate-rebuilt trial board.
-         * @param cell The empty cell under test.
-         * @param value The original value removed from the cell.
-         * @returns True when the value appears in exactly one candidate position in any
-         *          of the cell's row, column, or box.
-         */
-        private static bool IsHiddenSingle(Board board, Cell cell, int value)
+        private static int ToCellKey(int boardSize, int row, int column)
         {
-            if (!cell.Candidates.Contains(value))
-            {
-                return false;
-            }
-
-            return CountCandidateOccurrences(board.GetRow(cell.Row), value) == 1
-                || CountCandidateOccurrences(board.GetColumn(cell.Column), value) == 1
-                || CountCandidateOccurrences(board.GetBox(cell.Box), value) == 1;
+            return row * boardSize + column;
         }
 
-        /**
-         * Count how many empty cells in a unit still allow the supplied digit.
-         *
-         * @param unitCells The row, column, or box to inspect.
-         * @param value The digit to count.
-         * @returns The number of empty cells whose candidates include the digit.
-         */
-        private static int CountCandidateOccurrences(IEnumerable<Cell> unitCells, int value)
+        private static void Shuffle<T>(List<T> list, Random random)
         {
-            int count = 0;
-            foreach (var unitCell in unitCells)
+            if (random == null)
             {
-                if (!unitCell.Value.HasValue && unitCell.Candidates.Contains(value))
-                {
-                    count++;
-                }
+                return;
             }
 
-            return count;
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
         }
 
-        private sealed class RightAngleMutationCandidate
+        private sealed class Opportunity
         {
-            public RightAngleMutationCandidate(Cell targetCell, bool alsoSolvedByEasierRule)
+            public Opportunity(Cell targetCell, int targetValue, int deductionRow, int deductionColumn)
             {
                 TargetCell = targetCell;
-                AlsoSolvedByEasierRule = alsoSolvedByEasierRule;
+                TargetValue = targetValue;
+                TargetRow = targetCell.Row;
+                TargetColumn = targetCell.Column;
+                DeductionRow = deductionRow;
+                DeductionColumn = deductionColumn;
             }
 
             public Cell TargetCell { get; }
-            public bool AlsoSolvedByEasierRule { get; }
-            public List<HelperPlacement> HelperPlacements { get; } = new List<HelperPlacement>();
-        }
-
-        private readonly struct HelperPlacement
-        {
-            public HelperPlacement(int row, int column, int value)
-            {
-                Row = row;
-                Column = column;
-                Value = value;
-            }
-
-            public int Row { get; }
-            public int Column { get; }
-            public int Value { get; }
+            public int TargetValue { get; }
+            public int TargetRow { get; }
+            public int TargetColumn { get; }
+            public int DeductionRow { get; }
+            public int DeductionColumn { get; }
         }
 
         private readonly struct CellAddress
@@ -888,6 +830,17 @@ namespace Sudoku.Solver.Unsolver
 
             public int Row { get; }
             public int Column { get; }
+        }
+
+        private struct ReinstatementDiagnostics
+        {
+            public int Scanned;
+            public int Accepted;
+            public int SkippedOccupiedOrGiven;
+            public int SkippedMissingCandidateValue;
+            public int SkippedSingletonCandidate;
+            public int SkippedInvalidPlacement;
+            public int SkippedDuplicateAcrossUnits;
         }
     }
 }

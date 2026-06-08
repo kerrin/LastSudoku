@@ -6,7 +6,7 @@ using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
 using Sudoku.UI.Menus;
-using Sudoku.UI.Panels;
+using static System.StringComparison;
 
 namespace Sudoku.Solver
 {
@@ -515,6 +515,21 @@ namespace Sudoku.Solver
                                 {
                                     if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
                                     var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
+                                    if (!string.IsNullOrWhiteSpace(uc.HighlightTag))
+                                    {
+                                        if (string.Equals(uc.HighlightTag, "Target", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = new Color(0.16f, 0.86f, 0.24f, 0.52f);
+                                        }
+                                        else if (string.Equals(uc.HighlightTag, "Deduction", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = new Color(1f, 0.58f, 0.1f, 0.50f);
+                                        }
+                                        else if (string.Equals(uc.HighlightTag, "Failure", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = new Color(1f, 0.2f, 0.2f, 0.62f);
+                                        }
+                                    }
                                     DrawHighlight(cellRect, highlightColor);
                                     if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
                                 }

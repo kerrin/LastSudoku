@@ -29,15 +29,13 @@ namespace Sudoku.Solver.Unsolver
         public const int DefaultMaxRetries = 30;
         public const int DefaultMaxIterations = 500;
         public const int DefaultMinimumOtherRulePasses = 10;
-        public const int DefaultInitialNakedWarmupLimit = 15;
 
         private readonly int _maxRetries;
         private readonly int _maxIterations;
         private readonly int _minimumOtherRulePasses;
-        private readonly int _initialNakedWarmupLimit;
         private readonly bool _requireNonNakedContribution;
-        private readonly bool _requireNonEasySolveStep;
         private readonly Func<ISudokuRule, IUnsolveHandler> _handlerResolver;
+        private readonly IPuzzleGenerationDebugTracer _debugTracer;
 
         /** Ordered successful unsolve rule sequence for the last successful generation attempt. */
         public IReadOnlyList<string> LastGenerationRuleSequence { get; private set; } = Array.Empty<string>();
@@ -49,17 +47,15 @@ namespace Sudoku.Solver.Unsolver
             int maxRetries = DefaultMaxRetries,
             int maxIterations = DefaultMaxIterations,
             int minimumOtherRulePasses = DefaultMinimumOtherRulePasses,
-            int initialNakedWarmupLimit = DefaultInitialNakedWarmupLimit,
             bool requireNonNakedContribution = false,
-            bool requireNonEasySolveStep = false,
+            IPuzzleGenerationDebugTracer debugTracer = null,
             Func<ISudokuRule, IUnsolveHandler> handlerResolver = null)
         {
             _maxRetries = maxRetries;
             _maxIterations = maxIterations;
             _minimumOtherRulePasses = Math.Max(0, minimumOtherRulePasses);
-            _initialNakedWarmupLimit = Math.Max(0, initialNakedWarmupLimit);
             _requireNonNakedContribution = requireNonNakedContribution;
-            _requireNonEasySolveStep = requireNonEasySolveStep;
+            _debugTracer = debugTracer;
             _handlerResolver = handlerResolver ?? UnsolveHandlerRegistry.GetHandler;
         }
 
@@ -83,23 +79,28 @@ namespace Sudoku.Solver.Unsolver
                 var handlerPlans = rulesList
                     .Select(rule => (rule, handler: _handlerResolver(rule)))
                     .ToList();
-                var seenTransitions = new HashSet<string>(StringComparer.Ordinal);
 
-                foreach (var plan in handlerPlans)
+                for (int i = 0; i < handlerPlans.Count; i++)
                 {
-                    if (plan.handler is RightAngleUnsolveHandler rightAngleHandler)
+                    if (handlerPlans[i].handler is IPuzzleGenerationDebugTraceAware traceAware)
                     {
-                        rightAngleHandler.SetSolvedBoard(solvedBoard);
+                        traceAware.SetDebugTracer(_debugTracer);
                     }
                 }
+
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Generation start",
+                    $"Attempt {attempt + 1} started with a solved board.",
+                    string.Empty,
+                    PuzzleGenerationDebugEventKind.SessionStart,
+                    depth: 0);
+
+                var seenTransitions = new HashSet<string>(StringComparer.Ordinal);
 
                 bool hasAnyNonNakedValueHandler = handlerPlans.Any(plan =>
                     plan.handler is not NakedSingleUnsolveHandler
                     && plan.handler is not CandidateOnlyUnsolveHandler);
-                bool hasAnyNonEasyEnabledValueRule = _requireNonEasySolveStep
-                    && handlerPlans.Any(plan =>
-                        plan.handler is not CandidateOnlyUnsolveHandler
-                        && plan.rule.Difficulty > Difficulty.Easy);
                 var appliedRuleSequence = new List<string>(128);
                 bool usedAnyNonNakedRule = false;
 
@@ -110,12 +111,9 @@ namespace Sudoku.Solver.Unsolver
                     .FirstOrDefault();
                 if (nakedHandler != null)
                 {
-                    int warmupMoves = 0;
-                    while (warmupMoves < _initialNakedWarmupLimit
-                        && TryApplyWithTransitionGuard(ref board, nakedHandler, random, seenTransitions))
+                    while (TryApplyWithTransitionGuard(ref board, nakedHandler, random, seenTransitions, _debugTracer))
                     {
                         appliedRuleSequence.Add(NormalizeRuleDisplayName(nakedHandler.RuleName));
-                        warmupMoves++;
                     }
                 }
 
@@ -153,7 +151,7 @@ namespace Sudoku.Solver.Unsolver
                         bool tierApplied = false;
                         foreach (var handler in tierHandlers)
                         {
-                            if (TryApplyWithTransitionGuard(ref board, handler, random, seenTransitions))
+                            if (TryApplyWithTransitionGuard(ref board, handler, random, seenTransitions, _debugTracer))
                             {
                                 anyProgress = true;
                                 tierApplied = true;
@@ -185,20 +183,16 @@ namespace Sudoku.Solver.Unsolver
                     continue;
                 }
 
-                // Final cleanup pass: drain Naked Single again after non-Naked unsolve.
-                // Harder-rule moves can expose fresh Naked Single removals.
-                if (nakedHandler != null)
-                {
-                    while (TryApplyWithTransitionGuard(ref board, nakedHandler, random, seenTransitions))
-                    {
-                        appliedRuleSequence.Add(NormalizeRuleDisplayName(nakedHandler.RuleName));
-                    }
-                }
-
                 FinalizeBoard(board);
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Finalize",
+                    "Marked remaining values as givens and finalized candidate state.",
+                    string.Empty,
+                    PuzzleGenerationDebugEventKind.Finalize,
+                    depth: 0);
 
-                if (HasUniqueSolution(board)
-                    && (!hasAnyNonEasyEnabledValueRule || RequiresNonEasySolveStep(board, rulesList)))
+                if (HasUniqueSolution(board))
                 {
                     LastGenerationRuleSequence = appliedRuleSequence;
                     LastGenerationRuleUsageSummary = BuildConsecutiveRuleSummary(appliedRuleSequence);
@@ -317,38 +311,6 @@ namespace Sudoku.Solver.Unsolver
             return CountSolutions(testBoard, 2) == 1;
         }
 
-        /**
-         * Verify the puzzle's actual solve trace uses at least one non-easy rule.
-         *
-         * This prevents accepting puzzles that can be solved entirely by easy rules
-         * when harder enabled rules are expected to contribute (e.g. Right Angle).
-         */
-        private static bool RequiresNonEasySolveStep(Board puzzle, IReadOnlyList<ISudokuRule> enabledRules)
-        {
-            var probeBoard = CloneBoard(puzzle);
-            var registry = new RuleRegistry();
-            foreach (var rule in enabledRules)
-            {
-                registry.Register(rule);
-            }
-
-            var engine = new SolverEngine(registry);
-            if (!engine.Solve(probeBoard, out var steps))
-            {
-                return false;
-            }
-
-            foreach (var step in steps)
-            {
-                if (step.rule != null && step.rule.Difficulty > Difficulty.Easy)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
         // ── Backtracking solution counter ──────────────────────────────────────────
 
         private static int CountSolutions(Board board, int maxCount)
@@ -409,13 +371,28 @@ namespace Sudoku.Solver.Unsolver
             ref Board board,
             IUnsolveHandler handler,
             Random random,
-            HashSet<string> seenTransitions)
+            HashSet<string> seenTransitions,
+            IPuzzleGenerationDebugTracer debugTracer)
         {
             var beforeBoard = CloneBoard(board);
             string beforeSignature = ComputeBoardValueSignature(beforeBoard);
+            debugTracer?.RecordSnapshot(
+                beforeBoard,
+                "Rule attempt",
+                $"Trying {NormalizeRuleDisplayName(handler.RuleName)}.",
+                handler.RuleName,
+                PuzzleGenerationDebugEventKind.RuleAboutToRun,
+                depth: 0);
 
             if (handler.TryUnsolve(board, random) != UnsolveResult.Success)
             {
+                debugTracer?.RecordSnapshot(
+                    beforeBoard,
+                    "Rule not applied",
+                    $"{NormalizeRuleDisplayName(handler.RuleName)} found no applicable move.",
+                    handler.RuleName,
+                    PuzzleGenerationDebugEventKind.Info,
+                    depth: 0);
                 return false;
             }
 
@@ -423,6 +400,13 @@ namespace Sudoku.Solver.Unsolver
             if (string.Equals(beforeSignature, afterSignature, StringComparison.Ordinal))
             {
                 board = beforeBoard;
+                debugTracer?.RecordSnapshot(
+                    beforeBoard,
+                    "Rule reverted",
+                    $"{NormalizeRuleDisplayName(handler.RuleName)} produced no net board change.",
+                    handler.RuleName,
+                    PuzzleGenerationDebugEventKind.Info,
+                    depth: 0);
                 return false;
             }
 
@@ -430,8 +414,24 @@ namespace Sudoku.Solver.Unsolver
             if (!seenTransitions.Add(transitionKey))
             {
                 board = beforeBoard;
+                debugTracer?.RecordSnapshot(
+                    beforeBoard,
+                    "Rule reverted",
+                    $"{NormalizeRuleDisplayName(handler.RuleName)} repeated a previously seen transition.",
+                    handler.RuleName,
+                    PuzzleGenerationDebugEventKind.Info,
+                    depth: 0);
                 return false;
             }
+
+            debugTracer?.RecordTransition(
+                beforeBoard,
+                board,
+                "Rule applied",
+                $"{NormalizeRuleDisplayName(handler.RuleName)} applied a board change.",
+                handler.RuleName,
+                PuzzleGenerationDebugEventKind.RuleApplied,
+                depth: 0);
 
             return true;
         }

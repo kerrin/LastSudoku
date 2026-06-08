@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Sudoku.Models;
+using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
 {
@@ -72,11 +73,27 @@ namespace Sudoku.Solver.Unsolver
 
                     if (!blocker.CanSolveTarget(board, targetCell, targetValue))
                     {
+                        context?.Trace($"{blocker.RuleName}: cannot currently solve target, skipping.");
                         continue;
                     }
 
+                    context?.Trace(
+                        $"{blocker.RuleName}: can solve target; attempting to force unsolvable.",
+                        failed: false,
+                        usedCells: new List<UsedCell>
+                        {
+                            new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Target" }
+                        });
+
                     if (!context.TryEnter(blocker.RuleName, targetCell.Row, targetCell.Column, targetValue))
                     {
+                        context?.Trace(
+                            $"{blocker.RuleName}: blocked by recursion guard.",
+                            failed: true,
+                            usedCells: new List<UsedCell>
+                            {
+                                new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Failure" }
+                            });
                         return false;
                     }
 
@@ -98,8 +115,17 @@ namespace Sudoku.Solver.Unsolver
 
                     if (!blocked)
                     {
+                        context?.Trace(
+                            $"{blocker.RuleName}: failed to make target unsolvable.",
+                            failed: true,
+                            usedCells: new List<UsedCell>
+                            {
+                                new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Failure" }
+                            });
                         return false;
                     }
+
+                    context?.Trace($"{blocker.RuleName}: target no longer solvable by this blocker after adjustment.");
 
                     progressed = true;
                 }
@@ -124,6 +150,13 @@ namespace Sudoku.Solver.Unsolver
 
                 if (blocker.CanSolveTarget(board, targetCell, targetValue))
                 {
+                    context?.Trace(
+                        $"{blocker.RuleName}: still solves target after hardening pass.",
+                        failed: true,
+                        usedCells: new List<UsedCell>
+                        {
+                            new UsedCell { Row = targetCell.Row, Column = targetCell.Column, HighlightTag = "Failure" }
+                        });
                     return false;
                 }
             }
