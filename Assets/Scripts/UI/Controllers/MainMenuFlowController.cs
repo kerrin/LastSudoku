@@ -771,10 +771,10 @@ namespace Sudoku.UI.Controllers
                         : string.Empty;
 
                     // Log as warning so it remains visible even when regular Log entries are filtered out.
-                    Debug.LogWarning($"MainMenuFlowController: Generated puzzle unsolve rule usage: {ruleSummary}");
+                    Debug.LogWarning($"MainMenuFlowController: [UNSOLVE generation] rule usage: {ruleSummary}");
                     if (!string.IsNullOrWhiteSpace(sequenceSummary))
                     {
-                        Debug.LogWarning($"MainMenuFlowController: Generated puzzle unsolve rule sequence: {sequenceSummary}");
+                        Debug.LogWarning($"MainMenuFlowController: [UNSOLVE generation] rule sequence: {sequenceSummary}");
                     }
                 }
                 return generatedPuzzle != null;

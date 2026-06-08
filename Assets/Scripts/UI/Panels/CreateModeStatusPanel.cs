@@ -183,8 +183,8 @@ public class CreateModeStatusPanel : MonoBehaviour
         sb.AppendLine(Colorize(allRulesText, allRulesColor));
         sb.AppendLine();
         string rulesUsedLabel = Runner.LastCreationSolveFoundWithSelectedRules
-            ? "Selected Rules Used:"
-            : (Runner.LastCreationSolveFoundSolution ? "All Rules Used:" : "Selected Rules Used:");
+            ? "Selected Solve Rules Used (Analysis):"
+            : (Runner.LastCreationSolveFoundSolution ? "All Solve Rules Used (Analysis):" : "Selected Solve Rules Used (Analysis):");
         sb.AppendLine(Colorize(rulesUsedLabel, allRulesColor));
 
         if (Runner.LastCreationSolveRuleNames != null && Runner.LastCreationSolveRuleNames.Count > 0)

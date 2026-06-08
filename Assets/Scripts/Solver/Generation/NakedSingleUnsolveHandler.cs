@@ -13,7 +13,7 @@ namespace Sudoku.Solver.Unsolver
      * After removing V from C, the NakedSingle rule can re-place V by observing that every
      * other digit is visible in the peer set.
      */
-    public class NakedSingleUnsolveHandler : IUnsolveHandler
+    public class NakedSingleUnsolveHandler : IUnsolveHandler, ITargetSolvabilityBlocker
     {
         public string RuleName => nameof(NakedSingleRule);
 
@@ -49,6 +49,78 @@ namespace Sudoku.Solver.Unsolver
             return result;
         }
 
+        public bool CanSolveTarget(Board board, Cell targetCell, int targetValue)
+        {
+            if (board == null || targetCell == null)
+            {
+                return false;
+            }
+
+            if (targetCell.Value.HasValue)
+            {
+                return false;
+            }
+
+            if (!targetCell.Candidates.Contains(targetValue))
+            {
+                return false;
+            }
+
+            return AllOtherValuesVisibleInPeers(board, targetCell, targetValue);
+        }
+
+        public bool TryMakeTargetNotSolvable(
+            Board board,
+            Cell targetCell,
+            int targetValue,
+            Random random,
+            TargetSolvabilityCoordinator coordinator,
+            TargetSolvabilityGuardContext context)
+        {
+            if (!CanSolveTarget(board, targetCell, targetValue))
+            {
+                return true;
+            }
+
+            var peerOptions = new List<Cell>();
+            foreach (var peer in board.GetPeers(targetCell))
+            {
+                if (!peer.Value.HasValue || peer.IsGiven)
+                {
+                    continue;
+                }
+
+                if (peer.Value.Value == targetValue)
+                {
+                    continue;
+                }
+
+                peerOptions.Add(peer);
+            }
+
+            Shuffle(peerOptions, random);
+
+            foreach (var option in peerOptions)
+            {
+                int previousValue = option.Value.Value;
+                option.Value = null;
+                option.IsGiven = false;
+
+                bool anchorStillPossible = context?.AnchorSolveStillPossible == null
+                    || context.AnchorSolveStillPossible(board);
+                if (!CanSolveTarget(board, targetCell, targetValue)
+                    && anchorStillPossible)
+                {
+                    return true;
+                }
+
+                option.Value = previousValue;
+                option.IsGiven = false;
+            }
+
+            return false;
+        }
+
         /**
          * Returns true when every digit in 1..Size except cell.Value appears as a set value
          * in at least one of the cell's peers (row ∪ column ∪ box, excluding the cell itself).
@@ -56,6 +128,11 @@ namespace Sudoku.Solver.Unsolver
         private static bool AllOtherValuesVisibleInPeers(Board board, Cell cell)
         {
             int value = cell.Value.Value;
+            return AllOtherValuesVisibleInPeers(board, cell, value);
+        }
+
+        private static bool AllOtherValuesVisibleInPeers(Board board, Cell cell, int value)
+        {
             var peerValues = new HashSet<int>();
             foreach (var peer in board.GetPeers(cell))
                 if (peer.Value.HasValue) peerValues.Add(peer.Value.Value);
@@ -66,6 +143,20 @@ namespace Sudoku.Solver.Unsolver
                 if (!peerValues.Contains(d)) return false;
             }
             return true;
+        }
+
+        private static void Shuffle<T>(List<T> list, Random random)
+        {
+            if (random == null)
+            {
+                return;
+            }
+
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
         }
     }
 }

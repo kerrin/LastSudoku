@@ -252,5 +252,94 @@ namespace Sudoku.Tests.Unsolver
             Assert.DoesNotThrow(() =>
                 new PuzzleGenerator().Generate(solved, rules, new Random(11)));
         }
+
+        [Test]
+        public void Generate_RepeatedAddRemoveTransition_IsBlockedByTransitionGuard()
+        {
+            var solved = MakeFullySolvedBoard();
+            var addRule = new LoopAddRule();
+            var removeRule = new LoopRemoveRule();
+            var addHandler = new LoopAddUnsolveHandler();
+            var removeHandler = new LoopRemoveUnsolveHandler();
+
+            var generator = new PuzzleGenerator(
+                maxRetries: 1,
+                maxIterations: 100,
+                minimumOtherRulePasses: 0,
+                requireNonNakedContribution: false,
+                handlerResolver: rule =>
+                {
+                    if (rule is LoopAddRule) return addHandler;
+                    if (rule is LoopRemoveRule) return removeHandler;
+                    return new CandidateOnlyUnsolveHandler(rule.Name);
+                });
+
+            Assert.DoesNotThrow(() =>
+            {
+                var puzzle = generator.Generate(solved, new List<ISudokuRule> { addRule, removeRule }, new Random(1));
+                Assert.IsTrue(PuzzleGenerator.HasUniqueSolution(puzzle));
+            });
+
+            Assert.AreEqual(3, addHandler.Calls,
+                "Expected add handler to stop after the repeated transition is blocked.");
+            Assert.AreEqual(2, removeHandler.Calls,
+                "Expected remove handler to stop after the repeated transition is blocked.");
+        }
+
+        private sealed class LoopAddRule : ISudokuRule
+        {
+            public string Name => "Loop Add";
+            public bool CanApply(Board board) => true;
+            public RuleResult CalculateChanges(Board board) => new RuleResult { Apply = false };
+            public Difficulty Difficulty => Difficulty.Hard;
+        }
+
+        private sealed class LoopRemoveRule : ISudokuRule
+        {
+            public string Name => "Loop Remove";
+            public bool CanApply(Board board) => true;
+            public RuleResult CalculateChanges(Board board) => new RuleResult { Apply = false };
+            public Difficulty Difficulty => Difficulty.Medium;
+        }
+
+        private sealed class LoopAddUnsolveHandler : IUnsolveHandler
+        {
+            public string RuleName => nameof(LoopAddRule);
+            public int Calls { get; private set; }
+
+            public UnsolveResult TryUnsolve(Board board, Random random)
+            {
+                Calls++;
+                var cell = board.Cells[0, 0];
+                if (cell.Value.HasValue)
+                {
+                    return UnsolveResult.NoApplicableMove;
+                }
+
+                cell.Value = 1;
+                cell.IsGiven = false;
+                return UnsolveResult.Success;
+            }
+        }
+
+        private sealed class LoopRemoveUnsolveHandler : IUnsolveHandler
+        {
+            public string RuleName => nameof(LoopRemoveRule);
+            public int Calls { get; private set; }
+
+            public UnsolveResult TryUnsolve(Board board, Random random)
+            {
+                Calls++;
+                var cell = board.Cells[0, 0];
+                if (!cell.Value.HasValue)
+                {
+                    return UnsolveResult.NoApplicableMove;
+                }
+
+                cell.Value = null;
+                cell.IsGiven = false;
+                return UnsolveResult.Success;
+            }
+        }
     }
 }

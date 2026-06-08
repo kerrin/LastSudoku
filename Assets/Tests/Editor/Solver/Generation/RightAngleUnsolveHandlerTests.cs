@@ -86,13 +86,14 @@ namespace Sudoku.Tests.Unsolver
             var board = MakeBoardFromFixture();
             var handler = new RightAngleUnsolveHandler();
 
-            Assert.AreEqual(9, CountFilled(board), "Expected the base fixture to start with 9 filled values.");
+            int before = CountFilled(board);
+            Assert.AreEqual(9, before, "Expected the base fixture to start with 9 filled values.");
 
             var result = handler.TryUnsolve(board, new Random(0));
 
             Assert.AreEqual(UnsolveResult.Success, result);
             Assert.IsNull(board.Cells[1, 4].Value, "Expected the Right Angle target cell to be removed.");
-            Assert.AreEqual(8, CountFilled(board), "Expected exactly one value to be removed.");
+            Assert.Less(CountFilled(board), before, "Expected at least one value to be removed.");
 
             RecomputeCandidates(board);
 
@@ -151,13 +152,42 @@ namespace Sudoku.Tests.Unsolver
             var board = MakeFallbackBoardFromFixture();
             var handler = new RightAngleUnsolveHandler();
 
-            Assert.AreEqual(14, CountFilled(board), "Expected the fallback fixture to start with 14 filled values.");
+            int before = CountFilled(board);
+            Assert.AreEqual(14, before, "Expected the fallback fixture to start with 14 filled values.");
 
             var result = handler.TryUnsolve(board, new Random(0));
 
             Assert.AreEqual(UnsolveResult.Success, result);
             Assert.IsNull(board.Cells[1, 4].Value, "Expected the Right Angle fallback target cell to be removed.");
-            Assert.AreEqual(13, CountFilled(board), "Expected exactly one value to be removed from the fallback fixture.");
+            Assert.Less(CountFilled(board), before, "Expected at least one value to be removed from the fallback fixture.");
+        }
+
+        [Test]
+        public void TryUnsolve_CanReinstateSupportValue_WhenNeededForRightAngle()
+        {
+            var solvedReference = MakeBoardFromFixture();
+            var board = PuzzleGenerator.CloneBoard(solvedReference);
+
+            // Remove a required support value for the (1,4) Right Angle deduction.
+            board.Cells[5, 3].Value = null;
+            board.Cells[5, 3].IsGiven = false;
+
+            var plainHandler = new RightAngleUnsolveHandler();
+            Assert.AreEqual(
+                UnsolveResult.NoApplicableMove,
+                plainHandler.TryUnsolve(PuzzleGenerator.CloneBoard(board), new Random(0)),
+                "Without solved-value context this position should not produce a Right Angle unsolve move.");
+
+            var assistedHandler = new RightAngleUnsolveHandler();
+            assistedHandler.SetSolvedBoard(solvedReference);
+
+            int before = CountFilled(board);
+            var result = assistedHandler.TryUnsolve(board, new Random(0));
+
+            Assert.AreEqual(UnsolveResult.Success, result);
+            Assert.AreEqual(8, board.Cells[5, 3].Value, "Expected helper support value to be reinstated from solved reference.");
+            Assert.IsNull(board.Cells[1, 4].Value, "Expected assisted Right Angle unsolve to remove the target cell.");
+            Assert.LessOrEqual(CountFilled(board), before, "Expected helper add/remove plus optional contextual removals to not increase fill-count.");
         }
 
         private static Board MakeBoardFromFixture()

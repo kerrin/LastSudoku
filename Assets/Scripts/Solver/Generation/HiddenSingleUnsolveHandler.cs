@@ -20,8 +20,9 @@ namespace Sudoku.Solver.Unsolver
      * The check is performed analytically against set values only; candidates are not
      * read from or written to the board during the search.
      */
-    public class HiddenSingleUnsolveHandler : IUnsolveHandler
+    public class HiddenSingleUnsolveHandler : IUnsolveHandler, ITargetSolvabilityBlocker
     {
+        private readonly NakedSingleUnsolveHandler _nakedSingleUnsolve = new NakedSingleUnsolveHandler();
         public string RuleName => nameof(HiddenSingleRule);
 
         public UnsolveResult TryUnsolve(Board board, Random random)
@@ -63,6 +64,79 @@ namespace Sudoku.Solver.Unsolver
                 }
             }
             return result;
+        }
+
+        public bool CanSolveTarget(Board board, Cell targetCell, int targetValue)
+        {
+            if (board == null || targetCell == null)
+            {
+                return false;
+            }
+
+            if (targetCell.Value.HasValue)
+            {
+                return false;
+            }
+
+            RecomputeCandidates(board);
+            if (!targetCell.Candidates.Contains(targetValue))
+            {
+                return false;
+            }
+
+            return CountCandidateOccurrences(board.GetRow(targetCell.Row), targetValue) == 1
+                || CountCandidateOccurrences(board.GetColumn(targetCell.Column), targetValue) == 1
+                || CountCandidateOccurrences(board.GetBox(targetCell.Box), targetValue) == 1;
+        }
+
+        public bool TryMakeTargetNotSolvable(
+            Board board,
+            Cell targetCell,
+            int targetValue,
+            Random random,
+            TargetSolvabilityCoordinator coordinator,
+            TargetSolvabilityGuardContext context)
+        {
+            if (!CanSolveTarget(board, targetCell, targetValue))
+            {
+                return true;
+            }
+
+            var removable = _nakedSingleUnsolve.BuildCandidateList(board);
+            var removableKeys = new HashSet<int>();
+            foreach (var cell in removable)
+            {
+                removableKeys.Add(ToCellKey(board.Size, cell.Row, cell.Column));
+            }
+
+            var blockerOptions = CollectTargetValueBlockers(board, targetCell, targetValue, removableKeys);
+            Shuffle(blockerOptions, random);
+
+            foreach (var blocker in blockerOptions)
+            {
+                int previousValue = blocker.Value.Value;
+                blocker.Value = null;
+                blocker.IsGiven = false;
+
+                RecomputeCandidates(board);
+                if (!CanSolveTarget(board, targetCell, targetValue)
+                    && coordinator.TryMakeTargetNotSolvableByOtherRules(
+                        board,
+                        targetCell,
+                        targetValue,
+                        RuleName,
+                        random,
+                        context))
+                {
+                    return true;
+                }
+
+                blocker.Value = previousValue;
+                blocker.IsGiven = false;
+            }
+
+            RecomputeCandidates(board);
+            return false;
         }
 
         // ── Naked Single guard ─────────────────────────────────────────────────────
@@ -153,6 +227,128 @@ namespace Sudoku.Solver.Unsolver
                 if (bp.Value == value) return true;
             }
             return false;
+        }
+
+        private static List<Cell> CollectTargetValueBlockers(
+            Board board,
+            Cell targetCell,
+            int targetValue,
+            HashSet<int> removableKeys)
+        {
+            var result = new List<Cell>();
+            var seen = new HashSet<int>();
+
+            AddBlockersFromUnit(board, board.GetRow(targetCell.Row), targetCell, targetValue, removableKeys, seen, result);
+            AddBlockersFromUnit(board, board.GetColumn(targetCell.Column), targetCell, targetValue, removableKeys, seen, result);
+            AddBlockersFromUnit(board, board.GetBox(targetCell.Box), targetCell, targetValue, removableKeys, seen, result);
+
+            return result;
+        }
+
+        private static void AddBlockersFromUnit(
+            Board board,
+            IEnumerable<Cell> unit,
+            Cell targetCell,
+            int targetValue,
+            HashSet<int> removableKeys,
+            HashSet<int> seen,
+            List<Cell> output)
+        {
+            foreach (var cell in unit)
+            {
+                if (ReferenceEquals(cell, targetCell) || cell.Value.HasValue)
+                {
+                    continue;
+                }
+
+                foreach (var peer in board.GetPeers(cell))
+                {
+                    if (!peer.Value.HasValue || peer.Value.Value != targetValue || peer.IsGiven)
+                    {
+                        continue;
+                    }
+
+                    int key = ToCellKey(board.Size, peer.Row, peer.Column);
+                    if (!removableKeys.Contains(key) || !seen.Add(key))
+                    {
+                        continue;
+                    }
+
+                    output.Add(peer);
+                }
+            }
+        }
+
+        private static void RecomputeCandidates(Board board)
+        {
+            for (int r = 0; r < board.Size; r++)
+            {
+                for (int c = 0; c < board.Size; c++)
+                {
+                    var cell = board.Cells[r, c];
+                    cell.Candidates.Clear();
+                    if (!cell.Value.HasValue)
+                    {
+                        for (int value = 1; value <= board.Size; value++)
+                        {
+                            cell.Candidates.Add(value);
+                        }
+                    }
+                }
+            }
+
+            for (int r = 0; r < board.Size; r++)
+            {
+                for (int c = 0; c < board.Size; c++)
+                {
+                    var cell = board.Cells[r, c];
+                    if (cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    foreach (var peer in board.GetPeers(cell))
+                    {
+                        if (peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static int CountCandidateOccurrences(IEnumerable<Cell> unitCells, int value)
+        {
+            int count = 0;
+            foreach (var cell in unitCells)
+            {
+                if (!cell.Value.HasValue && cell.Candidates.Contains(value))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int ToCellKey(int boardSize, int row, int column)
+        {
+            return row * boardSize + column;
+        }
+
+        private static void Shuffle<T>(List<T> list, Random random)
+        {
+            if (random == null)
+            {
+                return;
+            }
+
+            for (int i = list.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                (list[i], list[j]) = (list[j], list[i]);
+            }
         }
     }
 }
