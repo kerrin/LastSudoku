@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Sudoku.Models;
+using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
@@ -183,6 +184,15 @@ namespace Sudoku.Solver.Unsolver
                     continue;
                 }
 
+                RemoveRedundantCluesSinglePass(board, rulesList);
+                _debugTracer?.RecordSnapshot(
+                    board,
+                    "Final clue sweep",
+                    "Performed single-pass removable clue sweep across all filled cells.",
+                    string.Empty,
+                    PuzzleGenerationDebugEventKind.InternalStep,
+                    depth: 0);
+
                 FinalizeBoard(board);
                 _debugTracer?.RecordSnapshot(
                     board,
@@ -309,6 +319,88 @@ namespace Sudoku.Solver.Unsolver
         {
             var testBoard = CloneBoard(board);
             return CountSolutions(testBoard, 2) == 1;
+        }
+
+        /**
+         * Single-pass clue minimization sweep.
+         *
+         * For each currently filled cell (row-major), remove it temporarily and keep
+         * the removal only if the puzzle remains solvable.
+         */
+        private static void RemoveRedundantCluesSinglePass(Board board, IReadOnlyList<ISudokuRule> enabledRules)
+        {
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (!cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    int removedValue = cell.Value.Value;
+                    cell.Value = null;
+
+                    if (!IsSolvableByEnabledRules(board, enabledRules))
+                    {
+                        cell.Value = removedValue;
+                    }
+                }
+            }
+        }
+
+        /**
+         * Returns true when the board has at least one valid solution.
+         */
+        private static bool IsSolvableByEnabledRules(Board board, IReadOnlyList<ISudokuRule> enabledRules)
+        {
+            var boardCopyForEnabledRules = CloneBoardForSolve(board);
+            var enabledRegistry = new RuleRegistry();
+            if (enabledRules != null)
+            {
+                for (int i = 0; i < enabledRules.Count; i++)
+                {
+                    if (enabledRules[i] != null && IsValuePlacementRule(enabledRules[i]))
+                    {
+                        enabledRegistry.Register(enabledRules[i]);
+                    }
+                }
+            }
+
+            if (enabledRegistry.Rules.Count == 0)
+            {
+                // No value-placement rules available: keep the clue.
+                return false;
+            }
+
+            var enabledEngine = new SolverEngine(enabledRegistry);
+            // Keep this bounded because the final sweep runs per clue.
+            return enabledEngine.Solve(boardCopyForEnabledRules, 300, out _);
+        }
+
+        private static bool IsValuePlacementRule(ISudokuRule rule)
+        {
+            return rule is NakedSingleRule
+                || rule is HiddenSingleRule
+                || rule is RightAngleRule;
+        }
+
+        private static Board CloneBoardForSolve(Board source)
+        {
+            var copy = new Board(source.Size, source.BoxWidth, source.BoxHeight);
+            for (int row = 0; row < source.Size; row++)
+            {
+                for (int column = 0; column < source.Size; column++)
+                {
+                    var sourceCell = source.Cells[row, column];
+                    var cloned = new Cell(row, column, sourceCell?.Value, sourceCell != null && sourceCell.IsGiven);
+                    cloned.Candidates.Clear();
+                    copy.Cells[row, column] = cloned;
+                }
+            }
+
+            return copy;
         }
 
         // ── Backtracking solution counter ──────────────────────────────────────────
