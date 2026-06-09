@@ -305,6 +305,26 @@ namespace Sudoku.Tests.Unsolver
         }
 
         [Test]
+        public void Generate_WithSwordFishEnabled_ProducesValidBoard()
+        {
+            var solved = MakeFullySolvedBoard();
+            var rules = new List<ISudokuRule>
+            {
+                new NakedSingleRule(),
+                new HiddenSingleRule(),
+                new HiddenPairRule(),
+                new SwordFishRule(),
+            };
+
+            var generator = new PuzzleGenerator(maxRetries: 20, requireNonNakedContribution: false);
+            var puzzle = generator.Generate(solved, rules, new Random(19));
+
+            Assert.IsNotNull(puzzle);
+            Assert.IsTrue(puzzle.IsValid(), "Generated puzzle with Swordfish enabled must be valid.");
+            Assert.IsTrue(PuzzleGenerator.HasUniqueSolution(puzzle), "Generated puzzle with Swordfish enabled must remain uniquely solvable.");
+        }
+
+        [Test]
         public void Generate_RepeatedAddRemoveTransition_IsBlockedByTransitionGuard()
         {
             var solved = MakeFullySolvedBoard();

@@ -690,10 +690,16 @@ namespace Sudoku.UI.Controllers
             else if (TryGenerateRandomPuzzleFromEnabledRules(out var generatedPuzzle))
             {
                 ApplyGeneratedBoardValuesToCurrentBoard(generatedPuzzle);
+                if (_runner.CurrentBoard == null || !_runner.CurrentBoard.IsValid())
+                {
+                    Debug.LogError("MainMenuFlowController: Generated puzzle was invalid after apply. Aborting Start Puzzle.");
+                    return;
+                }
             }
             else
             {
-                Debug.LogError("MainMenuFlowController: Random generation was not applied. Existing board is used, so no generation-rule summary is available.");
+                Debug.LogError("MainMenuFlowController: Random generation failed. Start Puzzle was cancelled to avoid using stale board state.");
+                return;
             }
 
             CacheStartingPuzzleCodeFromCurrentBoard();
@@ -769,6 +775,12 @@ namespace Sudoku.UI.Controllers
                 generatedPuzzle = generator.Generate(solved, enabledRules, random);
                 if (generatedPuzzle != null)
                 {
+                    if (!generatedPuzzle.IsValid())
+                    {
+                        Debug.LogError("MainMenuFlowController: Generator returned an invalid puzzle. Rejecting generated board.");
+                        return false;
+                    }
+
                     string ruleSummary = string.IsNullOrWhiteSpace(generator.LastGenerationRuleUsageSummary)
                         ? "(no rule applications recorded)"
                         : generator.LastGenerationRuleUsageSummary;
