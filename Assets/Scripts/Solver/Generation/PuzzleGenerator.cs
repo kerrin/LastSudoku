@@ -71,8 +71,27 @@ namespace Sudoku.Solver.Unsolver
          */
         public Board Generate(Board solvedBoard, IEnumerable<ISudokuRule> enabledRules, Random random = null)
         {
+            if (solvedBoard == null)
+            {
+                throw new ArgumentNullException(nameof(solvedBoard));
+            }
+
+            if (!IsFullySolvedBoard(solvedBoard))
+            {
+                throw new InvalidOperationException("The input solved board must be fully filled and valid.");
+            }
+
+            if (enabledRules == null)
+            {
+                throw new ArgumentNullException(nameof(enabledRules));
+            }
+
             random ??= new Random();
-            var rulesList = enabledRules.ToList();
+            var rulesList = enabledRules.Where(rule => rule != null).ToList();
+            if (rulesList.Count == 0)
+            {
+                throw new ArgumentException("At least one non-null rule must be provided.", nameof(enabledRules));
+            }
 
             for (int attempt = 0; attempt < _maxRetries; attempt++)
             {
@@ -124,6 +143,7 @@ namespace Sudoku.Solver.Unsolver
                     .Where(plan => plan.handler is not NakedSingleUnsolveHandler)
                     .OrderByDescending(plan => plan.rule.Difficulty)
                     .ToList();
+                var handlersByDifficulty = BuildHandlersByDifficulty(otherHandlerPlans);
 
                 bool anyProgress = true;
                 int iterations = 0;
@@ -138,16 +158,13 @@ namespace Sudoku.Solver.Unsolver
 
                     foreach (Difficulty tier in GetDifficultyDescendingOrder())
                     {
-                        var tierHandlers = otherHandlerPlans
-                            .Where(plan => plan.rule.Difficulty == tier)
-                            .Select(plan => plan.handler)
-                            .ToList();
-
-                        if (tierHandlers.Count == 0)
+                        if (!handlersByDifficulty.TryGetValue(tier, out var tierHandlersByDifficulty)
+                            || tierHandlersByDifficulty.Count == 0)
                         {
                             continue;
                         }
 
+                        var tierHandlers = new List<IUnsolveHandler>(tierHandlersByDifficulty);
                         Shuffle(tierHandlers, random);
                         bool tierApplied = false;
                         foreach (var handler in tierHandlers)
@@ -184,7 +201,7 @@ namespace Sudoku.Solver.Unsolver
                     continue;
                 }
 
-                RemoveRedundantCluesSinglePass(board, rulesList);
+                RemoveRedundantCluesSinglePass(board, rulesList, random);
                 _debugTracer?.RecordSnapshot(
                     board,
                     "Final clue sweep",
@@ -327,25 +344,41 @@ namespace Sudoku.Solver.Unsolver
          * For each currently filled cell (row-major), remove it temporarily and keep
          * the removal only if the puzzle remains solvable.
          */
-        private static void RemoveRedundantCluesSinglePass(Board board, IReadOnlyList<ISudokuRule> enabledRules)
+        private static void RemoveRedundantCluesSinglePass(Board board, IReadOnlyList<ISudokuRule> enabledRules, Random random)
         {
-            for (int row = 0; row < board.Size; row++)
+            var enabledRegistry = BuildEnabledValuePlacementRegistry(enabledRules);
+            if (enabledRegistry.Rules.Count == 0)
             {
-                for (int column = 0; column < board.Size; column++)
+                // No value-placement rules available, so no safe rule-constrained clue removal.
+                return;
+            }
+
+            var enabledEngine = new SolverEngine(enabledRegistry);
+            int cellCount = board.Size * board.Size;
+            var indices = new List<int>(cellCount);
+            for (int index = 0; index < cellCount; index++)
+            {
+                indices.Add(index);
+            }
+
+            Shuffle(indices, random);
+
+            for (int i = 0; i < indices.Count; i++)
+            {
+                int row = indices[i] / board.Size;
+                int column = indices[i] % board.Size;
+                var cell = board.Cells[row, column];
+                if (!cell.Value.HasValue)
                 {
-                    var cell = board.Cells[row, column];
-                    if (!cell.Value.HasValue)
-                    {
-                        continue;
-                    }
+                    continue;
+                }
 
-                    int removedValue = cell.Value.Value;
-                    cell.Value = null;
+                int removedValue = cell.Value.Value;
+                cell.Value = null;
 
-                    if (!IsSolvableByEnabledRules(board, enabledRules))
-                    {
-                        cell.Value = removedValue;
-                    }
+                if (!IsSolvableByEnabledRules(board, enabledEngine) || !IsUniquelySolvable(board))
+                {
+                    cell.Value = removedValue;
                 }
             }
         }
@@ -353,30 +386,35 @@ namespace Sudoku.Solver.Unsolver
         /**
          * Returns true when the board has at least one valid solution.
          */
-        private static bool IsSolvableByEnabledRules(Board board, IReadOnlyList<ISudokuRule> enabledRules)
+        private static bool IsSolvableByEnabledRules(Board board, SolverEngine enabledEngine)
         {
             var boardCopyForEnabledRules = CloneBoardForSolve(board);
+            // Keep this bounded because the final sweep runs per clue.
+            return enabledEngine.Solve(boardCopyForEnabledRules, 300, out _);
+        }
+
+        private static RuleRegistry BuildEnabledValuePlacementRegistry(IReadOnlyList<ISudokuRule> enabledRules)
+        {
             var enabledRegistry = new RuleRegistry();
-            if (enabledRules != null)
+            if (enabledRules == null)
             {
-                for (int i = 0; i < enabledRules.Count; i++)
+                return enabledRegistry;
+            }
+
+            for (int i = 0; i < enabledRules.Count; i++)
+            {
+                if (enabledRules[i] != null && IsValuePlacementRule(enabledRules[i]))
                 {
-                    if (enabledRules[i] != null && IsValuePlacementRule(enabledRules[i]))
-                    {
-                        enabledRegistry.Register(enabledRules[i]);
-                    }
+                    enabledRegistry.Register(enabledRules[i]);
                 }
             }
 
-            if (enabledRegistry.Rules.Count == 0)
-            {
-                // No value-placement rules available: keep the clue.
-                return false;
-            }
+            return enabledRegistry;
+        }
 
-            var enabledEngine = new SolverEngine(enabledRegistry);
-            // Keep this bounded because the final sweep runs per clue.
-            return enabledEngine.Solve(boardCopyForEnabledRules, 300, out _);
+        private static bool IsUniquelySolvable(Board board)
+        {
+            return CountSolutions(CloneBoard(board), 2) == 1;
         }
 
         private static bool IsValuePlacementRule(ISudokuRule rule)
@@ -407,30 +445,116 @@ namespace Sudoku.Solver.Unsolver
 
         private static int CountSolutions(Board board, int maxCount)
         {
-            // Find the first empty cell (row-major order).
-            Cell empty = null;
-            for (int r = 0; r < board.Size && empty == null; r++)
-                for (int c = 0; c < board.Size && empty == null; c++)
-                    if (!board.Cells[r, c].Value.HasValue) empty = board.Cells[r, c];
+            if (maxCount <= 0)
+            {
+                return 0;
+            }
 
-            if (empty == null) return 1; // All cells filled → one complete solution.
+            if (!TryFindMostConstrainedEmptyCell(board, out int row, out int column))
+            {
+                return 1; // All cells filled -> one complete solution.
+            }
 
             int count = 0;
             for (int v = 1; v <= board.Size; v++)
             {
-                if (!IsValidPlacement(board, empty, v)) continue;
-                empty.Value = v;
-                count += CountSolutions(board, maxCount);
-                empty.Value = null;
+                if (!IsValidPlacement(board, row, column, v))
+                {
+                    continue;
+                }
+
+                board.Cells[row, column].Value = v;
+                count += CountSolutions(board, maxCount - count);
+                board.Cells[row, column].Value = null;
                 if (count >= maxCount) return count; // Early-exit once limit reached.
             }
+
             return count;
         }
 
-        private static bool IsValidPlacement(Board board, Cell cell, int value)
+        private static bool TryFindMostConstrainedEmptyCell(Board board, out int bestRow, out int bestColumn)
         {
-            foreach (var peer in board.GetPeers(cell))
-                if (peer.Value == value) return false;
+            bestRow = -1;
+            bestColumn = -1;
+            int bestCandidateCount = int.MaxValue;
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    if (board.Cells[row, column].Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    int candidateCount = 0;
+                    for (int value = 1; value <= board.Size; value++)
+                    {
+                        if (IsValidPlacement(board, row, column, value))
+                        {
+                            candidateCount++;
+                            if (candidateCount >= bestCandidateCount)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (candidateCount == 0)
+                    {
+                        bestRow = row;
+                        bestColumn = column;
+                        return true;
+                    }
+
+                    if (candidateCount < bestCandidateCount)
+                    {
+                        bestCandidateCount = candidateCount;
+                        bestRow = row;
+                        bestColumn = column;
+
+                        if (bestCandidateCount == 1)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return bestRow >= 0;
+        }
+
+        private static bool IsValidPlacement(Board board, int row, int column, int value)
+        {
+            for (int c = 0; c < board.Size; c++)
+            {
+                if (c != column && board.Cells[row, c].Value == value)
+                {
+                    return false;
+                }
+            }
+
+            for (int r = 0; r < board.Size; r++)
+            {
+                if (r != row && board.Cells[r, column].Value == value)
+                {
+                    return false;
+                }
+            }
+
+            int boxRowStart = (row / board.BoxHeight) * board.BoxHeight;
+            int boxColStart = (column / board.BoxWidth) * board.BoxWidth;
+            for (int r = boxRowStart; r < boxRowStart + board.BoxHeight; r++)
+            {
+                for (int c = boxColStart; c < boxColStart + board.BoxWidth; c++)
+                {
+                    if ((r != row || c != column) && board.Cells[r, c].Value == value)
+                    {
+                        return false;
+                    }
+                }
+            }
+
             return true;
         }
 
@@ -572,6 +696,42 @@ namespace Sudoku.Solver.Unsolver
                 Difficulty.Medium,
                 Difficulty.Easy,
             };
+        }
+
+        private static Dictionary<Difficulty, List<IUnsolveHandler>> BuildHandlersByDifficulty(
+            IReadOnlyList<(ISudokuRule rule, IUnsolveHandler handler)> handlerPlans)
+        {
+            var byDifficulty = new Dictionary<Difficulty, List<IUnsolveHandler>>();
+            for (int i = 0; i < handlerPlans.Count; i++)
+            {
+                var plan = handlerPlans[i];
+                if (!byDifficulty.TryGetValue(plan.rule.Difficulty, out var handlers))
+                {
+                    handlers = new List<IUnsolveHandler>();
+                    byDifficulty[plan.rule.Difficulty] = handlers;
+                }
+
+                handlers.Add(plan.handler);
+            }
+
+            return byDifficulty;
+        }
+
+        private static bool IsFullySolvedBoard(Board board)
+        {
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell == null || !cell.Value.HasValue)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return board.IsValid();
         }
 
         // ── Utility ────────────────────────────────────────────────────────────────

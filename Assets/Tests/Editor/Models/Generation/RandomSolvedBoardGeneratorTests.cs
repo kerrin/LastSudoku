@@ -60,5 +60,55 @@ namespace Sudoku.Tests.Models
                 Assert.IsTrue(board.IsValid(), $"Board at run {i} should be valid.");
             }
         }
+
+        /**
+         * Generation should be deterministic when using the same seed.
+         *
+         * @param None.
+         * @returns Nothing.
+         */
+        [Test]
+        public void GenerateRandomSolvedBoard_SameSeed_IsDeterministic()
+        {
+            var boardA = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(new Random(9001));
+            var boardB = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(new Random(9001));
+
+            for (int row = 0; row < 9; row++)
+            {
+                for (int col = 0; col < 9; col++)
+                {
+                    Assert.AreEqual(boardA.Cells[row, col].Value, boardB.Cells[row, col].Value,
+                        $"Boards must match at [{row},{col}] when seed is identical.");
+                }
+            }
+        }
+
+        /**
+         * Different seeds should usually produce different solved boards.
+         *
+         * @param None.
+         * @returns Nothing.
+         */
+        [Test]
+        public void GenerateRandomSolvedBoard_DifferentSeeds_UsuallyDifferentBoards()
+        {
+            var boardA = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(new Random(1));
+            var boardB = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(new Random(2));
+
+            bool anyDifference = false;
+            for (int row = 0; row < 9 && !anyDifference; row++)
+            {
+                for (int col = 0; col < 9; col++)
+                {
+                    if (boardA.Cells[row, col].Value != boardB.Cells[row, col].Value)
+                    {
+                        anyDifference = true;
+                        break;
+                    }
+                }
+            }
+
+            Assert.IsTrue(anyDifference, "Different seeds should not produce identical solved boards.");
+        }
     }
 }

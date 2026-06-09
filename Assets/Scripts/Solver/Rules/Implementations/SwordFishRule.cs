@@ -30,3 +30,5 @@ namespace Sudoku.Solver.Rules
             return result;
         }
 }
+
+}

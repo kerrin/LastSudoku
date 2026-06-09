@@ -67,7 +67,7 @@ namespace Sudoku.Models
          */
         private static void ApplyRandomTransformation(Board board, Random random)
         {
-            int action = random.Next(0, 4);
+            int action = random.Next(0, 6);
             switch (action)
             {
                 case 0:
@@ -79,9 +79,79 @@ namespace Sudoku.Models
                 case 2:
                     SwapRandomBoxRow(board, random);
                     break;
-                default:
+                case 3:
                     SwapRandomBoxColumn(board, random);
                     break;
+                case 4:
+                    RelabelRandomDigits(board, random);
+                    break;
+                default:
+                    Transpose(board);
+                    break;
+            }
+        }
+
+        /**
+         * Relabel two distinct digits globally (e.g. all 1s become 7s and vice versa).
+         *
+         * @param board Board to mutate.
+         * @param random Random source.
+         * @returns Nothing.
+         */
+        private static void RelabelRandomDigits(Board board, Random random)
+        {
+            int firstDigit = random.Next(1, GridSize + 1);
+            int secondDigit = firstDigit;
+            while (secondDigit == firstDigit)
+            {
+                secondDigit = random.Next(1, GridSize + 1);
+            }
+
+            for (int row = 0; row < GridSize; row++)
+            {
+                for (int column = 0; column < GridSize; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (!cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (cell.Value.Value == firstDigit)
+                    {
+                        cell.Value = secondDigit;
+                    }
+                    else if (cell.Value.Value == secondDigit)
+                    {
+                        cell.Value = firstDigit;
+                    }
+                }
+            }
+        }
+
+        /**
+         * Transpose the grid over its main diagonal.
+         *
+         * @param board Board to mutate.
+         * @returns Nothing.
+         */
+        private static void Transpose(Board board)
+        {
+            for (int row = 0; row < GridSize; row++)
+            {
+                for (int column = row + 1; column < GridSize; column++)
+                {
+                    (board.Cells[row, column], board.Cells[column, row]) =
+                        (board.Cells[column, row], board.Cells[row, column]);
+                }
+            }
+
+            for (int row = 0; row < GridSize; row++)
+            {
+                for (int column = 0; column < GridSize; column++)
+                {
+                    EnsureCellMetadata(board, row, column);
+                }
             }
         }
 

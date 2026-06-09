@@ -239,6 +239,30 @@ namespace Sudoku.Tests.Unsolver
         }
 
         [Test]
+        public void Generate_NullSolvedBoard_ThrowsArgumentNullException()
+        {
+            var generator = new PuzzleGenerator();
+            Assert.Throws<ArgumentNullException>(() =>
+                generator.Generate(null, MinimalRules(), new Random(42)));
+        }
+
+        [Test]
+        public void Generate_NullEnabledRules_ThrowsArgumentNullException()
+        {
+            var generator = new PuzzleGenerator();
+            Assert.Throws<ArgumentNullException>(() =>
+                generator.Generate(MakeFullySolvedBoard(), null, new Random(42)));
+        }
+
+        [Test]
+        public void Generate_EmptyEnabledRules_ThrowsArgumentException()
+        {
+            var generator = new PuzzleGenerator();
+            Assert.Throws<ArgumentException>(() =>
+                generator.Generate(MakeFullySolvedBoard(), new List<ISudokuRule>(), new Random(42)));
+        }
+
+        [Test]
         public void Generate_WithCandidateOnlyRules_DoesNotThrow()
         {
             // Candidate-only rules should be silently skipped via NotSupported.
