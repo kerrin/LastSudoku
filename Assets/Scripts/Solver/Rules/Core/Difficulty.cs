@@ -9,6 +9,7 @@ namespace Sudoku.Solver.Rules
         Medium,
         Hard,
         Expert,
-        Master
+        Master,
+        NotImplemented
     }
 }
