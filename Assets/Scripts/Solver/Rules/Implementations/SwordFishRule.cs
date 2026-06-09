@@ -13,7 +13,7 @@ namespace Sudoku.Solver.Rules
     {
         public string Name => "Swordfish";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public Difficulty Difficulty => Difficulty.Master;
         public bool CanApply(Board board)
         {
             // TODO: Implement Swordfish logic here. This is a placeholder to allow compilation and testing of unsolve handlers without needing the full implementation of this rule.
