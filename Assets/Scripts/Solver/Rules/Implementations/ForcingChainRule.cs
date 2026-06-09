@@ -3,8 +3,8 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * Hidden Pair is when there are exactly two candidates in a unit (row, column, or box) that appear only in two cells.
-     * These two candidates can be removed from all other cells in that unit.
+     * Forcing Chain is a technique that involves creating a chain of candidate placements that leads to a contradiction.
+     * This is like colouring, but instead of just two colours, it can involve multiple branches and more complex logic.
      */
     public class ForcingChainRule : ISudokuRule
     {
