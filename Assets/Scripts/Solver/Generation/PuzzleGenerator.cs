@@ -132,6 +132,28 @@ namespace Sudoku.Solver.Unsolver
                 var appliedRuleSequence = new List<string>(128);
                 bool usedAnyNonNakedRule = false;
 
+                // Seed harder generations by removing the center box first.
+                // This reduces early Naked Single churn by 9 guaranteed removals.
+                if (ShouldSeedCenterBoxRemoval(rulesList))
+                {
+                    int seededRemovalCount = RemoveCenterBoxValues(board);
+                    for (int i = 0; i < seededRemovalCount; i++)
+                    {
+                        appliedRuleSequence.Add("Center Box Seed Removal");
+                    }
+
+                    if (seededRemovalCount > 0)
+                    {
+                        _debugTracer?.RecordSnapshot(
+                            board,
+                            "Center box seed",
+                            $"Removed {seededRemovalCount} center-box values before rule-driven unsolve.",
+                            string.Empty,
+                            PuzzleGenerationDebugEventKind.InternalStep,
+                            depth: 0);
+                    }
+                }
+
                 // Phase 1: drain Naked Single unsolve first to maximise removals.
                 var nakedHandler = handlerPlans
                     .Select(plan => plan.handler)
@@ -835,6 +857,56 @@ namespace Sudoku.Solver.Unsolver
             }
 
             return board.IsValid();
+        }
+
+        private static bool ShouldSeedCenterBoxRemoval(IReadOnlyList<ISudokuRule> enabledRules)
+        {
+            if (enabledRules == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < enabledRules.Count; i++)
+            {
+                if (enabledRules[i] != null && enabledRules[i].Difficulty > Difficulty.Easy)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static int RemoveCenterBoxValues(Board board)
+        {
+            int boxRows = board.Size / board.BoxHeight;
+            int boxColumns = board.Size / board.BoxWidth;
+            if (boxRows % 2 == 0 || boxColumns % 2 == 0)
+            {
+                return 0;
+            }
+
+            int centerBoxRow = boxRows / 2;
+            int centerBoxColumn = boxColumns / 2;
+            int rowStart = centerBoxRow * board.BoxHeight;
+            int columnStart = centerBoxColumn * board.BoxWidth;
+
+            int removedCount = 0;
+            for (int row = rowStart; row < rowStart + board.BoxHeight; row++)
+            {
+                for (int column = columnStart; column < columnStart + board.BoxWidth; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell != null && cell.Value.HasValue)
+                    {
+                        cell.Value = null;
+                        cell.IsGiven = false;
+                        removedCount++;
+                    }
+                }
+            }
+
+            return removedCount;
         }
 
         // ── Utility ────────────────────────────────────────────────────────────────
