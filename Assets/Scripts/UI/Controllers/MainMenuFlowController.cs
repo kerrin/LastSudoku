@@ -9,6 +9,7 @@ using Object = UnityEngine.Object;
 using Sudoku.UI.Panels;
 using Sudoku.UI.Menus;
 using Sudoku.Solver.Unsolver;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Controllers
 {
@@ -756,9 +757,15 @@ namespace Sudoku.UI.Controllers
             {
                 var random = new System.Random();
                 var solved = RandomSolvedBoardGenerator.GenerateRandomSolvedBoard(random);
+                PuzzleClueSymmetryMode symmetryMode = GenerationSettings.UseRotationalSymmetry
+                    ? PuzzleClueSymmetryMode.Rotational180
+                    : PuzzleClueSymmetryMode.None;
                 // Use a higher retry budget in strict mode so generation can still succeed
                 // while enforcing non-Naked contribution for puzzle difficulty.
-                var generator = new PuzzleGenerator(maxRetries: 50, requireNonNakedContribution: true);
+                var generator = new PuzzleGenerator(
+                    maxRetries: 50,
+                    requireNonNakedContribution: true,
+                    clueSymmetryMode: symmetryMode);
                 generatedPuzzle = generator.Generate(solved, enabledRules, random);
                 if (generatedPuzzle != null)
                 {

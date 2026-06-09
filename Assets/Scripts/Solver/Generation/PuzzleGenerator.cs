@@ -3,11 +3,16 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Sudoku.Models;
-using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Solver.Unsolver
 {
+    public enum PuzzleClueSymmetryMode
+    {
+        None,
+        Rotational180,
+    }
+
     /**
      * Generates a Sudoku puzzle solvable using only the specified enabled rules.
      *
@@ -35,6 +40,7 @@ namespace Sudoku.Solver.Unsolver
         private readonly int _maxIterations;
         private readonly int _minimumOtherRulePasses;
         private readonly bool _requireNonNakedContribution;
+        private readonly PuzzleClueSymmetryMode _clueSymmetryMode;
         private readonly Func<ISudokuRule, IUnsolveHandler> _handlerResolver;
         private readonly IPuzzleGenerationDebugTracer _debugTracer;
 
@@ -49,6 +55,7 @@ namespace Sudoku.Solver.Unsolver
             int maxIterations = DefaultMaxIterations,
             int minimumOtherRulePasses = DefaultMinimumOtherRulePasses,
             bool requireNonNakedContribution = false,
+            PuzzleClueSymmetryMode clueSymmetryMode = PuzzleClueSymmetryMode.None,
             IPuzzleGenerationDebugTracer debugTracer = null,
             Func<ISudokuRule, IUnsolveHandler> handlerResolver = null)
         {
@@ -56,6 +63,7 @@ namespace Sudoku.Solver.Unsolver
             _maxIterations = maxIterations;
             _minimumOtherRulePasses = Math.Max(0, minimumOtherRulePasses);
             _requireNonNakedContribution = requireNonNakedContribution;
+            _clueSymmetryMode = clueSymmetryMode;
             _debugTracer = debugTracer;
             _handlerResolver = handlerResolver ?? UnsolveHandlerRegistry.GetHandler;
         }
@@ -201,7 +209,12 @@ namespace Sudoku.Solver.Unsolver
                     continue;
                 }
 
-                RemoveRedundantCluesSinglePass(board, rulesList, random);
+                if (_clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180)
+                {
+                    EnforceRotationalSymmetryByRestoringMirrors(board, solvedBoard);
+                }
+
+                RemoveRedundantCluesSinglePass(board, rulesList, random, _clueSymmetryMode);
                 _debugTracer?.RecordSnapshot(
                     board,
                     "Final clue sweep",
@@ -344,7 +357,11 @@ namespace Sudoku.Solver.Unsolver
          * For each currently filled cell (row-major), remove it temporarily and keep
          * the removal only if the puzzle remains solvable.
          */
-        private static void RemoveRedundantCluesSinglePass(Board board, IReadOnlyList<ISudokuRule> enabledRules, Random random)
+        private static void RemoveRedundantCluesSinglePass(
+            Board board,
+            IReadOnlyList<ISudokuRule> enabledRules,
+            Random random,
+            PuzzleClueSymmetryMode clueSymmetryMode)
         {
             var enabledRegistry = BuildEnabledValuePlacementRegistry(enabledRules);
             if (enabledRegistry.Rules.Count == 0)
@@ -367,6 +384,17 @@ namespace Sudoku.Solver.Unsolver
             {
                 int row = indices[i] / board.Size;
                 int column = indices[i] % board.Size;
+
+                if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180)
+                {
+                    if (!TryRemoveRotationalPair(board, enabledEngine, row, column))
+                    {
+                        continue;
+                    }
+
+                    continue;
+                }
+
                 var cell = board.Cells[row, column];
                 if (!cell.Value.HasValue)
                 {
@@ -379,6 +407,81 @@ namespace Sudoku.Solver.Unsolver
                 if (!IsSolvableByEnabledRules(board, enabledEngine) || !IsUniquelySolvable(board))
                 {
                     cell.Value = removedValue;
+                }
+            }
+        }
+
+        private static bool TryRemoveRotationalPair(Board board, SolverEngine enabledEngine, int row, int column)
+        {
+            int size = board.Size;
+            int pairRow = (size - 1) - row;
+            int pairColumn = (size - 1) - column;
+
+            var primary = board.Cells[row, column];
+            var mirrored = board.Cells[pairRow, pairColumn];
+            if (!primary.Value.HasValue)
+            {
+                return false;
+            }
+
+            bool sameCell = row == pairRow && column == pairColumn;
+            if (!sameCell && !mirrored.Value.HasValue)
+            {
+                return false;
+            }
+
+            int primaryValue = primary.Value.Value;
+            primary.Value = null;
+
+            int mirroredValue = 0;
+            if (!sameCell)
+            {
+                mirroredValue = mirrored.Value.Value;
+                mirrored.Value = null;
+            }
+
+            if (!IsSolvableByEnabledRules(board, enabledEngine) || !IsUniquelySolvable(board))
+            {
+                primary.Value = primaryValue;
+                if (!sameCell)
+                {
+                    mirrored.Value = mirroredValue;
+                }
+
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void EnforceRotationalSymmetryByRestoringMirrors(Board board, Board solvedReferenceBoard)
+        {
+            int size = board.Size;
+            for (int row = 0; row < size; row++)
+            {
+                for (int column = 0; column < size; column++)
+                {
+                    int pairRow = (size - 1) - row;
+                    int pairColumn = (size - 1) - column;
+
+                    var current = board.Cells[row, column];
+                    var mirrored = board.Cells[pairRow, pairColumn];
+                    if (current.Value.HasValue == mirrored.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (!current.Value.HasValue)
+                    {
+                        current.Value = solvedReferenceBoard.Cells[row, column].Value;
+                        current.IsGiven = false;
+                    }
+
+                    if (!mirrored.Value.HasValue)
+                    {
+                        mirrored.Value = solvedReferenceBoard.Cells[pairRow, pairColumn].Value;
+                        mirrored.IsGiven = false;
+                    }
                 }
             }
         }

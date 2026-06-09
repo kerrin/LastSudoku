@@ -24,7 +24,8 @@ namespace Sudoku.UI
         private enum ConfigTabId
         {
             Rules = 0,
-            Assistance = 1
+            Assistance = 1,
+            Generation = 2,
         }
 
         private static ConfigPanelManager _instance;
@@ -204,6 +205,8 @@ namespace Sudoku.UI
             DrawTabButton(ConfigTabId.Rules, "Rules", 84f);
             GUILayout.Space(6f);
             DrawTabButton(ConfigTabId.Assistance, "Assistance", 108f);
+            GUILayout.Space(6f);
+            DrawTabButton(ConfigTabId.Generation, "Generation", 108f);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -246,6 +249,12 @@ namespace Sudoku.UI
             if (_activeTab == ConfigTabId.Assistance)
             {
                 DrawAssistanceOptions();
+                return;
+            }
+
+            if (_activeTab == ConfigTabId.Generation)
+            {
+                DrawGenerationOptions();
                 return;
             }
 
@@ -342,6 +351,33 @@ namespace Sudoku.UI
             }
 
             // Reserve visual room for upcoming Assistance options.
+            GUILayout.Space(16f);
+            GUILayout.EndVertical();
+
+            GUILayout.FlexibleSpace();
+        }
+
+        /**
+         * Draw generation settings that affect random puzzle construction.
+         */
+        private void DrawGenerationOptions()
+        {
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical(_assistanceSectionStyle);
+            GUILayout.Space(4f);
+
+            bool useRotationalSymmetry = GUILayout.Toggle(
+                GenerationSettings.UseRotationalSymmetry,
+                "Use Rotational Symmetry",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            if (useRotationalSymmetry != GenerationSettings.UseRotationalSymmetry)
+            {
+                GenerationSettings.UseRotationalSymmetry = useRotationalSymmetry;
+            }
+
             GUILayout.Space(16f);
             GUILayout.EndVertical();
 

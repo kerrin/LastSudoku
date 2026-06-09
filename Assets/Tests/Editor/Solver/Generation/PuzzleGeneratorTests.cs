@@ -263,6 +263,33 @@ namespace Sudoku.Tests.Unsolver
         }
 
         [Test]
+        public void Generate_WithRotationalSymmetryMode_ProducesRotationallySymmetricGivens()
+        {
+            var solved = MakeFullySolvedBoard();
+            var generator = new PuzzleGenerator(
+                maxRetries: 50,
+                requireNonNakedContribution: false,
+                clueSymmetryMode: PuzzleClueSymmetryMode.Rotational180);
+
+            var puzzle = generator.Generate(solved, MinimalRules(), new Random(84));
+            int size = puzzle.Size;
+
+            for (int row = 0; row < size; row++)
+            {
+                for (int column = 0; column < size; column++)
+                {
+                    int pairRow = (size - 1) - row;
+                    int pairColumn = (size - 1) - column;
+
+                    Assert.AreEqual(
+                        puzzle.Cells[row, column].IsGiven,
+                        puzzle.Cells[pairRow, pairColumn].IsGiven,
+                        $"Given symmetry mismatch between [{row},{column}] and [{pairRow},{pairColumn}].");
+                }
+            }
+        }
+
+        [Test]
         public void Generate_WithCandidateOnlyRules_DoesNotThrow()
         {
             // Candidate-only rules should be silently skipped via NotSupported.
