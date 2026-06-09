@@ -5,7 +5,7 @@ namespace Sudoku.Solver.Unsolver
     /**
      * Maps solver rules to their corresponding <see cref="IUnsolveHandler"/> implementations.
      *
-    * Supported rules (Naked Single, Hidden Single, Hidden Pair, Hidden Triple, Right Angle) get dedicated handlers.
+    * Supported rules (Naked Single, Hidden Single, Hidden Pair, Hidden Triple, Pointing Pair, Right Angle) get dedicated handlers.
      * All other rules receive a <see cref="CandidateOnlyUnsolveHandler"/> stub that
      * returns <see cref="UnsolveResult.NotSupported"/> without mutating the board.
      *
@@ -32,6 +32,8 @@ namespace Sudoku.Solver.Unsolver
                     return new HiddenPairUnsolveHandler();
                 case nameof(HiddenTripleRule):
                     return new HiddenTripleUnsolveHandler();
+                case nameof(PointingPairRule):
+                    return new PointingPairUnsolveHandler();
                 case nameof(RightAngleRule):
                     return new RightAngleUnsolveHandler();
                 default:
