@@ -661,7 +661,7 @@ namespace Sudoku.UI.Panels
             // Wire up Scrollbar component.
             var scrollbar = scrollbarGO.GetComponent<Scrollbar>();
             scrollbar.handleRect = handleGO.GetComponent<RectTransform>();
-            scrollbar.direction = Scrollbar.Direction.TopToBottom;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
 
             return scrollbar;
         }

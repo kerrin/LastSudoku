@@ -35,7 +35,7 @@ namespace Sudoku.Tests.Editor
         {
             var registry = new RuleRegistry();
             registry.RegisterAdvanced();
-            Assert.AreEqual(2, registry.Rules.Count);
+            Assert.AreEqual(3, registry.Rules.Count);
         }
 
         /** When the board has no candidates or values, <c>ApplyAll</c> should return an empty result set. */

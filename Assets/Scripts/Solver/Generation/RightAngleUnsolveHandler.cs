@@ -403,7 +403,7 @@ namespace Sudoku.Solver.Unsolver
             found = default;
             reason = string.Empty;
 
-            if (cell.Value.HasValue || cell.IsGiven)
+            if (cell.Value.HasValue)
             {
                 reason = "occupied/given";
                 return false;

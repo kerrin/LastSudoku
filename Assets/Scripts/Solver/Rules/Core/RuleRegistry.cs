@@ -96,10 +96,11 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Register advanced rules. Currently none are enabled.
+         * Register advanced rules.
          */
         public void RegisterAdvanced()
         {
+            Register(new HiddenPairRule());
             Register(new XWingRule());
             Register(new YWingRule());
         }

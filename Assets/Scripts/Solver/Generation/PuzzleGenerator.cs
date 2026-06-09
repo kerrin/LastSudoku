@@ -137,6 +137,10 @@ namespace Sudoku.Solver.Unsolver
                 if (ShouldSeedCenterBoxRemoval(rulesList))
                 {
                     int seededRemovalCount = RemoveCenterBoxValues(board);
+                    if (seededRemovalCount > 0)
+                    {
+                        RecomputeCandidates(board);
+                    }
                     for (int i = 0; i < seededRemovalCount; i++)
                     {
                         appliedRuleSequence.Add("Center Box Seed Removal");
@@ -907,6 +911,50 @@ namespace Sudoku.Solver.Unsolver
             }
 
             return removedCount;
+        }
+
+        private static void RecomputeCandidates(Board board)
+        {
+            if (board == null || board.Cells == null)
+            {
+                return;
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    cell.Candidates.Clear();
+                    if (!cell.Value.HasValue)
+                    {
+                        for (int value = 1; value <= board.Size; value++)
+                        {
+                            cell.Candidates.Add(value);
+                        }
+                    }
+                }
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    foreach (var peer in board.GetPeers(cell))
+                    {
+                        if (peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
+                }
+            }
         }
 
         // ── Utility ────────────────────────────────────────────────────────────────

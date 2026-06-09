@@ -49,7 +49,7 @@ namespace Sudoku.Solver.Unsolver
                 for (int c = 0; c < board.Size; c++)
                 {
                     var cell = board.Cells[r, c];
-                    if (!cell.Value.HasValue || cell.IsGiven) continue;
+                    if (!cell.Value.HasValue) continue;
 
                     int value = cell.Value.Value;
 

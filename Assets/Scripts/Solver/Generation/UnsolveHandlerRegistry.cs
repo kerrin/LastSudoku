@@ -5,12 +5,12 @@ namespace Sudoku.Solver.Unsolver
     /**
      * Maps solver rules to their corresponding <see cref="IUnsolveHandler"/> implementations.
      *
-    * Value-placing rules (Naked Single, Hidden Single, Right Angle) get dedicated handlers.
+    * Supported rules (Naked Single, Hidden Single, Hidden Pair, Right Angle) get dedicated handlers.
      * All other rules receive a <see cref="CandidateOnlyUnsolveHandler"/> stub that
      * returns <see cref="UnsolveResult.NotSupported"/> without mutating the board.
      *
      * The mapping is keyed by rule type name to stay decoupled from rule internals.
-     * New value-placing rules should be registered here when they are added.
+    * New rules with dedicated unsolve behavior should be registered here when added.
      */
     public static class UnsolveHandlerRegistry
     {
@@ -28,6 +28,8 @@ namespace Sudoku.Solver.Unsolver
                     return new NakedSingleUnsolveHandler();
                 case nameof(HiddenSingleRule):
                     return new HiddenSingleUnsolveHandler();
+                case nameof(HiddenPairRule):
+                    return new HiddenPairUnsolveHandler();
                 case nameof(RightAngleRule):
                     return new RightAngleUnsolveHandler();
                 default:

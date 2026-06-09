@@ -72,18 +72,8 @@ public class RuleTogglePanel : MonoBehaviour
 
         SetupScrollRect(togglesParent);
 
-        // Remove designer-time objects under any Viewport child (keep Content)
-        var viewport = FindChildRecursive(panelRootGO.transform, "Viewport");
-        if (viewport != null)
-        {
-            for (int i = viewport.childCount - 1; i >= 0; --i)
-            {
-                var child = viewport.GetChild(i);
-                if (child.name == "Content") continue;
-                if (Application.isPlaying) Destroy(child.gameObject);
-                else DestroyImmediate(child.gameObject);
-            }
-        }
+        // Keep designer-authored viewport children intact (e.g. VerticalScrollbar).
+        // Toggle rows are cleaned by CleanupExtraToggles() against registry names.
 
         _togglesParent = togglesParent;
         // Subscribe so this panel stays in sync when another UI (e.g. ConfigPanel)
@@ -95,9 +85,11 @@ public class RuleTogglePanel : MonoBehaviour
         // Reorder children to match registry insertion order so both panels
         // display rules in the same sequence regardless of designer placement.
         ReorderTogglesToRegistryOrder(togglesParent);
+        RefreshScrollLayout(togglesParent);
 
         // Allow layout to settle then finalize horizontal sizing
         yield return null;
+        RefreshScrollLayout(togglesParent);
         FinalizeLayout(panelRootGO, panelRootRT, rectWidth);
         AlignWithSidePanel(panelRootGO, panelRootRT);
     }
@@ -126,14 +118,13 @@ public class RuleTogglePanel : MonoBehaviour
         var vpImg = viewportGO.GetComponent<Image>();
         if (vpImg == null)
         {
-            Debug.LogWarning("RuleTogglePanel: Expected Image on ViewPort.");
-            return;
+            vpImg = viewportGO.AddComponent<Image>();
+            vpImg.color = new Color(0f, 0f, 0f, 0.01f);
         }
         vpImg.raycastTarget = false;
-        if (viewportGO.GetComponent<RectMask2D>() == null)
+        if (viewportGO.GetComponent<RectMask2D>() == null && viewportGO.GetComponent<Mask>() == null)
         {
-            Debug.LogWarning("RuleTogglePanel: Expected RectMask2D on ViewPort.");
-            return;
+            viewportGO.AddComponent<RectMask2D>();
         }
 
         // Ensure both rects fill their containers.
@@ -143,9 +134,10 @@ public class RuleTogglePanel : MonoBehaviour
         var scrollLE = scrollGO.GetComponent<LayoutElement>();
         if (scrollLE == null)
         {
-            Debug.LogWarning("RuleTogglePanel: Expected LayoutElement on ScrollArea.");
-            return;
+            scrollLE = scrollGO.AddComponent<LayoutElement>();
         }
+        scrollLE.flexibleHeight = 1f;
+        scrollLE.minHeight = 0f;
 
         var scrollRT = scrollGO.GetComponent<RectTransform>();
         if (scrollRT == null)
@@ -165,11 +157,11 @@ public class RuleTogglePanel : MonoBehaviour
         var scrollRect = scrollGO.GetComponent<ScrollRect>();
         if (scrollRect == null)
         {
-            Debug.LogWarning("RuleTogglePanel: Expected ScrollRect on ScrollArea.");
-            return;
+            scrollRect = scrollGO.AddComponent<ScrollRect>();
         }
 
         scrollRect.horizontal        = false;
+        scrollRect.vertical          = true;
         scrollRect.scrollSensitivity = 30f;
         scrollRect.content           = contentTransform.GetComponent<RectTransform>();
         scrollRect.viewport          = vpRT;
@@ -184,12 +176,142 @@ public class RuleTogglePanel : MonoBehaviour
             return;
         }
 
-        var scrollbarComp = scrollGO.transform.Find("VerticalScrollbar")?.GetComponent<Scrollbar>();
+        contentRT.anchorMin = new Vector2(0f, 1f);
+        contentRT.anchorMax = new Vector2(1f, 1f);
+        contentRT.pivot = new Vector2(0.5f, 1f);
+        contentRT.anchoredPosition = Vector2.zero;
+        contentRT.offsetMin = Vector2.zero;
+        contentRT.offsetMax = Vector2.zero;
+
+        var contentVlg = contentTransform.GetComponent<VerticalLayoutGroup>();
+        if (contentVlg == null)
+        {
+            contentVlg = contentTransform.gameObject.AddComponent<VerticalLayoutGroup>();
+        }
+        contentVlg.childControlWidth = true;
+        contentVlg.childControlHeight = true;
+        contentVlg.childForceExpandWidth = true;
+        contentVlg.childForceExpandHeight = false;
+        contentVlg.childAlignment = TextAnchor.UpperLeft;
+        contentVlg.spacing = 4f;
+        contentVlg.padding = new RectOffset(4, 4, 4, 4);
+
+        // Content must report preferred height for ScrollRect overflow detection.
+        var fitter = contentRT.GetComponent<ContentSizeFitter>();
+        if (fitter == null)
+        {
+            fitter = contentTransform.gameObject.AddComponent<ContentSizeFitter>();
+        }
+        fitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var scrollbarComp = EnsureVerticalScrollbar(scrollRT);
         if (scrollbarComp != null)
         {
             scrollRect.verticalScrollbar = scrollbarComp;
-            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHideAndExpandViewport;
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.Permanent;
+            scrollRect.verticalScrollbarSpacing = 0f;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollbarComp.gameObject.SetActive(true);
+            scrollbarComp.direction = Scrollbar.Direction.BottomToTop;
+
+            // Reserve visual width for the scrollbar so list items don't render underneath it.
+            var max = vpRT.offsetMax;
+            if (max.x > -14f)
+            {
+                vpRT.offsetMax = new Vector2(-14f, max.y);
+            }
         }
+
+        Canvas.ForceUpdateCanvases();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(contentRT);
+    }
+
+    /**
+     * Rebuilds the rule list layout after the toggle rows are created so the
+     * scroll view has an accurate content height before the panel is finalized.
+     *
+     * @param contentTransform The Content RectTransform returned by EnsureTogglesContainer.
+     */
+    private void RefreshScrollLayout(Transform contentTransform)
+    {
+        if (contentTransform == null)
+        {
+            return;
+        }
+
+        var contentRT = contentTransform.GetComponent<RectTransform>();
+        if (contentRT == null)
+        {
+            return;
+        }
+
+        LayoutRebuilder.ForceRebuildLayoutImmediate(contentRT);
+        Canvas.ForceUpdateCanvases();
+        LayoutRebuilder.ForceRebuildLayoutImmediate(contentRT);
+    }
+
+    private Scrollbar EnsureVerticalScrollbar(RectTransform scrollRT)
+    {
+        if (scrollRT == null)
+        {
+            return null;
+        }
+
+        var scrollbar = scrollRT.transform.Find("VerticalScrollbar")?.GetComponent<Scrollbar>();
+        if (scrollbar == null)
+        {
+            var anyScrollbar = FindChildRecursive(scrollRT.transform, "VerticalScrollbar")
+                ?? FindChildRecursive(scrollRT.transform, "Scrollbar");
+            if (anyScrollbar != null)
+            {
+                scrollbar = anyScrollbar.GetComponent<Scrollbar>();
+            }
+        }
+
+        if (scrollbar != null)
+        {
+            return scrollbar;
+        }
+
+        var scrollbarGO = new GameObject("VerticalScrollbar", typeof(RectTransform), typeof(Image), typeof(Scrollbar));
+        scrollbarGO.transform.SetParent(scrollRT, false);
+
+        var scrollbarRT = scrollbarGO.GetComponent<RectTransform>();
+        scrollbarRT.anchorMin = new Vector2(1f, 0f);
+        scrollbarRT.anchorMax = new Vector2(1f, 1f);
+        scrollbarRT.pivot = new Vector2(1f, 0.5f);
+        scrollbarRT.offsetMin = new Vector2(-12f, 0f);
+        scrollbarRT.offsetMax = new Vector2(0f, 0f);
+
+        var trackImage = scrollbarGO.GetComponent<Image>();
+        trackImage.color = new Color(0.35f, 0.35f, 0.35f, 1f);
+
+        var slidingAreaGO = new GameObject("SlidingArea", typeof(RectTransform));
+        slidingAreaGO.transform.SetParent(scrollbarGO.transform, false);
+        var slidingAreaRT = slidingAreaGO.GetComponent<RectTransform>();
+        slidingAreaRT.anchorMin = Vector2.zero;
+        slidingAreaRT.anchorMax = Vector2.one;
+        slidingAreaRT.offsetMin = new Vector2(0f, 7f);
+        slidingAreaRT.offsetMax = new Vector2(0f, -7f);
+
+        var handleGO = new GameObject("Handle", typeof(RectTransform), typeof(Image));
+        handleGO.transform.SetParent(slidingAreaGO.transform, false);
+        var handleRT = handleGO.GetComponent<RectTransform>();
+        handleRT.anchorMin = new Vector2(0f, 0f);
+        handleRT.anchorMax = new Vector2(1f, 1f);
+        handleRT.offsetMin = Vector2.zero;
+        handleRT.offsetMax = Vector2.zero;
+
+        var handleImage = handleGO.GetComponent<Image>();
+        handleImage.color = new Color(0.60f, 0.60f, 0.60f, 1f);
+
+        scrollbar = scrollbarGO.GetComponent<Scrollbar>();
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.handleRect = handleRT;
+
+        return scrollbar;
     }
 
     private void OnDestroy()
@@ -615,22 +737,22 @@ public class RuleTogglePanel : MonoBehaviour
         Font f = null;
         try
         {
-            f = Resources.GetBuiltinResource<Font>(preferred);
+            f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         }
         catch (System.Exception ex)
         {
-            Debug.LogWarning($"GetBuiltinResource('{preferred}') failed: {ex.Message}. Trying LegacyRuntime.ttf");
+            Debug.LogWarning($"GetBuiltinResource('LegacyRuntime.ttf') failed: {ex.Message}. Trying OS font fallback.");
         }
 
         if (f == null)
         {
             try
             {
-                f = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                f = Resources.GetBuiltinResource<Font>(preferred);
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"GetBuiltinResource('LegacyRuntime.ttf') failed: {ex.Message}");
+                Debug.LogWarning($"GetBuiltinResource('{preferred}') failed: {ex.Message}. Trying OS font fallback.");
             }
         }
 

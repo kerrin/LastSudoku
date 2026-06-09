@@ -215,7 +215,7 @@ namespace Sudoku.UI
             GUILayout.Box("", GUILayout.ExpandWidth(true), GUILayout.Height(1f));
             GUI.color = prev;
 
-            // ── Scrollable rule toggles ───────────────────────────────────────
+            // ── Scrollable tab content ───────────────────────────────────────
             _scrollPos = GUILayout.BeginScrollView(_scrollPos, _scrollBgStyle, GUILayout.ExpandHeight(true));
             DrawActiveTabContent();
             GUILayout.EndScrollView();
@@ -288,29 +288,18 @@ namespace Sudoku.UI
                 string typeName    = rule.GetType().Name;
                 string displayName = SplitPascalCase(rule.Name ?? typeName);
 
-                // Subtle alternating row tint drawn behind the toggle.
+                var rowRect = GUILayoutUtility.GetRect(0f, RowH, GUILayout.ExpandWidth(true));
                 if (i % 2 == 0)
                 {
                     Color prev = GUI.color;
                     GUI.color = new Color(1f, 1f, 1f, 0.05f);
-                    var rowRect = GUILayoutUtility.GetRect(0f, RowH, GUILayout.ExpandWidth(true));
                     GUI.DrawTexture(rowRect, Texture2D.whiteTexture);
                     GUI.color = prev;
-
-                    // Draw the toggle control on top of the tinted background.
-                    var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
-                    bool newEnabledA = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
-                    ApplyToggleChange(typeName, enabled, newEnabledA);
-                    continue;
                 }
 
-                GUILayout.BeginHorizontal(GUILayout.Height(RowH));
-                GUILayout.Space(10f);
-                bool newEnabled = GUILayout.Toggle(enabled, "  " + displayName, _toggleStyle, GUILayout.ExpandWidth(true));
-                GUILayout.Space(8f);
-                GUILayout.EndHorizontal();
-
-                ApplyToggleChange(typeName, enabled, newEnabled);
+                var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
+                bool newEnabled = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
+                ApplyToggleChange(typeName, oldEnabled: enabled, newEnabled);
             }
 
             GUILayout.Space(6f);
