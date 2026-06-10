@@ -17,6 +17,16 @@ namespace Sudoku.UI.Panels
  */
 public class RuleTogglePanel : MonoBehaviour
 {
+    private static readonly Difficulty[] DifficultyDisplayOrder =
+    {
+        Difficulty.Easy,
+        Difficulty.Medium,
+        Difficulty.Hard,
+        Difficulty.Expert,
+        Difficulty.Master,
+        Difficulty.NotImplemented
+    };
+
     public SolverRunner Runner;
  
     [Tooltip("Optional: maximum height before the panel becomes scrollable")]
@@ -428,7 +438,7 @@ public class RuleTogglePanel : MonoBehaviour
         var rules = new List<(ISudokuRule rule, bool enabled)>();
         try
         {
-            rules = _registry.GetRulesWithStatus();
+            rules = GetRulesOrderedByDifficultyThenName(_registry.GetRulesWithStatus());
         }
         catch (System.Exception ex)
         {
@@ -542,7 +552,7 @@ public class RuleTogglePanel : MonoBehaviour
     {
         if (_registry == null || togglesParent == null) return;
 
-        var rules = _registry.GetRulesWithStatus();
+        var rules = GetRulesOrderedByDifficultyThenName(_registry.GetRulesWithStatus());
         for (int i = 0; i < rules.Count; i++)
         {
             string expectedName = rules[i].rule.GetType().Name + "_Toggle";
@@ -550,6 +560,48 @@ public class RuleTogglePanel : MonoBehaviour
             if (child != null)
                 child.SetSiblingIndex(i);
         }
+    }
+
+    /**
+     * Sort rules by difficulty group, then alphabetically by display name.
+     *
+     * @param rules Source rule entries from the registry.
+     * @returns Ordered rule entries matching config panel ordering.
+     */
+    private List<(ISudokuRule rule, bool enabled)> GetRulesOrderedByDifficultyThenName(List<(ISudokuRule rule, bool enabled)> rules)
+    {
+        var grouped = new Dictionary<Difficulty, List<(ISudokuRule rule, bool enabled)>>();
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var entry = rules[i];
+            var difficulty = entry.rule.Difficulty;
+            if (!grouped.TryGetValue(difficulty, out var list))
+            {
+                list = new List<(ISudokuRule rule, bool enabled)>();
+                grouped[difficulty] = list;
+            }
+
+            list.Add(entry);
+        }
+
+        var ordered = new List<(ISudokuRule rule, bool enabled)>();
+        for (int i = 0; i < DifficultyDisplayOrder.Length; i++)
+        {
+            var difficulty = DifficultyDisplayOrder[i];
+            if (!grouped.TryGetValue(difficulty, out var list) || list.Count == 0)
+            {
+                continue;
+            }
+
+            list.Sort((a, b) => string.Compare(
+                SplitPascalCase(a.rule.Name ?? a.rule.GetType().Name),
+                SplitPascalCase(b.rule.Name ?? b.rule.GetType().Name),
+                System.StringComparison.OrdinalIgnoreCase));
+
+            ordered.AddRange(list);
+        }
+
+        return ordered;
     }
 
     private void FinalizeLayout(GameObject panelRootGO, RectTransform panelRootRT, float rectWidth)

@@ -49,6 +49,7 @@ namespace Sudoku.UI.Controllers
         private PuzzleSolveTimer _solveTimer;
         private Text _timerLabelText;
         private int _lastTimerBoardFingerprint = int.MinValue;
+        private bool _runtimeConfigRulesApplied;
 
         /**
          * Prepare runtime references and UI containers.
@@ -94,6 +95,16 @@ namespace Sudoku.UI.Controllers
             _runner = Object.FindAnyObjectByType<SolverRunner>();
             _boardVisualizer = Object.FindAnyObjectByType<BoardVisualizer>();
             _boardSidePanel = Object.FindAnyObjectByType<BoardSidePanel>();
+
+            if (_runner != null && !_runtimeConfigRulesApplied)
+            {
+                _runner.EnsureEngine();
+                if (_runner.Registry != null)
+                {
+                    RuntimeConfigService.ApplySavedRuleStates(_runner.Registry, _runner);
+                    _runtimeConfigRulesApplied = true;
+                }
+            }
         }
 
         /**

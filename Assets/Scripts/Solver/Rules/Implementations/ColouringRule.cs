@@ -12,10 +12,10 @@ namespace Sudoku.Solver.Rules
     {
         public string Name => "Colouring";
 
-        public Difficulty Difficulty => Difficulty.NotImplemented;
+        public Difficulty Difficulty => Difficulty.Expert;
         public bool CanApply(Board board)
         {
-            // Not to be implemented, only used in the tutorials as an addition method for solving extremely difficult puzzles.
+            // Not implemented
             return false;
         }
 

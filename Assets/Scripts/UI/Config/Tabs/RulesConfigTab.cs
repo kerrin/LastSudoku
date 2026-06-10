@@ -18,6 +18,16 @@ namespace Sudoku.UI.Config
      */
     public class RulesConfigTab : ConfigTab
     {
+        private static readonly Difficulty[] DifficultyDisplayOrder =
+        {
+            Difficulty.Easy,
+            Difficulty.Medium,
+            Difficulty.Hard,
+            Difficulty.Expert,
+            Difficulty.Master,
+            Difficulty.NotImplemented
+        };
+
         private SolverRunner _runner;
         private RuleRegistry _registry;
         private ApplyRulePanel _applyRulePanel;
@@ -87,10 +97,38 @@ namespace Sudoku.UI.Config
                 return;
             }
 
-            // Create a toggle for each rule
+            var groupedRules = new Dictionary<Difficulty, List<(ISudokuRule rule, bool enabled)>>();
             foreach (var (rule, enabled) in rules)
             {
-                CreateRuleToggle(contentRoot, rule, enabled);
+                var difficulty = rule.Difficulty;
+                if (!groupedRules.TryGetValue(difficulty, out var group))
+                {
+                    group = new List<(ISudokuRule rule, bool enabled)>();
+                    groupedRules[difficulty] = group;
+                }
+
+                group.Add((rule, enabled));
+            }
+
+            for (int i = 0; i < DifficultyDisplayOrder.Length; i++)
+            {
+                var difficulty = DifficultyDisplayOrder[i];
+                if (!groupedRules.TryGetValue(difficulty, out var group) || group.Count == 0)
+                {
+                    continue;
+                }
+
+                group.Sort((a, b) => string.Compare(
+                    GetRuleDisplayName(a.rule),
+                    GetRuleDisplayName(b.rule),
+                    System.StringComparison.OrdinalIgnoreCase));
+
+                CreateDifficultyHeader(contentRoot, difficulty);
+                for (int j = 0; j < group.Count; j++)
+                {
+                    var (rule, enabled) = group[j];
+                    CreateRuleToggle(contentRoot, rule, enabled);
+                }
             }
 
             // Subscribe so this panel stays in sync when puzzle-mode toggles change the registry.
@@ -288,6 +326,53 @@ namespace Sudoku.UI.Config
                 toggle.graphic.gameObject.SetActive(true);
                 toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
             }
+        }
+
+        /**
+         * Create a difficulty section header above grouped rule toggles.
+         *
+         * @param parent Parent transform to add the header to.
+         * @param difficulty Difficulty group label.
+         */
+        private void CreateDifficultyHeader(Transform parent, Difficulty difficulty)
+        {
+            var headerGO = new GameObject($"{difficulty}_Header", typeof(RectTransform));
+            headerGO.transform.SetParent(parent, false);
+
+            var headerText = headerGO.AddComponent<Text>();
+            headerText.text = SplitPascalCase(difficulty.ToString());
+            headerText.font = GetSafeBuiltinFont("Arial.ttf");
+            headerText.fontSize = 14;
+            headerText.fontStyle = FontStyle.Bold;
+            headerText.color = new Color(0.82f, 0.84f, 0.92f, 1f);
+            headerText.alignment = TextAnchor.MiddleLeft;
+            headerText.raycastTarget = false;
+
+            var headerLE = headerGO.AddComponent<LayoutElement>();
+            headerLE.preferredHeight = 24f;
+            headerLE.flexibleWidth = 1f;
+        }
+
+        /**
+         * Build a stable display name for a rule.
+         *
+         * @param rule Rule whose display name is needed.
+         * @returns Human readable rule name.
+         */
+        private string GetRuleDisplayName(ISudokuRule rule)
+        {
+            if (rule == null)
+            {
+                return string.Empty;
+            }
+
+            var name = SplitPascalCase(rule.Name ?? string.Empty);
+            if (string.IsNullOrEmpty(name))
+            {
+                name = rule.GetType().Name;
+            }
+
+            return name;
         }
 
         /**

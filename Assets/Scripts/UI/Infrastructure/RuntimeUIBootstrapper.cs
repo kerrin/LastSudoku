@@ -1,6 +1,7 @@
 using UnityEngine;
 using Sudoku.UI.Panels;
 using Sudoku.UI.Controllers;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Infrastructure
 {
@@ -11,6 +12,9 @@ namespace Sudoku.UI.Infrastructure
         {
             // Don't run in editor-only contexts where play mode isn't active
             if (!Application.isPlaying) return;
+
+            // Load persisted config first so all runtime systems start from saved values.
+            RuntimeConfigService.EnsureLoaded();
 
             // Ensure ChangeLog controls host exists.
             var changeLogExisting = Object.FindAnyObjectByType<ChangeLogRuntimeControls>();

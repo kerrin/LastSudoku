@@ -290,6 +290,19 @@ public class BoardSidePanel : MonoBehaviour
             }
         }
 
+        // Keep Toggle Rules visible in create mode, but when in solve mode and
+        // "Hide Apply Rules" is enabled, hide Toggle Rules as well.
+        bool hideToggleRules = !isCreation && hideApplyRules;
+        var togglePanels = _panelRect.GetComponentsInChildren<RuleTogglePanel>(true);
+        for (int i = 0; i < togglePanels.Length; i++)
+        {
+            var p = togglePanels[i];
+            if (p != null)
+            {
+                p.gameObject.SetActive(!hideToggleRules);
+            }
+        }
+
         var statusPanels = _panelRect.GetComponentsInChildren<CreateModeStatusPanel>(true);
         for (int i = 0; i < statusPanels.Length; i++)
         {

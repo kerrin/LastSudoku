@@ -57,6 +57,15 @@ namespace Sudoku.UI
         private const float HeaderH = 50f;
         private const float TabBarH = 38f;
         private const float RowH    = 42f;
+        private static readonly Difficulty[] DifficultyDisplayOrder =
+        {
+            Difficulty.Easy,
+            Difficulty.Medium,
+            Difficulty.Hard,
+            Difficulty.Expert,
+            Difficulty.Master,
+            Difficulty.NotImplemented
+        };
 
         // ─── Lifecycle ───────────────────────────────────────────────────────
 
@@ -80,7 +89,10 @@ namespace Sudoku.UI
         public void OpenConfigPanel()
         {
             if (_isOpen) return;
+
+            RuntimeConfigService.EnsureLoaded();
             ResolveReferences();
+            RuntimeConfigService.ApplySavedRuleStates(_registry, _runner);
             SetUnderlyingUiInputEnabled(false);
             _isOpen = true;
         }
@@ -281,25 +293,58 @@ namespace Sudoku.UI
                 return;
             }
 
-            GUILayout.Space(4f);
+            var groupedRules = new System.Collections.Generic.Dictionary<Difficulty, System.Collections.Generic.List<(ISudokuRule rule, bool enabled)>>();
             for (int i = 0; i < rules.Count; i++)
             {
-                var (rule, enabled) = rules[i];
-                string typeName    = rule.GetType().Name;
-                string displayName = SplitPascalCase(rule.Name ?? typeName);
-
-                var rowRect = GUILayoutUtility.GetRect(0f, RowH, GUILayout.ExpandWidth(true));
-                if (i % 2 == 0)
+                var entry = rules[i];
+                var difficulty = entry.rule.Difficulty;
+                if (!groupedRules.TryGetValue(difficulty, out var list))
                 {
-                    Color prev = GUI.color;
-                    GUI.color = new Color(1f, 1f, 1f, 0.05f);
-                    GUI.DrawTexture(rowRect, Texture2D.whiteTexture);
-                    GUI.color = prev;
+                    list = new System.Collections.Generic.List<(ISudokuRule rule, bool enabled)>();
+                    groupedRules[difficulty] = list;
                 }
 
-                var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
-                bool newEnabled = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
-                ApplyToggleChange(typeName, oldEnabled: enabled, newEnabled);
+                list.Add(entry);
+            }
+
+            GUILayout.Space(4f);
+            int rowIndex = 0;
+            for (int i = 0; i < DifficultyDisplayOrder.Length; i++)
+            {
+                var difficulty = DifficultyDisplayOrder[i];
+                if (!groupedRules.TryGetValue(difficulty, out var list) || list.Count == 0)
+                {
+                    continue;
+                }
+
+                list.Sort((a, b) => string.Compare(
+                    SplitPascalCase(a.rule.Name ?? a.rule.GetType().Name),
+                    SplitPascalCase(b.rule.Name ?? b.rule.GetType().Name),
+                    System.StringComparison.OrdinalIgnoreCase));
+
+                GUILayout.Space(6f);
+                GUILayout.Label("  " + SplitPascalCase(difficulty.ToString()), _ruleNameStyle);
+
+                for (int j = 0; j < list.Count; j++)
+                {
+                    var (rule, enabled) = list[j];
+                    string typeName = rule.GetType().Name;
+                    string displayName = SplitPascalCase(rule.Name ?? typeName);
+
+                    var rowRect = GUILayoutUtility.GetRect(0f, RowH, GUILayout.ExpandWidth(true));
+                    if (rowIndex % 2 == 0)
+                    {
+                        Color prev = GUI.color;
+                        GUI.color = new Color(1f, 1f, 1f, 0.05f);
+                        GUI.DrawTexture(rowRect, Texture2D.whiteTexture);
+                        GUI.color = prev;
+                    }
+
+                    var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
+                    bool newEnabled = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
+                    ApplyToggleChange(typeName, oldEnabled: enabled, newEnabled);
+                    rowIndex++;
+                }
             }
 
             GUILayout.Space(6f);
@@ -325,6 +370,7 @@ namespace Sudoku.UI
             {
                 AssistanceSettings.HideApplyRules = hideApplyRules;
                 RefreshBoardSidePanelVisibility();
+                RuntimeConfigService.SaveCurrent(_registry);
             }
 
             bool autoCandidateOnSetValue = GUILayout.Toggle(
@@ -337,6 +383,7 @@ namespace Sudoku.UI
             if (autoCandidateOnSetValue != AssistanceSettings.AutoCandidateOnSetValue)
             {
                 AssistanceSettings.AutoCandidateOnSetValue = autoCandidateOnSetValue;
+                RuntimeConfigService.SaveCurrent(_registry);
             }
 
             // Reserve visual room for upcoming Assistance options.
@@ -365,6 +412,7 @@ namespace Sudoku.UI
             if (useRotationalSymmetry != GenerationSettings.UseRotationalSymmetry)
             {
                 GenerationSettings.UseRotationalSymmetry = useRotationalSymmetry;
+                RuntimeConfigService.SaveCurrent(_registry);
             }
 
             GUILayout.Space(16f);
@@ -387,6 +435,7 @@ namespace Sudoku.UI
             _runner?.HandleRuleToggleChanged(typeName, newEnabled);
             RefreshApplyRulesPanel();
             RefreshCreateModeStatusPanels();
+            RuntimeConfigService.SaveCurrent(_registry);
         }
 
         // ─── Helpers ─────────────────────────────────────────────────────────
