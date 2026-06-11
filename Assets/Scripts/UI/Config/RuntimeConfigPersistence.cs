@@ -19,6 +19,7 @@ namespace Sudoku.UI.Config
         public int SchemaVersion = 1;
         public AssistanceConfigData Assistance = new AssistanceConfigData();
         public GenerationConfigData Generation = new GenerationConfigData();
+        public ColourConfigData Colours = new ColourConfigData();
         public List<RuleConfigEntry> Rules = new List<RuleConfigEntry>();
     }
 
@@ -33,6 +34,16 @@ namespace Sudoku.UI.Config
     public sealed class GenerationConfigData
     {
         public bool UseRotationalSymmetry = true;
+    }
+
+    [Serializable]
+    public sealed class ColourConfigData
+    {
+        // Default: green, amber, and red enabled; blue disabled.
+        public bool GreenEnabled = true;
+        public bool AmberEnabled = true;
+        public bool RedEnabled   = true;
+        public bool BlueEnabled  = false;
     }
 
     [Serializable]
@@ -79,6 +90,14 @@ namespace Sudoku.UI.Config
                 {
                     // Keep rotational symmetry enabled for generated puzzles.
                     UseRotationalSymmetry = true
+                },
+                // Default colours: green, amber, red enabled; blue disabled.
+                Colours = new ColourConfigData
+                {
+                    GreenEnabled = true,
+                    AmberEnabled = true,
+                    RedEnabled   = true,
+                    BlueEnabled  = false
                 },
                 // Default rule policy: enable all Easy rules, disable all non-Easy rules.
                 Rules = CreateBuiltInRuleDefaults()
@@ -235,6 +254,7 @@ namespace Sudoku.UI.Config
 
             config.Assistance ??= new AssistanceConfigData();
             config.Generation ??= new GenerationConfigData();
+            config.Colours ??= new ColourConfigData();
             config.Rules ??= new List<RuleConfigEntry>();
         }
     }
@@ -272,6 +292,12 @@ namespace Sudoku.UI.Config
             _current.Assistance.HideApplyRules = AssistanceSettings.HideApplyRules;
             _current.Assistance.AutoCandidateOnSetValue = AssistanceSettings.AutoCandidateOnSetValue;
             _current.Generation.UseRotationalSymmetry = GenerationSettings.UseRotationalSymmetry;
+
+            _current.Colours ??= new ColourConfigData();
+            _current.Colours.GreenEnabled = ColourSettings.GreenEnabled;
+            _current.Colours.AmberEnabled = ColourSettings.AmberEnabled;
+            _current.Colours.RedEnabled   = ColourSettings.RedEnabled;
+            _current.Colours.BlueEnabled  = ColourSettings.BlueEnabled;
 
             if (registry != null)
             {
@@ -368,6 +394,13 @@ namespace Sudoku.UI.Config
             AssistanceSettings.HideApplyRules = config.Assistance.HideApplyRules;
             AssistanceSettings.AutoCandidateOnSetValue = config.Assistance.AutoCandidateOnSetValue;
             GenerationSettings.UseRotationalSymmetry = config.Generation.UseRotationalSymmetry;
+
+            // Apply colour settings with safe fallback when the section is absent.
+            var colours = config.Colours ?? new ColourConfigData();
+            ColourSettings.GreenEnabled = colours.GreenEnabled;
+            ColourSettings.AmberEnabled = colours.AmberEnabled;
+            ColourSettings.RedEnabled   = colours.RedEnabled;
+            ColourSettings.BlueEnabled  = colours.BlueEnabled;
         }
     }
 }

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using Sudoku.Models;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Menus
 {
@@ -18,7 +20,9 @@ namespace Sudoku.UI.Menus
         Digit7 = 8,
         Digit8 = 9,
         Digit9 = 10,
-        SmartCenter = 11
+        SmartCenter = 11,
+        // Outer colour annotation ring; SelectedColour on RadialMenuSelection holds the specific colour.
+        ColourRing = 20,
     }
 
     public enum RadialDigitActionType
@@ -27,7 +31,12 @@ namespace Sudoku.UI.Menus
         RemoveCandidate = 1,
         AddCandidate = 2,
         UnitCandidateAction = 3,
-        ClearValue = 4
+        ClearValue = 4,
+        ColourClearAll = 5,
+        ColourGreen = 6,
+        ColourAmber = 7,
+        ColourRed = 8,
+        ColourBlue = 9
     }
 
     public class RadialMenuSelection
@@ -36,6 +45,11 @@ namespace Sudoku.UI.Menus
         public int? Digit;
         public RadialDigitActionType DigitActionType = RadialDigitActionType.DefaultDigit;
         public string Label;
+        public HighlightColor SelectedColour;
+        // Which digit the colour action should apply to (null = no valid target).
+        public int? ColourTargetDigit;
+        // True when the colour action should clear every colour on the target digit.
+        public bool ClearAllColours;
     }
 
     [DisallowMultipleComponent]
@@ -73,16 +87,16 @@ namespace Sudoku.UI.Menus
         };
 
         [Tooltip("Diameter of the radial shell in pixels")]
-        public float ShellDiameter = 250f;
+        public float ShellDiameter = 420f;
 
         [Tooltip("Diameter of the center segment")]
-        public float CenterDiameter = 104f;
+        public float CenterDiameter = 134f;
 
         [Tooltip("Diameter of each outer segment")]
-        public float OuterSegmentDiameter = 68f;
+        public float OuterSegmentDiameter = 96f;
 
         [Tooltip("Radius from center to outer segment centers")]
-        public float OuterSegmentRadius = 88f;
+        public float OuterSegmentRadius = 142f;
 
         public Color BackgroundColor = new Color(0.12f, 0.13f, 0.16f, 0.94f);
         public Color SegmentColor = new Color(0.22f, 0.24f, 0.29f, 0.96f);
@@ -98,7 +112,7 @@ namespace Sudoku.UI.Menus
         public Color SubActionDisabledColor = new Color(0.24f, 0.26f, 0.3f, 1f);
         public Color SubActionTextColor = Color.white;
         public Color SubActionHoverTextColor = Color.black;
-        public float SubActionButtonDiameter = 44f;
+        public float SubActionButtonDiameter = 56f;
         // Keep sub-actions near the digit while avoiding overlap that steals main-button clicks.
         public float SubActionOutwardGap = 6f;
         public float SubActionLineSpacing = 2f;
@@ -130,6 +144,10 @@ namespace Sudoku.UI.Menus
         private int? _currentCellValue;
         private bool _isGivenCell;
         private RadialDigitActionType _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
+        // Per-digit colour annotations from the currently open cell (digit → set of colours).
+        private readonly Dictionary<int, HashSet<HighlightColor>> _cellDigitColours
+            = new Dictionary<int, HashSet<HighlightColor>>();
+        private readonly List<RadialDigitActionType> _visibleColourActions = new List<RadialDigitActionType>(5);
 
         private void OnEnable()
         {
@@ -233,7 +251,7 @@ namespace Sudoku.UI.Menus
                 _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
             }
             SelectedSegmentId = HoveredSegmentId;
-            var result = BuildSelection(SelectedSegmentId, _hoveredDigitActionType);
+            RadialMenuSelection result = BuildSelection(SelectedSegmentId, _hoveredDigitActionType);
             SelectionCommitted?.Invoke(result);
             Debug.Log($"[RadialMenuRuntime] Release segment={result.SegmentId} digit={(result.Digit.HasValue ? result.Digit.Value.ToString() : "(none)")} action={result.DigitActionType} label='{result.Label}' pointer={screenPosition}", this);
             Close();
@@ -313,13 +331,35 @@ namespace Sudoku.UI.Menus
 
         public RadialMenuSelection BuildSelection(RadialMenuSegmentId segmentId, RadialDigitActionType actionType = RadialDigitActionType.DefaultDigit)
         {
-            return new RadialMenuSelection
+            if (IsDigitSegment(segmentId) && actionType == RadialDigitActionType.DefaultDigit)
+            {
+                actionType = ResolvePrimaryDigitAction(segmentId);
+            }
+
+            var selection = new RadialMenuSelection
             {
                 SegmentId = segmentId,
                 Digit = SegmentIdToDigit(segmentId),
                 DigitActionType = actionType,
                 Label = GetLabel(segmentId)
             };
+
+            if (IsColourAction(actionType))
+            {
+                selection.ColourTargetDigit = selection.Digit;
+                selection.ClearAllColours = actionType == RadialDigitActionType.ColourClearAll;
+                selection.SelectedColour = actionType switch
+                {
+                    RadialDigitActionType.ColourGreen => HighlightColor.Green,
+                    RadialDigitActionType.ColourAmber => HighlightColor.Amber,
+                    RadialDigitActionType.ColourRed => HighlightColor.Red,
+                    RadialDigitActionType.ColourBlue => HighlightColor.Blue,
+                    _ => HighlightColor.None,
+                };
+                selection.Label = GetColourActionLabel(actionType);
+            }
+
+            return selection;
         }
 
         public void SetCellContext(int? cellValue, IReadOnlyCollection<int> candidates, bool isGivenCell = false)
@@ -339,6 +379,23 @@ namespace Sudoku.UI.Menus
                 {
                     _digitCandidatePresent[candidate] = true;
                 }
+            }
+
+        }
+
+        /**
+         * Supply per-digit colour annotations for the currently open cell.
+         * Must be called after SetCellContext when the cell has colour data.
+         *
+         * @param digitColours Map of digit → set of active highlight colours. May be null.
+         */
+        public void SetCellColourContext(Dictionary<int, HashSet<HighlightColor>> digitColours)
+        {
+            _cellDigitColours.Clear();
+            if (digitColours == null) return;
+            foreach (var kvp in digitColours)
+            {
+                _cellDigitColours[kvp.Key] = kvp.Value;
             }
         }
 
@@ -385,6 +442,121 @@ namespace Sudoku.UI.Menus
                     return string.Empty;
             }
         }
+
+        private static bool IsColourAction(RadialDigitActionType actionType)
+        {
+            return actionType == RadialDigitActionType.ColourClearAll
+                || actionType == RadialDigitActionType.ColourGreen
+                || actionType == RadialDigitActionType.ColourAmber
+                || actionType == RadialDigitActionType.ColourRed
+                || actionType == RadialDigitActionType.ColourBlue;
+        }
+
+        private static string GetColourActionLabel(RadialDigitActionType actionType)
+        {
+            return actionType switch
+            {
+                RadialDigitActionType.ColourClearAll => "Clear",
+                RadialDigitActionType.ColourGreen => "G",
+                RadialDigitActionType.ColourAmber => "A",
+                RadialDigitActionType.ColourRed => "R",
+                RadialDigitActionType.ColourBlue => "B",
+                _ => string.Empty,
+            };
+        }
+
+        private string GetColourActionDisplayLabel(RadialMenuSegmentId segmentId, RadialDigitActionType actionType)
+        {
+            string label = GetColourActionLabel(actionType);
+            if (!IsColourAction(actionType) || actionType == RadialDigitActionType.ColourClearAll)
+            {
+                return label;
+            }
+
+            return IsColourAppliedOnSegmentDigit(segmentId, actionType) ? "-" : label;
+        }
+
+        private bool IsColourAppliedOnSegmentDigit(RadialMenuSegmentId segmentId, RadialDigitActionType actionType)
+        {
+            if (!IsColourAction(actionType) || actionType == RadialDigitActionType.ColourClearAll)
+            {
+                return false;
+            }
+
+            int? digit = SegmentIdToDigit(segmentId);
+            if (!digit.HasValue)
+            {
+                return false;
+            }
+
+            HighlightColor colour = actionType switch
+            {
+                RadialDigitActionType.ColourGreen => HighlightColor.Green,
+                RadialDigitActionType.ColourAmber => HighlightColor.Amber,
+                RadialDigitActionType.ColourRed => HighlightColor.Red,
+                RadialDigitActionType.ColourBlue => HighlightColor.Blue,
+                _ => HighlightColor.None,
+            };
+
+            if (colour == HighlightColor.None)
+            {
+                return false;
+            }
+
+            return _cellDigitColours.TryGetValue(digit.Value, out var colours)
+                && colours != null
+                && colours.Contains(colour);
+        }
+
+        private Color GetDigitSubActionFillColor(RadialDigitActionType actionType, bool enabled, bool hovered)
+        {
+            if (!enabled)
+            {
+                return SubActionDisabledColor;
+            }
+
+            if (actionType == RadialDigitActionType.ColourClearAll)
+            {
+                return hovered ? new Color(0.72f, 0.72f, 0.76f, 1f) : new Color(0.50f, 0.50f, 0.56f, 1f);
+            }
+
+            Color baseColor = actionType switch
+            {
+                RadialDigitActionType.ColourGreen => HighlightColorPalette.ToColor(HighlightColor.Green),
+                RadialDigitActionType.ColourAmber => HighlightColorPalette.ToColor(HighlightColor.Amber),
+                RadialDigitActionType.ColourRed => HighlightColorPalette.ToColor(HighlightColor.Red),
+                RadialDigitActionType.ColourBlue => HighlightColorPalette.ToColor(HighlightColor.Blue),
+                _ => SubActionColor,
+            };
+
+            if (IsColourAction(actionType))
+            {
+                float boost = hovered ? 0.10f : 0f;
+                return new Color(
+                    Mathf.Min(1f, baseColor.r + boost),
+                    Mathf.Min(1f, baseColor.g + boost),
+                    Mathf.Min(1f, baseColor.b + boost),
+                    1f);
+            }
+
+            return hovered ? SubActionHoverColor : SubActionColor;
+        }
+
+        private Color GetDigitSubActionLabelColor(RadialDigitActionType actionType, bool enabled, bool hovered)
+        {
+            if (!enabled)
+            {
+                return new Color(1f, 1f, 1f, 0.55f);
+            }
+
+            if (IsColourAction(actionType))
+            {
+                return Color.white;
+            }
+
+            return hovered ? SubActionHoverTextColor : SubActionTextColor;
+        }
+
 
         private void EnsureBuilt()
         {
@@ -472,6 +644,61 @@ namespace Sudoku.UI.Menus
             {
                 DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
                 DrawDigitWedgeBand(segmentId, RadialDigitActionType.RemoveCandidate, "-", 2, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.RemoveCandidate), startAngle, endAngle);
+                DrawDigitColourBand(segmentId, enabled, startAngle, endAngle);
+            }
+        }
+
+        private void DrawDigitColourBand(RadialMenuSegmentId segmentId, bool enabled, float startAngle, float endAngle)
+        {
+            BuildVisibleColourActions(includeClearAction: true);
+            if (_visibleColourActions.Count == 0)
+            {
+                return;
+            }
+
+            GetDigitBandRadii(GetColourBandSlotIndex(), out float innerRadius, out float outerRadius);
+            bool hoveredBand = HoveredSegmentId == segmentId && IsColourAction(_hoveredDigitActionType);
+            Color bandFill = enabled && hoveredBand
+                ? new Color(0.20f, 0.22f, 0.27f, 0.98f)
+                : new Color(0.15f, 0.17f, 0.22f, 0.95f);
+            DrawFilledSectorBand(innerRadius, outerRadius, startAngle, endAngle, bandFill, 28);
+
+            for (int i = 0; i < _visibleColourActions.Count; i++)
+            {
+                var action = _visibleColourActions[i];
+                if (!TryGetDigitActionCenter(segmentId, action, out var center))
+                {
+                    continue;
+                }
+
+                bool actionEnabled = enabled && IsDigitSubActionEnabled(segmentId, action);
+                bool actionHovered = actionEnabled && HoveredSegmentId == segmentId && _hoveredDigitActionType == action;
+                Color fill = GetDigitSubActionFillColor(action, actionEnabled, actionHovered);
+                Color labelColor = GetDigitSubActionLabelColor(action, actionEnabled, actionHovered);
+                float diameter = Mathf.Min(SubActionButtonDiameter, (outerRadius - innerRadius) - 5f);
+                bool togglesOff = IsColourAppliedOnSegmentDigit(segmentId, action);
+                if (togglesOff && action != RadialDigitActionType.ColourClearAll)
+                {
+                    // Active colour: darker center + bright ring so "tap again to remove" is unmistakable.
+                    DrawFilledCircle(center, diameter * 0.5f, Color.white, 26);
+                    DrawFilledCircle(center, diameter * 0.5f - 2f, new Color(fill.r * 0.55f, fill.g * 0.55f, fill.b * 0.55f, 1f), 26);
+                    labelColor = Color.white;
+                }
+                else
+                {
+                    DrawFilledCircle(center, diameter * 0.5f, fill, 26);
+                }
+
+                var labelRect = new Rect(center.x - 14f, center.y - 10f, 28f, 20f);
+                var style = new GUIStyle(GUI.skin.label)
+                {
+                    alignment = TextAnchor.MiddleCenter,
+                    normal = { textColor = labelColor },
+                    fontSize = 10,
+                    wordWrap = false,
+                    clipping = TextClipping.Clip
+                };
+                GUI.Label(labelRect, GetColourActionDisplayLabel(segmentId, action), style);
             }
         }
 
@@ -480,18 +707,13 @@ namespace Sudoku.UI.Menus
             GetDigitBandRadii(slotIndex, out float innerRadius, out float outerRadius);
 
             bool hovered = enabled && HoveredSegmentId == segmentId && _hoveredDigitActionType == actionType;
-            Color fill;
-            Color labelColor;
+            Color fill = GetDigitSubActionFillColor(actionType, enabled, hovered);
+            Color labelColor = GetDigitSubActionLabelColor(actionType, enabled, hovered);
 
             if (slotIndex == 0)
             {
                 fill = enabled ? GetBaseColor(segmentId, hovered) : DisabledSegmentColor;
                 labelColor = hovered ? TextHoverColor : TextColor;
-            }
-            else
-            {
-                fill = enabled ? (hovered ? SubActionHoverColor : SubActionColor) : SubActionDisabledColor;
-                labelColor = hovered ? SubActionHoverTextColor : SubActionTextColor;
             }
 
             if (!enabled)
@@ -550,6 +772,12 @@ namespace Sudoku.UI.Menus
             if (ValueOnlyMode) return ResolvePrimaryDigitAction(segmentId);
             if (_isGivenCell) return RadialDigitActionType.DefaultDigit;
 
+            if (TryResolveDigitBand(screenPosition, segmentId, out var bandActionType, out _)
+                && IsColourAction(bandActionType))
+            {
+                return bandActionType;
+            }
+
             float radius = (screenPosition - DisplayGuiPosition).magnitude;
             GetDigitBandRadii(0, out float primaryInner, out float primaryOuter);
             if (radius >= primaryInner && radius <= primaryOuter)
@@ -567,6 +795,31 @@ namespace Sudoku.UI.Menus
 
             var digit = SegmentIdToDigit(segmentId);
             if (!digit.HasValue) return false;
+
+            if (IsColourAction(actionType))
+            {
+                if (_currentCellValue.HasValue)
+                {
+                    if (_currentCellValue.Value != digit.Value)
+                    {
+                        return false;
+                    }
+                }
+                else if (!_digitCandidatePresent[digit.Value])
+                {
+                    return false;
+                }
+
+                return actionType switch
+                {
+                    RadialDigitActionType.ColourClearAll => ColourSettings.AnyEnabled,
+                    RadialDigitActionType.ColourGreen => ColourSettings.GreenEnabled,
+                    RadialDigitActionType.ColourAmber => ColourSettings.AmberEnabled,
+                    RadialDigitActionType.ColourRed => ColourSettings.RedEnabled,
+                    RadialDigitActionType.ColourBlue => ColourSettings.BlueEnabled,
+                    _ => false,
+                };
+            }
 
             switch (actionType)
             {
@@ -635,6 +888,7 @@ namespace Sudoku.UI.Menus
             float radius = (screenPosition - DisplayGuiPosition).magnitude;
             GetDigitBandRadii(1, out float addInner, out float addOuter);
             GetDigitBandRadii(2, out float removeInner, out float removeOuter);
+            GetDigitBandRadii(GetColourBandSlotIndex(), out float colourInner, out float colourOuter);
 
             if (radius >= addInner && radius <= addOuter)
             {
@@ -646,6 +900,18 @@ namespace Sudoku.UI.Menus
             if (radius >= removeInner && radius <= removeOuter)
             {
                 actionType = RadialDigitActionType.RemoveCandidate;
+                hitDisabledBand = !IsDigitSubActionEnabled(segmentId, actionType);
+                return true;
+            }
+
+            if (radius >= colourInner && radius <= colourOuter)
+            {
+                actionType = ResolveColourBandAction(screenPosition, segmentId);
+                if (!IsColourAction(actionType))
+                {
+                    return false;
+                }
+
                 hitDisabledBand = !IsDigitSubActionEnabled(segmentId, actionType);
                 return true;
             }
@@ -1040,7 +1306,23 @@ namespace Sudoku.UI.Menus
                 return GetOuterActionRadius() - GetInnerActionRadius();
             }
 
-            return (GetOuterActionRadius() - GetInnerActionRadius()) / 3f;
+            return (GetOuterActionRadius() - GetInnerActionRadius()) / GetDigitBandSlotCount();
+        }
+
+        private int GetDigitBandSlotCount()
+        {
+            if (ValueOnlyMode)
+            {
+                return 1;
+            }
+
+            // Primary, add, remove, and one shared colour strip.
+            return 4;
+        }
+
+        private static int GetColourBandSlotIndex()
+        {
+            return 3;
         }
 
         private void GetDigitBandRadii(int slotIndex, out float innerRadius, out float outerRadius)
@@ -1080,6 +1362,11 @@ namespace Sudoku.UI.Menus
             position = default;
             if (!IsDigitSegment(segmentId)) return false;
 
+            if (IsColourAction(actionType))
+            {
+                return TryGetColourActionCenter(segmentId, actionType, out position);
+            }
+
             int slotIndex = actionType switch
             {
                 RadialDigitActionType.AddCandidate => 1,
@@ -1090,6 +1377,73 @@ namespace Sudoku.UI.Menus
             float centerAngle = GetSegmentCenterAngle(segmentId);
             position = DisplayGuiPosition + DirectionFromAngle(centerAngle) * GetDigitBandCenterRadius(slotIndex);
             return true;
+        }
+
+        private bool TryGetColourActionCenter(RadialMenuSegmentId segmentId, RadialDigitActionType actionType, out Vector2 position)
+        {
+            position = default;
+            if (!IsDigitSegment(segmentId)) return false;
+
+            BuildVisibleColourActions(includeClearAction: true);
+            int actionIndex = _visibleColourActions.IndexOf(actionType);
+            if (actionIndex < 0) return false;
+
+            float centerAngle = GetSegmentCenterAngle(segmentId);
+            float startAngle = centerAngle + 18f - 2f;
+            float endAngle = centerAngle - 18f + 2f;
+            float t = (actionIndex + 1f) / (_visibleColourActions.Count + 1f);
+            float actionAngle = Mathf.Lerp(startAngle, endAngle, t);
+            float radius = GetDigitBandCenterRadius(GetColourBandSlotIndex());
+            position = DisplayGuiPosition + DirectionFromAngle(actionAngle) * radius;
+            return true;
+        }
+
+        private RadialDigitActionType ResolveColourBandAction(Vector2 screenPosition, RadialMenuSegmentId segmentId)
+        {
+            BuildVisibleColourActions(includeClearAction: true);
+            if (_visibleColourActions.Count == 0)
+            {
+                return RadialDigitActionType.DefaultDigit;
+            }
+
+            float minDistanceSq = float.MaxValue;
+            RadialDigitActionType nearestAction = RadialDigitActionType.DefaultDigit;
+            for (int i = 0; i < _visibleColourActions.Count; i++)
+            {
+                var action = _visibleColourActions[i];
+                if (!TryGetColourActionCenter(segmentId, action, out var center))
+                {
+                    continue;
+                }
+
+                float distanceSq = (screenPosition - center).sqrMagnitude;
+                if (distanceSq < minDistanceSq)
+                {
+                    minDistanceSq = distanceSq;
+                    nearestAction = action;
+                }
+            }
+
+            return nearestAction;
+        }
+
+        private void BuildVisibleColourActions(bool includeClearAction)
+        {
+            _visibleColourActions.Clear();
+            if (!ColourSettings.AnyEnabled)
+            {
+                return;
+            }
+
+            if (includeClearAction)
+            {
+                _visibleColourActions.Add(RadialDigitActionType.ColourClearAll);
+            }
+
+            if (ColourSettings.GreenEnabled) _visibleColourActions.Add(RadialDigitActionType.ColourGreen);
+            if (ColourSettings.AmberEnabled) _visibleColourActions.Add(RadialDigitActionType.ColourAmber);
+            if (ColourSettings.RedEnabled) _visibleColourActions.Add(RadialDigitActionType.ColourRed);
+            if (ColourSettings.BlueEnabled) _visibleColourActions.Add(RadialDigitActionType.ColourBlue);
         }
 
         private bool IsSegmentEnabled(RadialMenuSegmentId segmentId)
@@ -1106,11 +1460,6 @@ namespace Sudoku.UI.Menus
 
             if (ValueOnlyMode && IsDigitSegment(segmentId))
             {
-                if (_isGivenCell)
-                {
-                    return false;
-                }
-
                 int? digit = SegmentIdToDigit(segmentId);
                 if (!digit.HasValue)
                 {

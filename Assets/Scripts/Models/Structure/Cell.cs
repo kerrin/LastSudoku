@@ -4,6 +4,16 @@ using UnityEngine;
 
 namespace Sudoku.Models
 {
+    // Pastel highlight colours that can be applied to digits by the user.
+    public enum HighlightColor
+    {
+        None = 0,
+        Green = 1,
+        Amber = 2,
+        Red = 3,
+        Blue = 4,
+    }
+
     // Simple enum to allow marking or highlighting a cell in the UI or solver.
     public enum CellColor
     {
@@ -28,6 +38,12 @@ namespace Sudoku.Models
 
         // Optional color/state marker used by UI or algorithms.
         public CellColor Color = CellColor.None;
+
+        // Per-digit colour annotations set by the user.
+        // Key = digit (1..9); Value = set of active highlight colours for that digit.
+        // For value cells, only the key matching Value is relevant.
+        // For candidate cells, any candidate digit can have colours assigned.
+        public Dictionary<int, HashSet<HighlightColor>> DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
 
         // Zero-based row index of the cell on the board.
         public int Row;
@@ -73,6 +89,13 @@ namespace Sudoku.Models
                 Column = Column,
                 Box = Box
             };
+
+            // Deep-copy per-digit colour annotations.
+            foreach (var kvp in DigitColors)
+            {
+                c.DigitColors[kvp.Key] = new HashSet<HighlightColor>(kvp.Value);
+            }
+
             return c;
         }
 

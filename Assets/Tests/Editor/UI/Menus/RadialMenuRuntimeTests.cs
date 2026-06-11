@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using Sudoku.Models;
+using Sudoku.UI.Config;
 using Sudoku.UI.Menus;
 using UnityEngine;
 using UnityEngine.UI;
@@ -183,6 +185,71 @@ namespace Sudoku.Tests.Editor
             }
             finally
             {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void ColourSubActions_AreAvailableForValueCells_AndClearRemovesColours()
+        {
+            var canvas = CreateCanvas("RadialMenuCanvas_I");
+            try
+            {
+                var menu = CreateMenu(canvas);
+                menu.Open(new Vector2(240f, 240f), "Smart");
+                menu.SetCellContext(5, new[] { 1, 2, 3, 4, 5 });
+
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit5, RadialDigitActionType.ColourGreen, out var greenPos));
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit5, RadialDigitActionType.ColourClearAll, out var clearPos));
+
+                var greenSelection = menu.ReleasePointer(greenPos);
+                Assert.AreEqual(RadialMenuSegmentId.Digit5, greenSelection.SegmentId);
+                Assert.AreEqual(RadialDigitActionType.ColourGreen, greenSelection.DigitActionType);
+                Assert.AreEqual(5, greenSelection.Digit);
+                Assert.AreEqual(HighlightColor.Green, greenSelection.SelectedColour);
+
+                menu.Open(new Vector2(240f, 240f), "Smart");
+                menu.SetCellContext(5, new[] { 1, 2, 3, 4, 5 });
+                var clearSelection = menu.ReleasePointer(clearPos);
+                Assert.AreEqual(RadialMenuSegmentId.Digit5, clearSelection.SegmentId);
+                Assert.AreEqual(RadialDigitActionType.ColourClearAll, clearSelection.DigitActionType);
+                Assert.IsTrue(clearSelection.ClearAllColours);
+            }
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void DisabledColourButtons_AreNotExposed()
+        {
+            bool previousGreen = ColourSettings.GreenEnabled;
+            bool previousAmber = ColourSettings.AmberEnabled;
+            bool previousRed = ColourSettings.RedEnabled;
+            bool previousBlue = ColourSettings.BlueEnabled;
+
+            var canvas = CreateCanvas("RadialMenuCanvas_J");
+            try
+            {
+                ColourSettings.GreenEnabled = true;
+                ColourSettings.AmberEnabled = true;
+                ColourSettings.RedEnabled = true;
+                ColourSettings.BlueEnabled = false;
+
+                var menu = CreateMenu(canvas);
+                menu.Open(new Vector2(240f, 240f), "Smart");
+                menu.SetCellContext(5, new[] { 1, 2, 3, 4, 5 });
+
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit5, RadialDigitActionType.ColourGreen, out _));
+                Assert.IsFalse(menu.TryGetDigitActionButtonPosition(RadialMenuSegmentId.Digit5, RadialDigitActionType.ColourBlue, out _));
+            }
+            finally
+            {
+                ColourSettings.GreenEnabled = previousGreen;
+                ColourSettings.AmberEnabled = previousAmber;
+                ColourSettings.RedEnabled = previousRed;
+                ColourSettings.BlueEnabled = previousBlue;
                 Object.DestroyImmediate(canvas.gameObject);
             }
         }

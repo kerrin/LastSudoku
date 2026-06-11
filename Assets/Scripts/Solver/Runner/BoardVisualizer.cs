@@ -371,6 +371,7 @@ namespace Sudoku.Solver
                 var cell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
                 menu.ValueOnlyMode = IsValueOnlyEditMode();
                 menu.SetCellContext(cell?.Value, cell?.Candidates, cell != null && cell.IsGiven);
+                menu.SetCellColourContext(cell != null ? cell.DigitColors : null);
             }
             LogHoldDebug($"OpenRadialMenu at {center} using label='No Action' menu={(menu != null ? menu.name : "(null)")}");
             menu.Open(center, "No Action");
@@ -557,6 +558,7 @@ namespace Sudoku.Solver
                     if (cell == null) continue;
                     if (cell.Value.HasValue)
                     {
+                        DrawColourBackground(cellRect, GetOrderedColoursForDigit(cell, cell.Value.Value));
                         // draw solved digit centered
                         GUI.Label(cellRect, cell.Value.Value.ToString(), cell.IsGiven ? _givenCenterStyle : _centerStyle);
                     }
@@ -735,6 +737,17 @@ namespace Sudoku.Solver
                 return;
             }
 
+            if (IsColourAction(selection.DigitActionType))
+            {
+                var colourOutcome = ApplyColourSelection(selection);
+                LastRadialOutcomeMessage = colourOutcome;
+                if (!string.IsNullOrWhiteSpace(colourOutcome))
+                {
+                    LogHoldDebug($"Radial colour action completed: digit={(selection.Digit.HasValue ? selection.Digit.Value.ToString() : "(none)")} colour={selection.SelectedColour} clearAll={selection.ClearAllColours} outcome='{colourOutcome}'");
+                }
+                return;
+            }
+
             if (IsValueOnlyEditMode())
             {
                 if (!selection.Digit.HasValue)
@@ -899,6 +912,105 @@ namespace Sudoku.Solver
             return ManualCellEditOperation.SetValue;
         }
 
+        private static bool IsColourAction(RadialDigitActionType actionType)
+        {
+            return actionType == RadialDigitActionType.ColourClearAll
+                || actionType == RadialDigitActionType.ColourGreen
+                || actionType == RadialDigitActionType.ColourAmber
+                || actionType == RadialDigitActionType.ColourRed
+                || actionType == RadialDigitActionType.ColourBlue;
+        }
+
+        /**
+         * Toggle a colour annotation for the current cell and target digit.
+         *
+         * @param selection Radial colour-ring selection.
+         * @returns Human-readable status text.
+         */
+        private string ApplyColourSelection(RadialMenuSelection selection)
+        {
+            if (Runner == null || Runner.CurrentBoard == null)
+            {
+                return "Board interaction is unavailable.";
+            }
+
+            if (selection == null || !IsColourAction(selection.DigitActionType))
+            {
+                return "No colour action selected.";
+            }
+
+            if (!selection.Digit.HasValue)
+            {
+                return "No target digit available for colour annotation.";
+            }
+
+            if (SelectedHoldRow < 0 || SelectedHoldColumn < 0)
+            {
+                return "No selected cell for colour annotation.";
+            }
+
+            var board = Runner.CurrentBoard;
+            if (board.Cells == null || SelectedHoldRow >= board.Size || SelectedHoldColumn >= board.Size)
+            {
+                return "Selected cell is unavailable.";
+            }
+
+            var cell = board.Cells[SelectedHoldRow, SelectedHoldColumn];
+            if (cell == null)
+            {
+                return "Selected cell is unavailable.";
+            }
+
+            int digit = selection.Digit.Value;
+            if (digit < 1 || digit > board.Size)
+            {
+                return "Selected digit is outside the board range.";
+            }
+
+            bool digitExists = cell.Value.HasValue
+                ? cell.Value.Value == digit
+                : cell.Candidates != null && cell.Candidates.Contains(digit);
+            if (!digitExists)
+            {
+                return "Colour annotations can only be set on digits already present in the cell.";
+            }
+
+            if (cell.DigitColors == null)
+            {
+                cell.DigitColors = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.HashSet<HighlightColor>>();
+            }
+
+            if (selection.ClearAllColours)
+            {
+                cell.DigitColors.Remove(digit);
+                return $"Cleared all colours for digit {digit}.";
+            }
+
+            if (selection.SelectedColour == HighlightColor.None)
+            {
+                return "No colour selected.";
+            }
+
+            if (!cell.DigitColors.TryGetValue(digit, out var colours))
+            {
+                colours = new System.Collections.Generic.HashSet<HighlightColor>();
+                cell.DigitColors[digit] = colours;
+            }
+
+            if (!colours.Add(selection.SelectedColour))
+            {
+                colours.Remove(selection.SelectedColour);
+                if (colours.Count == 0)
+                {
+                    cell.DigitColors.Remove(digit);
+                }
+
+                return $"Removed {HighlightColorPalette.ToFullName(selection.SelectedColour)} from digit {digit}.";
+            }
+
+            return $"Added {HighlightColorPalette.ToFullName(selection.SelectedColour)} to digit {digit}.";
+        }
+
         private void PollHoldTimer()
         {
             if (CurrentHoldPhase != HoldPhase.Holding) return;
@@ -994,6 +1106,10 @@ namespace Sudoku.Solver
                 int cc = idx % size;
                 Rect r = new Rect(rect.x + cc * cs + 2, rect.y + rr * cs + 2, cs - 4, cs - 4);
                 bool hasCandidate = cell.Candidates.Contains(d);
+                if (hasCandidate)
+                {
+                    DrawColourBackground(r, GetOrderedColoursForDigit(cell, d));
+                }
                 bool previewActive = Runner != null && Runner.PreviewRuleResult != null && Runner.PreviewRuleResult.Apply;
                 // Determine if this digit was removed by the last seen rule result for this cell.
                 // Consider both previewed changes (hover) and the last actually applied rule
@@ -1186,6 +1302,89 @@ namespace Sudoku.Solver
             // right
             GUI.DrawTexture(new Rect(rect.x + rect.width - thickness, rect.y, thickness, rect.height), _highlightTex);
             GUI.color = prev;
+        }
+
+        /**
+         * Gather the active colours for a digit in stable display order.
+         *
+         * @param cell Board cell being rendered.
+         * @param digit Digit to inspect.
+         * @returns Ordered list of active colours for the digit.
+         */
+        private static System.Collections.Generic.List<HighlightColor> GetOrderedColoursForDigit(Cell cell, int digit)
+        {
+            var result = new System.Collections.Generic.List<HighlightColor>(4);
+            if (cell == null || cell.DigitColors == null)
+            {
+                return result;
+            }
+
+            if (!cell.DigitColors.TryGetValue(digit, out var colours) || colours == null || colours.Count == 0)
+            {
+                return result;
+            }
+
+            HighlightColor[] order =
+            {
+                HighlightColor.Green,
+                HighlightColor.Amber,
+                HighlightColor.Red,
+                HighlightColor.Blue,
+            };
+
+            for (int i = 0; i < order.Length; i++)
+            {
+                if (colours.Contains(order[i]))
+                {
+                    result.Add(order[i]);
+                }
+            }
+
+            return result;
+        }
+
+        /**
+         * Draw a split colour background using 1, 2, or 3/4 pastel colours.
+         *
+         * @param rect Target rectangle.
+         * @param colours Ordered highlight colours.
+         */
+        private void DrawColourBackground(Rect rect, System.Collections.Generic.List<HighlightColor> colours)
+        {
+            if (colours == null || colours.Count == 0)
+            {
+                return;
+            }
+
+            if (colours.Count == 1)
+            {
+                DrawHighlight(rect, HighlightColorPalette.ToColor(colours[0]));
+                return;
+            }
+
+            if (colours.Count == 2)
+            {
+                float half = rect.width * 0.5f;
+                DrawHighlight(new Rect(rect.x, rect.y, half, rect.height), HighlightColorPalette.ToColor(colours[0]));
+                DrawHighlight(new Rect(rect.x + half, rect.y, rect.width - half, rect.height), HighlightColorPalette.ToColor(colours[1]));
+                return;
+            }
+
+            float halfWidth = rect.width * 0.5f;
+            float halfHeight = rect.height * 0.5f;
+            Rect[] quadrants =
+            {
+                new Rect(rect.x, rect.y, halfWidth, halfHeight),
+                new Rect(rect.x + halfWidth, rect.y, rect.width - halfWidth, halfHeight),
+                new Rect(rect.x, rect.y + halfHeight, halfWidth, rect.height - halfHeight),
+                new Rect(rect.x + halfWidth, rect.y + halfHeight, rect.width - halfWidth, rect.height - halfHeight),
+            };
+
+            int limit = Mathf.Min(colours.Count, quadrants.Length);
+            for (int i = 0; i < limit; i++)
+            {
+                DrawHighlight(quadrants[i], HighlightColorPalette.ToColor(colours[i]));
+            }
         }
     }
 }

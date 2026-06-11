@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Sudoku.Models;
 using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
@@ -26,6 +27,7 @@ namespace Sudoku.UI
             Rules = 0,
             Assistance = 1,
             Generation = 2,
+            Colours = 3,
         }
 
         private static ConfigPanelManager _instance;
@@ -214,11 +216,13 @@ namespace Sudoku.UI
 
             GUILayout.BeginHorizontal(GUILayout.Height(TabBarH));
             GUILayout.Space(10f);
-            DrawTabButton(ConfigTabId.Rules, "Rules", 84f);
-            GUILayout.Space(6f);
-            DrawTabButton(ConfigTabId.Assistance, "Assistance", 108f);
-            GUILayout.Space(6f);
-            DrawTabButton(ConfigTabId.Generation, "Generation", 108f);
+            DrawTabButton(ConfigTabId.Rules, "Rules", 80f);
+            GUILayout.Space(4f);
+            DrawTabButton(ConfigTabId.Assistance, "Assistance", 100f);
+            GUILayout.Space(4f);
+            DrawTabButton(ConfigTabId.Generation, "Generation", 100f);
+            GUILayout.Space(4f);
+            DrawTabButton(ConfigTabId.Colours, "Colours", 80f);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -267,6 +271,12 @@ namespace Sudoku.UI
             if (_activeTab == ConfigTabId.Generation)
             {
                 DrawGenerationOptions();
+                return;
+            }
+
+            if (_activeTab == ConfigTabId.Colours)
+            {
+                DrawColourOptions();
                 return;
             }
 
@@ -418,6 +428,35 @@ namespace Sudoku.UI
             GUILayout.Space(16f);
             GUILayout.EndVertical();
 
+            GUILayout.FlexibleSpace();
+        }
+
+        /**
+         * Draw colour highlighting settings — which pastel annotation colours are available.
+         */
+        private void DrawColourOptions()
+        {
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical(_assistanceSectionStyle);
+            GUILayout.Space(4f);
+
+            GUILayout.Label("  Enabled Highlight Colours", _ruleNameStyle);
+            GUILayout.Space(4f);
+
+            bool green = GUILayout.Toggle(ColourSettings.GreenEnabled, "  Green", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
+            if (green != ColourSettings.GreenEnabled) { ColourSettings.GreenEnabled = green; RuntimeConfigService.SaveCurrent(_registry); }
+
+            bool amber = GUILayout.Toggle(ColourSettings.AmberEnabled, "  Amber", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
+            if (amber != ColourSettings.AmberEnabled) { ColourSettings.AmberEnabled = amber; RuntimeConfigService.SaveCurrent(_registry); }
+
+            bool red = GUILayout.Toggle(ColourSettings.RedEnabled, "  Red", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
+            if (red != ColourSettings.RedEnabled) { ColourSettings.RedEnabled = red; RuntimeConfigService.SaveCurrent(_registry); }
+
+            bool blue = GUILayout.Toggle(ColourSettings.BlueEnabled, "  Blue", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
+            if (blue != ColourSettings.BlueEnabled) { ColourSettings.BlueEnabled = blue; RuntimeConfigService.SaveCurrent(_registry); }
+
+            GUILayout.Space(16f);
+            GUILayout.EndVertical();
             GUILayout.FlexibleSpace();
         }
 

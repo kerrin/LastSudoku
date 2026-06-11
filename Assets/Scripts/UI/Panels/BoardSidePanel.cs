@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.UI.Config;
+using Sudoku.Models;
 
 namespace Sudoku.UI.Panels
 {
@@ -43,6 +44,7 @@ public class BoardSidePanel : MonoBehaviour
     private int _lastComputedCellSize = -1;
     private int _lastBoardSize = -1;
     private bool _preserveSceneLayout = true;
+    private RectTransform _colourClearPanelRect;
 
     private void Awake()
     {
@@ -112,6 +114,7 @@ public class BoardSidePanel : MonoBehaviour
 
         EnsurePanel();
         SyncApplyRulePanelVisibility();
+        UpdateColourClearPanelLayout();
         UpdatePanelGeometry();
     }
 
@@ -155,6 +158,7 @@ public class BoardSidePanel : MonoBehaviour
         }
 
         if (shouldUpdate && !_preserveSceneLayout) UpdatePanelGeometry();
+        UpdateColourClearPanelLayout();
     }
 
     private void EnsurePanel()
@@ -191,6 +195,7 @@ public class BoardSidePanel : MonoBehaviour
         EnsureRuleTogglePanelAttached();
         EnsureRuleListPanelAttached();
         EnsureCreateModeStatusPanelAttached();
+        EnsureColourClearPanelAttached();
     }
 
     /**
@@ -317,6 +322,21 @@ public class BoardSidePanel : MonoBehaviour
                 }
             }
         }
+
+        // ColourClearPanel: visible only in solve mode when at least one colour is enabled.
+        var colourPanels = _panelRect.GetComponentsInChildren<ColourClearPanel>(true);
+        for (int i = 0; i < colourPanels.Length; i++)
+        {
+            var p = colourPanels[i];
+            if (p == null) continue;
+            bool showColourPanel = !isCreation && ColourSettings.AnyEnabled;
+            if (p.gameObject.activeSelf != showColourPanel)
+            {
+                p.gameObject.SetActive(showColourPanel);
+            }
+        }
+
+        UpdateColourClearPanelLayout();
     }
 
     /**
@@ -424,6 +444,101 @@ public class BoardSidePanel : MonoBehaviour
             // Fallback: simple anchored position using top inset
             float panelTopOffset = top;
             _panelRect.anchoredPosition = new Vector2(leftPixel, -panelTopOffset);
+        }
+    }
+    /**
+     * Create and wire up the ColourClearPanel if it does not already exist.
+     * The panel is placed at the bottom of the SidePanel with content-size fitting.
+     */
+    private void EnsureColourClearPanelAttached()
+    {
+        if (_panelRect == null || RulesArea == null) return;
+
+        var existing = _panelRect.GetComponentInChildren<ColourClearPanel>(true);
+        if (existing != null)
+        {
+            existing.Runner = GetRunner();
+            var existingRect = existing.transform as RectTransform;
+            if (existingRect != null)
+            {
+                existingRect.SetParent(_panelRect, false);
+                _colourClearPanelRect = existingRect;
+            }
+            EnsureColourClearPanelLayoutComponents(_colourClearPanelRect);
+            UpdateColourClearPanelLayout();
+            return;
+        }
+
+        var panelGO = new GameObject("ColourClearPanel", typeof(RectTransform));
+        panelGO.transform.SetParent(_panelRect, false);
+
+        var rt = panelGO.GetComponent<RectTransform>();
+        // Stretch to side-panel width and sit under RulesArea.
+        rt.anchorMin        = new Vector2(0f, 1f);
+        rt.anchorMax        = new Vector2(1f, 1f);
+        rt.pivot            = new Vector2(0.5f, 1f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta        = new Vector2(0f, 0f);
+
+        EnsureColourClearPanelLayoutComponents(rt);
+
+        var panel = panelGO.AddComponent<ColourClearPanel>();
+        panel.Runner = GetRunner();
+        _colourClearPanelRect = rt;
+        UpdateColourClearPanelLayout();
+        panelGO.SetActive(false); // SyncApplyRulePanelVisibility controls visibility.
+    }
+
+    private void EnsureColourClearPanelLayoutComponents(RectTransform colourPanelRect)
+    {
+        if (colourPanelRect == null)
+        {
+            return;
+        }
+
+        var csf = colourPanelRect.GetComponent<UnityEngine.UI.ContentSizeFitter>();
+        if (csf == null)
+        {
+            csf = colourPanelRect.gameObject.AddComponent<UnityEngine.UI.ContentSizeFitter>();
+        }
+        csf.horizontalFit = UnityEngine.UI.ContentSizeFitter.FitMode.Unconstrained;
+        csf.verticalFit = UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize;
+    }
+
+    private void UpdateColourClearPanelLayout()
+    {
+        if (_panelRect == null || RulesArea == null)
+        {
+            return;
+        }
+
+        if (_colourClearPanelRect == null)
+        {
+            var panel = _panelRect.GetComponentInChildren<ColourClearPanel>(true);
+            _colourClearPanelRect = panel != null ? panel.transform as RectTransform : null;
+            if (_colourClearPanelRect == null)
+            {
+                return;
+            }
+        }
+
+        if (_colourClearPanelRect.parent != _panelRect)
+        {
+            _colourClearPanelRect.SetParent(_panelRect, false);
+        }
+
+        _colourClearPanelRect.anchorMin = new Vector2(0f, 1f);
+        _colourClearPanelRect.anchorMax = new Vector2(1f, 1f);
+        _colourClearPanelRect.pivot = new Vector2(0.5f, 1f);
+
+        float yOffset = RulesArea.anchoredPosition.y - RulesArea.rect.height - 6f;
+        _colourClearPanelRect.anchoredPosition = new Vector2(0f, yOffset);
+        _colourClearPanelRect.sizeDelta = new Vector2(0f, _colourClearPanelRect.sizeDelta.y);
+
+        int desiredIndex = Mathf.Min(RulesArea.GetSiblingIndex() + 1, _panelRect.childCount - 1);
+        if (_colourClearPanelRect.GetSiblingIndex() != desiredIndex)
+        {
+            _colourClearPanelRect.SetSiblingIndex(desiredIndex);
         }
     }
 }
