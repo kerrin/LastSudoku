@@ -638,6 +638,7 @@ namespace Sudoku.UI.Controllers
             }
 
             _runner.LoadBoardFromRows();
+            ApplyPuzzleStartCandidateSettings();
             CacheStartingPuzzleCodeFromCurrentBoard();
             _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
             ConfigureBoardVisualizerForRunnerMode();
@@ -712,6 +713,8 @@ namespace Sudoku.UI.Controllers
                 Debug.LogError("MainMenuFlowController: Random generation failed. Start Puzzle was cancelled to avoid using stale board state.");
                 return;
             }
+
+            ApplyPuzzleStartCandidateSettings();
 
             CacheStartingPuzzleCodeFromCurrentBoard();
             _runner.SetInteractionMode(BoardInteractionMode.Puzzle);
@@ -817,6 +820,68 @@ namespace Sudoku.UI.Controllers
         }
 
         /**
+         * Apply candidate automation configured for puzzle start.
+         */
+        private void ApplyPuzzleStartCandidateSettings()
+        {
+            if (_runner == null)
+            {
+                return;
+            }
+
+            if (!AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart)
+            {
+                ClearCandidatesForCurrentBoard();
+                return;
+            }
+
+            // Step 1: fill every unsolved cell with the full candidate domain.
+            _runner.ResetCandidates();
+
+            // Step 2 (optional): trim illegal candidates immediately from peer constraints.
+            if (AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart)
+            {
+                _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
+            }
+        }
+
+        /**
+         * Clear all candidate marks from the current board.
+         *
+         * Used when puzzle-start auto-fill is disabled so puzzles do not begin
+         * with auto-populated candidate lists.
+         */
+        private void ClearCandidatesForCurrentBoard()
+        {
+            var board = _runner.CurrentBoard;
+            if (board == null || board.Cells == null)
+            {
+                return;
+            }
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int col = 0; col < board.Size; col++)
+                {
+                    var cell = board.Cells[row, col];
+                    if (cell == null)
+                    {
+                        continue;
+                    }
+
+                    if (cell.Candidates == null)
+                    {
+                        cell.Candidates = new HashSet<int>();
+                    }
+                    else
+                    {
+                        cell.Candidates.Clear();
+                    }
+                }
+            }
+        }
+
+        /**
          * Apply a generated board to the current runner board, preserving generated given flags.
          *
          * @param generated Generated puzzle board to copy from.
@@ -852,7 +917,6 @@ namespace Sudoku.UI.Controllers
                 }
             }
 
-            _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
         }
 
         /**
@@ -1550,7 +1614,6 @@ namespace Sudoku.UI.Controllers
                 }
             }
 
-            _runner.SyncCandidatesForCurrentBoard(skipFullSolveCheck: true, validateState: true);
         }
 
         /**

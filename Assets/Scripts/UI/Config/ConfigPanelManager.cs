@@ -369,6 +369,56 @@ namespace Sudoku.UI
             GUILayout.BeginVertical(_assistanceSectionStyle);
             GUILayout.Space(4f);
 
+            GUILayout.Label("  Puzzle Start", _ruleNameStyle);
+            GUILayout.Space(4f);
+
+            bool autoFillAllCandidatesOnPuzzleStart = GUILayout.Toggle(
+                AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart,
+                "Auto fill all candidates",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            if (autoFillAllCandidatesOnPuzzleStart != AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart)
+            {
+                AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart = autoFillAllCandidatesOnPuzzleStart;
+                if (!autoFillAllCandidatesOnPuzzleStart)
+                {
+                    AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart = false;
+                }
+
+                RuntimeConfigService.SaveCurrent(_registry);
+            }
+
+            bool canAutoInitialise = AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart;
+            bool previousGuiEnabled = GUI.enabled;
+            Color previousGuiColor = GUI.color;
+            GUI.enabled = canAutoInitialise;
+            if (!canAutoInitialise)
+            {
+                GUI.color = new Color(previousGuiColor.r, previousGuiColor.g, previousGuiColor.b, previousGuiColor.a * 0.45f);
+            }
+
+            bool autoInitialiseCandidatesOnPuzzleStart = GUILayout.Toggle(
+                AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart,
+                "Auto initialise candidate",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            GUI.enabled = previousGuiEnabled;
+            GUI.color = previousGuiColor;
+
+            if (canAutoInitialise && autoInitialiseCandidatesOnPuzzleStart != AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart)
+            {
+                AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart = autoInitialiseCandidatesOnPuzzleStart;
+                RuntimeConfigService.SaveCurrent(_registry);
+            }
+
+            GUILayout.Space(10f);
+            GUILayout.Label("  Solving", _ruleNameStyle);
+            GUILayout.Space(4f);
+
             bool hideApplyRules = GUILayout.Toggle(
                 AssistanceSettings.HideApplyRules,
                 "Hide Apply Rules",

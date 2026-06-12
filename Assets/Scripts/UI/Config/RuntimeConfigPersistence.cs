@@ -26,6 +26,8 @@ namespace Sudoku.UI.Config
     [Serializable]
     public sealed class AssistanceConfigData
     {
+        public bool AutoFillAllCandidatesOnPuzzleStart;
+        public bool AutoInitialiseCandidatesOnPuzzleStart;
         public bool HideApplyRules;
         public bool AutoCandidateOnSetValue = true;
     }
@@ -81,6 +83,9 @@ namespace Sudoku.UI.Config
                 SchemaVersion = 1,
                 Assistance = new AssistanceConfigData
                 {
+                    // Keep puzzle-start candidate automation disabled unless user opts in.
+                    AutoFillAllCandidatesOnPuzzleStart = false,
+                    AutoInitialiseCandidatesOnPuzzleStart = false,
                     // Show Apply Rules by default.
                     HideApplyRules = false,
                     // Enable auto-candidate behavior on set-value by default.
@@ -291,6 +296,8 @@ namespace Sudoku.UI.Config
 
             _current.Assistance.HideApplyRules = AssistanceSettings.HideApplyRules;
             _current.Assistance.AutoCandidateOnSetValue = AssistanceSettings.AutoCandidateOnSetValue;
+            _current.Assistance.AutoFillAllCandidatesOnPuzzleStart = AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart;
+            _current.Assistance.AutoInitialiseCandidatesOnPuzzleStart = AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart;
             _current.Generation.UseRotationalSymmetry = GenerationSettings.UseRotationalSymmetry;
 
             _current.Colours ??= new ColourConfigData();
@@ -393,6 +400,9 @@ namespace Sudoku.UI.Config
 
             AssistanceSettings.HideApplyRules = config.Assistance.HideApplyRules;
             AssistanceSettings.AutoCandidateOnSetValue = config.Assistance.AutoCandidateOnSetValue;
+            AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart = config.Assistance.AutoFillAllCandidatesOnPuzzleStart;
+            AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart =
+                config.Assistance.AutoFillAllCandidatesOnPuzzleStart && config.Assistance.AutoInitialiseCandidatesOnPuzzleStart;
             GenerationSettings.UseRotationalSymmetry = config.Generation.UseRotationalSymmetry;
 
             // Apply colour settings with safe fallback when the section is absent.

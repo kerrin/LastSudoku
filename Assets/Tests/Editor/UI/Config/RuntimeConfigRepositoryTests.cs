@@ -42,6 +42,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsNotNull(config.Assistance);
             Assert.IsNotNull(config.Generation);
             Assert.IsNotNull(config.Rules);
+            Assert.IsTrue(config.Assistance.AutoFillAllCandidatesOnPuzzleStart);
+            Assert.IsTrue(config.Assistance.AutoInitialiseCandidatesOnPuzzleStart);
             Assert.IsTrue(config.Assistance.HideApplyRules);
             Assert.IsFalse(config.Assistance.AutoCandidateOnSetValue);
             Assert.IsFalse(config.Generation.UseRotationalSymmetry);
@@ -52,6 +54,8 @@ namespace Sudoku.Tests.Editor.UI.Config
         public void SaveAndLoad_RoundTripsKnownFields()
         {
             var config = RuntimeConfigDefaults.Create();
+            config.Assistance.AutoFillAllCandidatesOnPuzzleStart = true;
+            config.Assistance.AutoInitialiseCandidatesOnPuzzleStart = false;
             config.Assistance.HideApplyRules = false;
             config.Assistance.AutoCandidateOnSetValue = true;
             config.Generation.UseRotationalSymmetry = true;
@@ -61,6 +65,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             var loaded = RuntimeConfigRepository.LoadOrDefault();
 
             Assert.IsNotNull(loaded);
+            Assert.IsTrue(loaded.Assistance.AutoFillAllCandidatesOnPuzzleStart);
+            Assert.IsFalse(loaded.Assistance.AutoInitialiseCandidatesOnPuzzleStart);
             Assert.IsFalse(loaded.Assistance.HideApplyRules);
             Assert.IsTrue(loaded.Assistance.AutoCandidateOnSetValue);
             Assert.IsTrue(loaded.Generation.UseRotationalSymmetry);
@@ -86,6 +92,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsFalse(loaded.Assistance.HideApplyRules);
 
             // Missing from old json: should keep configured defaults.
+            Assert.IsTrue(loaded.Assistance.AutoFillAllCandidatesOnPuzzleStart);
+            Assert.IsTrue(loaded.Assistance.AutoInitialiseCandidatesOnPuzzleStart);
             Assert.IsFalse(loaded.Assistance.AutoCandidateOnSetValue);
             Assert.IsFalse(loaded.Generation.UseRotationalSymmetry);
 
@@ -106,6 +114,8 @@ namespace Sudoku.Tests.Editor.UI.Config
                 SchemaVersion = 1,
                 Assistance = new AssistanceConfigData
                 {
+                    AutoFillAllCandidatesOnPuzzleStart = true,
+                    AutoInitialiseCandidatesOnPuzzleStart = true,
                     HideApplyRules = true,
                     AutoCandidateOnSetValue = false
                 },
@@ -129,6 +139,8 @@ namespace Sudoku.Tests.Editor.UI.Config
                 SchemaVersion = 1,
                 Assistance = new AssistanceConfigData
                 {
+                    AutoFillAllCandidatesOnPuzzleStart = false,
+                    AutoInitialiseCandidatesOnPuzzleStart = false,
                     HideApplyRules = false,
                     AutoCandidateOnSetValue = true
                 },
