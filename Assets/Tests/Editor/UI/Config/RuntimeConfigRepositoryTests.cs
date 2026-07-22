@@ -47,6 +47,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsTrue(config.Assistance.HideApplyRules);
             Assert.IsFalse(config.Assistance.AutoCandidateOnSetValue);
             Assert.IsFalse(config.Generation.UseRotationalSymmetry);
+            Assert.IsTrue(config.Generation.GenerateUniqueSolvable);
+            Assert.AreEqual(6, config.Generation.MaxAllowedSolutionsWhenNonUnique);
             Assert.AreEqual(0, config.Rules.Count);
         }
 
@@ -59,6 +61,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             config.Assistance.HideApplyRules = false;
             config.Assistance.AutoCandidateOnSetValue = true;
             config.Generation.UseRotationalSymmetry = true;
+            config.Generation.GenerateUniqueSolvable = false;
+            config.Generation.MaxAllowedSolutionsWhenNonUnique = 3;
             config.Rules.Add(new RuleConfigEntry { RuleTypeName = "NakedSingleRule", Enabled = false });
 
             RuntimeConfigRepository.Save(config);
@@ -70,6 +74,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsFalse(loaded.Assistance.HideApplyRules);
             Assert.IsTrue(loaded.Assistance.AutoCandidateOnSetValue);
             Assert.IsTrue(loaded.Generation.UseRotationalSymmetry);
+            Assert.IsFalse(loaded.Generation.GenerateUniqueSolvable);
+            Assert.AreEqual(3, loaded.Generation.MaxAllowedSolutionsWhenNonUnique);
             Assert.AreEqual(1, loaded.Rules.Count);
             Assert.AreEqual("NakedSingleRule", loaded.Rules[0].RuleTypeName);
             Assert.IsFalse(loaded.Rules[0].Enabled);
@@ -96,6 +102,8 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsTrue(loaded.Assistance.AutoInitialiseCandidatesOnPuzzleStart);
             Assert.IsFalse(loaded.Assistance.AutoCandidateOnSetValue);
             Assert.IsFalse(loaded.Generation.UseRotationalSymmetry);
+            Assert.IsTrue(loaded.Generation.GenerateUniqueSolvable);
+            Assert.AreEqual(6, loaded.Generation.MaxAllowedSolutionsWhenNonUnique);
 
             Assert.AreEqual(1, loaded.Rules.Count);
             Assert.AreEqual("RightAngleRule", loaded.Rules[0].RuleTypeName);
@@ -121,7 +129,9 @@ namespace Sudoku.Tests.Editor.UI.Config
                 },
                 Generation = new GenerationConfigData
                 {
-                    UseRotationalSymmetry = false
+                    UseRotationalSymmetry = false,
+                    GenerateUniqueSolvable = true,
+                    MaxAllowedSolutionsWhenNonUnique = 6
                 },
                 Rules = new System.Collections.Generic.List<RuleConfigEntry>()
             };
@@ -146,7 +156,9 @@ namespace Sudoku.Tests.Editor.UI.Config
                 },
                 Generation = new GenerationConfigData
                 {
-                    UseRotationalSymmetry = true
+                    UseRotationalSymmetry = true,
+                    GenerateUniqueSolvable = true,
+                    MaxAllowedSolutionsWhenNonUnique = 8
                 },
                 Rules = new System.Collections.Generic.List<RuleConfigEntry>()
             };

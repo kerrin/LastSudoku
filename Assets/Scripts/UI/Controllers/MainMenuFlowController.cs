@@ -785,6 +785,8 @@ namespace Sudoku.UI.Controllers
                 var generator = new PuzzleGenerator(
                     maxRetries: 50,
                     requireNonNakedContribution: true,
+                    requireUniqueSolution: GenerationSettings.GenerateUniqueSolvable,
+                    maxAllowedSolutionsWhenNonUnique: GenerationSettings.MaxAllowedSolutionsWhenNonUnique,
                     clueSymmetryMode: symmetryMode);
                 generatedPuzzle = generator.Generate(solved, enabledRules, random);
                 if (generatedPuzzle != null)

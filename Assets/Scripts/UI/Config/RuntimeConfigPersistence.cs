@@ -36,6 +36,8 @@ namespace Sudoku.UI.Config
     public sealed class GenerationConfigData
     {
         public bool UseRotationalSymmetry = true;
+        public bool GenerateUniqueSolvable = true;
+        public int MaxAllowedSolutionsWhenNonUnique = 8;
     }
 
     [Serializable]
@@ -94,7 +96,11 @@ namespace Sudoku.UI.Config
                 Generation = new GenerationConfigData
                 {
                     // Keep rotational symmetry enabled for generated puzzles.
-                    UseRotationalSymmetry = true
+                    UseRotationalSymmetry = true,
+                    // Prefer unique-solvable puzzles by default.
+                    GenerateUniqueSolvable = true,
+                    // Keep non-unique generation bounded to human-solvable ambiguity.
+                    MaxAllowedSolutionsWhenNonUnique = 8
                 },
                 // Default colours: green, amber, red enabled; blue disabled.
                 Colours = new ColourConfigData
@@ -261,6 +267,10 @@ namespace Sudoku.UI.Config
             config.Generation ??= new GenerationConfigData();
             config.Colours ??= new ColourConfigData();
             config.Rules ??= new List<RuleConfigEntry>();
+            config.Generation.MaxAllowedSolutionsWhenNonUnique = Mathf.Clamp(
+                config.Generation.MaxAllowedSolutionsWhenNonUnique,
+                GenerationSettings.MinAllowedSolutionsWhenNonUnique,
+                GenerationSettings.MaxAllowedSolutionsWhenNonUniqueLimit);
         }
     }
 
@@ -299,6 +309,8 @@ namespace Sudoku.UI.Config
             _current.Assistance.AutoFillAllCandidatesOnPuzzleStart = AssistanceSettings.AutoFillAllCandidatesOnPuzzleStart;
             _current.Assistance.AutoInitialiseCandidatesOnPuzzleStart = AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart;
             _current.Generation.UseRotationalSymmetry = GenerationSettings.UseRotationalSymmetry;
+            _current.Generation.GenerateUniqueSolvable = GenerationSettings.GenerateUniqueSolvable;
+            _current.Generation.MaxAllowedSolutionsWhenNonUnique = GenerationSettings.MaxAllowedSolutionsWhenNonUnique;
 
             _current.Colours ??= new ColourConfigData();
             _current.Colours.GreenEnabled = ColourSettings.GreenEnabled;
@@ -404,6 +416,8 @@ namespace Sudoku.UI.Config
             AssistanceSettings.AutoInitialiseCandidatesOnPuzzleStart =
                 config.Assistance.AutoFillAllCandidatesOnPuzzleStart && config.Assistance.AutoInitialiseCandidatesOnPuzzleStart;
             GenerationSettings.UseRotationalSymmetry = config.Generation.UseRotationalSymmetry;
+            GenerationSettings.GenerateUniqueSolvable = config.Generation.GenerateUniqueSolvable;
+            GenerationSettings.MaxAllowedSolutionsWhenNonUnique = config.Generation.MaxAllowedSolutionsWhenNonUnique;
 
             // Apply colour settings with safe fallback when the section is absent.
             var colours = config.Colours ?? new ColourConfigData();

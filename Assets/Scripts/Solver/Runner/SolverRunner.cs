@@ -75,6 +75,8 @@ namespace Sudoku.Solver
         public bool LastCreationSolveFoundSolution { get; private set; }
         /** True when the latest creation-mode solver analysis found a solution with currently selected rules. */
         public bool LastCreationSolveFoundWithSelectedRules { get; private set; }
+        /** True when the latest creation-mode analysis found that the board is uniquely solvable. */
+        public bool LastCreationSolveIsUnique { get; private set; }
         /** Ordered unique rule names used by the latest creation-mode solver analysis. */
         public IReadOnlyList<string> LastCreationSolveRuleNames => _lastCreationSolveRuleNames;
         /** True when the current board state has no immediate contradictions. */
@@ -1459,8 +1461,11 @@ namespace Sudoku.Solver
 
                 LastCreationSolveFoundSolution = singlesSolved;
                 LastCreationSolveFoundWithSelectedRules = singlesSolved;
+                LastCreationSolveIsUnique = singlesSolved && PuzzleGenerator.HasUniqueSolution(_board);
                 LastCreationSolveStatusMessage = singlesSolved
-                    ? "Singles-only window: solution found using enabled singles rules."
+                    ? (LastCreationSolveIsUnique
+                        ? "Singles-only window: solution found using enabled singles rules and the puzzle is uniquely solvable."
+                        : "Singles-only window: solution found using enabled singles rules, but the puzzle may have multiple solutions and may require advanced rules or guessing.")
                     : "Singles-only window: no complete solution yet with enabled singles rules.";
                 return;
             }
@@ -1509,14 +1514,17 @@ namespace Sudoku.Solver
 
             LastCreationSolveFoundSolution = solvedWithEnabled || solvedWithAll;
             LastCreationSolveFoundWithSelectedRules = solvedWithEnabled;
-            
+            LastCreationSolveIsUnique = PuzzleGenerator.HasUniqueSolution(_board);
+
             if (solvedWithEnabled)
             {
-                LastCreationSolveStatusMessage = "Solution found using the currently enabled rules.";
+                LastCreationSolveStatusMessage = LastCreationSolveIsUnique
+                    ? "Solution found using the currently enabled rules and the puzzle is uniquely solvable."
+                    : "Solution found using the currently enabled rules, but the puzzle may have multiple solutions and may require advanced rules or guessing.";
             }
             else if (solvedWithAll)
             {
-                LastCreationSolveStatusMessage = "Solution found only when all rules were allowed.";
+                LastCreationSolveStatusMessage = "Solution found only when all rules were allowed; the puzzle may require advanced rules or guessing.";
             }
             else
             {
@@ -1656,6 +1664,7 @@ namespace Sudoku.Solver
         {
             LastCreationSolveFoundSolution = false;
             LastCreationSolveFoundWithSelectedRules = false;
+            LastCreationSolveIsUnique = false;
             LastCreationSolveStatusMessage = string.Empty;
             _lastCreationSolveRuleNames.Clear();
         }

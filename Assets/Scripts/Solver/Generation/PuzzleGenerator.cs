@@ -35,11 +35,14 @@ namespace Sudoku.Solver.Unsolver
         public const int DefaultMaxRetries = 30;
         public const int DefaultMaxIterations = 500;
         public const int DefaultMinimumOtherRulePasses = 10;
+        public const int DefaultMaxAllowedSolutionsWhenNonUnique = 8;
 
         private readonly int _maxRetries;
         private readonly int _maxIterations;
         private readonly int _minimumOtherRulePasses;
         private readonly bool _requireNonNakedContribution;
+        private readonly bool _requireUniqueSolution;
+        private readonly int _maxAllowedSolutionsWhenNonUnique;
         private readonly PuzzleClueSymmetryMode _clueSymmetryMode;
         private readonly Func<ISudokuRule, IUnsolveHandler> _handlerResolver;
         private readonly IPuzzleGenerationDebugTracer _debugTracer;
@@ -55,6 +58,8 @@ namespace Sudoku.Solver.Unsolver
             int maxIterations = DefaultMaxIterations,
             int minimumOtherRulePasses = DefaultMinimumOtherRulePasses,
             bool requireNonNakedContribution = false,
+            bool requireUniqueSolution = true,
+            int maxAllowedSolutionsWhenNonUnique = DefaultMaxAllowedSolutionsWhenNonUnique,
             PuzzleClueSymmetryMode clueSymmetryMode = PuzzleClueSymmetryMode.None,
             IPuzzleGenerationDebugTracer debugTracer = null,
             Func<ISudokuRule, IUnsolveHandler> handlerResolver = null)
@@ -63,6 +68,8 @@ namespace Sudoku.Solver.Unsolver
             _maxIterations = maxIterations;
             _minimumOtherRulePasses = Math.Max(0, minimumOtherRulePasses);
             _requireNonNakedContribution = requireNonNakedContribution;
+            _requireUniqueSolution = requireUniqueSolution;
+            _maxAllowedSolutionsWhenNonUnique = Math.Max(2, maxAllowedSolutionsWhenNonUnique);
             _clueSymmetryMode = clueSymmetryMode;
             _debugTracer = debugTracer;
             _handlerResolver = handlerResolver ?? UnsolveHandlerRegistry.GetHandler;
@@ -75,7 +82,7 @@ namespace Sudoku.Solver.Unsolver
          * @param enabledRules Rules to use for unsolver handlers; only enabled rules contribute.
          * @param random       Optional random source (a new instance is created if null).
          * @returns A new board with some values removed, ready for solving.
-         * @throws InvalidOperationException when uniqueness cannot be achieved within retries.
+         * @throws InvalidOperationException when a suitable puzzle cannot be generated within retries.
          */
         public Board Generate(Board solvedBoard, IEnumerable<ISudokuRule> enabledRules, Random random = null)
         {
@@ -240,14 +247,37 @@ namespace Sudoku.Solver.Unsolver
                     EnforceRotationalSymmetryByRestoringMirrors(board, solvedBoard);
                 }
 
-                RemoveRedundantCluesSinglePass(board, rulesList, random, _clueSymmetryMode);
+                RemoveRedundantCluesSinglePass(
+                    board,
+                    rulesList,
+                    random,
+                    _requireUniqueSolution,
+                    _maxAllowedSolutionsWhenNonUnique,
+                    _clueSymmetryMode);
                 _debugTracer?.RecordSnapshot(
                     board,
                     "Final clue sweep",
-                    "Performed single-pass removable clue sweep across all filled cells.",
+                    _requireUniqueSolution
+                        ? "Performed single-pass removable clue sweep across all filled cells."
+                        : "Performed relaxed clue sweep that preserves solvability even when uniqueness is disabled.",
                     string.Empty,
                     PuzzleGenerationDebugEventKind.InternalStep,
                     depth: 0);
+
+                if (!_requireUniqueSolution)
+                {
+                    EnsurePuzzleHasAtLeastOneGiven(board, solvedBoard, random);
+
+                    if (HasUniqueSolution(board))
+                    {
+                        TryRelaxPuzzleToAllowMultipleSolutions(
+                            board,
+                            random,
+                            _clueSymmetryMode,
+                            _maxAllowedSolutionsWhenNonUnique);
+                        EnsurePuzzleHasAtLeastOneGiven(board, solvedBoard, random);
+                    }
+                }
 
                 FinalizeBoard(board);
                 _debugTracer?.RecordSnapshot(
@@ -258,7 +288,11 @@ namespace Sudoku.Solver.Unsolver
                     PuzzleGenerationDebugEventKind.Finalize,
                     depth: 0);
 
-                if (HasUniqueSolution(board))
+                bool acceptsBoard = _requireUniqueSolution
+                    ? HasUniqueSolution(board)
+                    : IsWithinNonUniqueSolutionWindow(board, _maxAllowedSolutionsWhenNonUnique);
+
+                if (acceptsBoard)
                 {
                     LastGenerationRuleSequence = appliedRuleSequence;
                     LastGenerationRuleUsageSummary = BuildConsecutiveRuleSummary(appliedRuleSequence);
@@ -267,7 +301,9 @@ namespace Sudoku.Solver.Unsolver
             }
 
             throw new InvalidOperationException(
-                $"Failed to generate a uniquely solvable puzzle after {_maxRetries} attempts.");
+                _requireUniqueSolution
+                    ? $"Failed to generate a uniquely solvable puzzle after {_maxRetries} attempts."
+                    : $"Failed to generate a solvable puzzle with 2..{_maxAllowedSolutionsWhenNonUnique} solutions after {_maxRetries} attempts.");
         }
 
         /**
@@ -383,10 +419,12 @@ namespace Sudoku.Solver.Unsolver
          * For each currently filled cell (row-major), remove it temporarily and keep
          * the removal only if the puzzle remains solvable.
          */
-        private static void RemoveRedundantCluesSinglePass(
+        private void RemoveRedundantCluesSinglePass(
             Board board,
             IReadOnlyList<ISudokuRule> enabledRules,
             Random random,
+            bool requireUniqueSolution,
+            int maxAllowedSolutionsWhenNonUnique,
             PuzzleClueSymmetryMode clueSymmetryMode)
         {
             var enabledRegistry = BuildEnabledValuePlacementRegistry(enabledRules);
@@ -413,7 +451,13 @@ namespace Sudoku.Solver.Unsolver
 
                 if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180)
                 {
-                    if (!TryRemoveRotationalPair(board, enabledEngine, row, column))
+                    if (!TryRemoveRotationalPair(
+                        board,
+                        enabledEngine,
+                        row,
+                        column,
+                        requireUniqueSolution,
+                        maxAllowedSolutionsWhenNonUnique))
                     {
                         continue;
                     }
@@ -430,14 +474,32 @@ namespace Sudoku.Solver.Unsolver
                 int removedValue = cell.Value.Value;
                 cell.Value = null;
 
-                if (!IsSolvableByEnabledRules(board, enabledEngine) || !IsUniquelySolvable(board))
+                if (requireUniqueSolution)
+                {
+                    bool remainsValid = IsSolvableByEnabledRules(board, enabledEngine);
+                    if (!remainsValid || !IsUniquelySolvable(board))
+                    {
+                        cell.Value = removedValue;
+                    }
+                    continue;
+                }
+
+                int solutionCount = CountSolutionsCapped(board, maxAllowedSolutionsWhenNonUnique + 1);
+                bool remainsWithinCap = solutionCount > 0 && solutionCount <= maxAllowedSolutionsWhenNonUnique;
+                if (!remainsWithinCap)
                 {
                     cell.Value = removedValue;
                 }
             }
         }
 
-        private static bool TryRemoveRotationalPair(Board board, SolverEngine enabledEngine, int row, int column)
+        private bool TryRemoveRotationalPair(
+            Board board,
+            SolverEngine enabledEngine,
+            int row,
+            int column,
+            bool requireUniqueSolution,
+            int maxAllowedSolutionsWhenNonUnique)
         {
             int size = board.Size;
             int pairRow = (size - 1) - row;
@@ -466,7 +528,26 @@ namespace Sudoku.Solver.Unsolver
                 mirrored.Value = null;
             }
 
-            if (!IsSolvableByEnabledRules(board, enabledEngine) || !IsUniquelySolvable(board))
+            if (requireUniqueSolution)
+            {
+                bool remainsValid = IsSolvableByEnabledRules(board, enabledEngine);
+                if (!remainsValid || !IsUniquelySolvable(board))
+                {
+                    primary.Value = primaryValue;
+                    if (!sameCell)
+                    {
+                        mirrored.Value = mirroredValue;
+                    }
+
+                    return false;
+                }
+
+                return true;
+            }
+
+            int solutionCount = CountSolutionsCapped(board, maxAllowedSolutionsWhenNonUnique + 1);
+            bool remainsWithinCap = solutionCount > 0 && solutionCount <= maxAllowedSolutionsWhenNonUnique;
+            if (!remainsWithinCap)
             {
                 primary.Value = primaryValue;
                 if (!sameCell)
@@ -478,6 +559,20 @@ namespace Sudoku.Solver.Unsolver
             }
 
             return true;
+        }
+
+        /**
+         * Determines whether a board has a non-unique solution count within the allowed limit.
+         *
+         * @param board The board to evaluate.
+         * @param maxAllowedSolutions Maximum accepted solution count when uniqueness is disabled.
+         * @returns True when the board has between 2 and the configured maximum solutions.
+         */
+        private static bool IsWithinNonUniqueSolutionWindow(Board board, int maxAllowedSolutions)
+        {
+            int clampedMaxAllowed = Math.Max(2, maxAllowedSolutions);
+            int solutionCount = CountSolutionsCapped(board, clampedMaxAllowed + 1);
+            return solutionCount >= 2 && solutionCount <= clampedMaxAllowed;
         }
 
         private static void EnforceRotationalSymmetryByRestoringMirrors(Board board, Board solvedReferenceBoard)
@@ -520,6 +615,32 @@ namespace Sudoku.Solver.Unsolver
             var boardCopyForEnabledRules = CloneBoardForSolve(board);
             // Keep this bounded because the final sweep runs per clue.
             return enabledEngine.Solve(boardCopyForEnabledRules, 300, out _);
+        }
+
+        /**
+         * Returns true when the board has at least one valid solution.
+         */
+        private static bool HasAtLeastOneSolution(Board board)
+        {
+            var boardCopy = CloneBoard(board);
+            return CountSolutions(boardCopy, 2) > 0;
+        }
+
+        /**
+         * Counts valid solutions up to a capped limit.
+         *
+         * @param board Board to evaluate.
+         * @param maxSolutionsToCount Maximum number of solutions to count before stopping.
+         * @returns Number of found solutions, capped at maxSolutionsToCount.
+         */
+        private static int CountSolutionsCapped(Board board, int maxSolutionsToCount)
+        {
+            if (board == null || maxSolutionsToCount <= 0)
+            {
+                return 0;
+            }
+
+            return CountSolutions(CloneBoard(board), maxSolutionsToCount);
         }
 
         private static RuleRegistry BuildEnabledValuePlacementRegistry(IReadOnlyList<ISudokuRule> enabledRules)
@@ -685,6 +806,174 @@ namespace Sudoku.Solver.Unsolver
             }
 
             return true;
+        }
+
+        /**
+         * Ensures the puzzle keeps at least one given cell after aggressive clue removal.
+         *
+         * @param board The puzzle board being prepared for output.
+         * @param solvedReferenceBoard The solved reference used to restore a deterministic clue.
+         * @param random Random source used to pick a restore location.
+         */
+        private static void EnsurePuzzleHasAtLeastOneGiven(Board board, Board solvedReferenceBoard, Random random)
+        {
+            if (board == null || solvedReferenceBoard == null)
+            {
+                return;
+            }
+
+            int cellCount = board.Size * board.Size;
+            int givenCount = 0;
+            for (int index = 0; index < cellCount; index++)
+            {
+                int row = index / board.Size;
+                int column = index % board.Size;
+                if (board.Cells[row, column].Value.HasValue)
+                {
+                    givenCount++;
+                }
+            }
+
+            if (givenCount > 0)
+            {
+                return;
+            }
+
+            int restoreIndex = random?.Next(cellCount) ?? 0;
+            int restoreRow = restoreIndex / board.Size;
+            int restoreColumn = restoreIndex % board.Size;
+            board.Cells[restoreRow, restoreColumn].Value = solvedReferenceBoard.Cells[restoreRow, restoreColumn].Value;
+        }
+
+        /**
+         * Attempts to introduce ambiguity by removing additional clues while preserving solvability.
+         *
+         * @param board The puzzle board to relax.
+         * @param random Random source used to vary clue-removal order.
+         * @param clueSymmetryMode Optional clue symmetry mode to preserve when removing clues.
+         * @returns True when the board remains solvable and gains multiple solutions.
+         */
+        private static bool TryRelaxPuzzleToAllowMultipleSolutions(
+            Board board,
+            Random random,
+            PuzzleClueSymmetryMode clueSymmetryMode,
+            int maxAllowedSolutionsWhenNonUnique)
+        {
+            if (board == null)
+            {
+                return false;
+            }
+
+            int clampedMaxAllowed = Math.Max(2, maxAllowedSolutionsWhenNonUnique);
+            int initialSolutionCount = CountSolutionsCapped(board, clampedMaxAllowed + 1);
+            if (initialSolutionCount >= 2 && initialSolutionCount <= clampedMaxAllowed)
+            {
+                return true;
+            }
+
+            if (initialSolutionCount > clampedMaxAllowed)
+            {
+                return false;
+            }
+
+            int cellCount = board.Size * board.Size;
+            var indices = new List<int>(cellCount);
+            for (int index = 0; index < cellCount; index++)
+            {
+                indices.Add(index);
+            }
+
+            Shuffle(indices, random);
+
+            for (int i = 0; i < indices.Count; i++)
+            {
+                int row = indices[i] / board.Size;
+                int column = indices[i] % board.Size;
+                var primary = board.Cells[row, column];
+                if (!primary.Value.HasValue)
+                {
+                    continue;
+                }
+
+                int pairRow = (board.Size - 1) - row;
+                int pairColumn = (board.Size - 1) - column;
+                bool sameCell = row == pairRow && column == pairColumn;
+                var mirrored = board.Cells[pairRow, pairColumn];
+
+                if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180 && !sameCell && !mirrored.Value.HasValue)
+                {
+                    continue;
+                }
+
+                int primaryValue = primary.Value.Value;
+                primary.Value = null;
+
+                int mirroredValue = 0;
+                if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180 && !sameCell)
+                {
+                    mirroredValue = mirrored.Value.Value;
+                    mirrored.Value = null;
+                }
+
+                if (CountFilledCells(board) == 0)
+                {
+                    primary.Value = primaryValue;
+                    if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180 && !sameCell)
+                    {
+                        mirrored.Value = mirroredValue;
+                    }
+
+                    break;
+                }
+
+                int solutionCount = CountSolutionsCapped(board, clampedMaxAllowed + 1);
+                bool exceedsCap = solutionCount > clampedMaxAllowed;
+                if (solutionCount == 0 || exceedsCap)
+                {
+                    primary.Value = primaryValue;
+                    if (clueSymmetryMode == PuzzleClueSymmetryMode.Rotational180 && !sameCell)
+                    {
+                        mirrored.Value = mirroredValue;
+                    }
+
+                    continue;
+                }
+
+                if (solutionCount >= 2)
+                {
+                    return true;
+                }
+            }
+
+            return IsWithinNonUniqueSolutionWindow(board, clampedMaxAllowed);
+        }
+
+        /**
+         * Counts how many cells currently contain a value.
+         *
+         * @param board The board to inspect.
+         * @returns Number of filled cells in the board.
+         */
+        private static int CountFilledCells(Board board)
+        {
+            if (board == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            int cellCount = board.Size * board.Size;
+            for (int index = 0; index < cellCount; index++)
+            {
+                int row = index / board.Size;
+                int column = index % board.Size;
+                if (board.Cells[row, column].Value.HasValue)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
 
         private static string NormalizeRuleDisplayName(string rawRuleName)

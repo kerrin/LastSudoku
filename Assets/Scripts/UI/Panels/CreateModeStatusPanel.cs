@@ -178,6 +178,12 @@ public class CreateModeStatusPanel : MonoBehaviour
 
         Color allRulesColor = Runner.LastCreationSolveFoundSolution ? green : red;
 
+        if (Runner.IsPuzzleCreationMode && Runner.LastCreationSolveFoundSolution && !Runner.LastCreationSolveIsUnique)
+        {
+            allRulesText = "All rules: Solution found, but multiple solutions may exist and advanced rules or guessing may be required.";
+            allRulesColor = amber;
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine(Colorize(selectedText, selectedColor));
         sb.AppendLine(Colorize(allRulesText, allRulesColor));

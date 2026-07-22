@@ -191,6 +191,38 @@ namespace Sudoku.Tests.Unsolver
         }
 
         [Test]
+        public void Generate_WithUniqueSolvabilityDisabled_ReturnsBoardWithMultipleSolutions()
+        {
+            var solved = MakeFullySolvedBoard();
+            var generator = new PuzzleGenerator(requireUniqueSolution: false, maxRetries: 100);
+            var puzzle = generator.Generate(solved, MinimalRules(), new Random(123));
+
+            Assert.IsNotNull(puzzle);
+            Assert.IsTrue(puzzle.IsValid(), "Generated puzzle must remain a valid Sudoku board.");
+            Assert.IsFalse(PuzzleGenerator.HasUniqueSolution(puzzle),
+                "Generated puzzle should allow multiple solutions when unique-solvability is disabled.");
+        }
+
+        [Test]
+        public void Generate_WithUniqueSolvabilityDisabled_RespectsMaximumAllowedSolutions()
+        {
+            var solved = MakeFullySolvedBoard();
+            const int maxAllowedSolutions = 4;
+            var generator = new PuzzleGenerator(
+                requireUniqueSolution: false,
+                maxRetries: 120,
+                maxAllowedSolutionsWhenNonUnique: maxAllowedSolutions);
+
+            var puzzle = generator.Generate(solved, MinimalRules(), new Random(123));
+            int solutionCount = CountSolutionsUpTo(puzzle, maxAllowedSolutions + 1);
+
+            Assert.GreaterOrEqual(solutionCount, 2,
+                "Non-unique generation must produce at least two valid solutions.");
+            Assert.LessOrEqual(solutionCount, maxAllowedSolutions,
+                "Non-unique generation must respect the configured maximum solution count.");
+        }
+
+        [Test]
         public void Generate_WithNakedSingleOnly_PuzzleSolvableByNakedSingle()
         {
             var solved = MakeFullySolvedBoard();
@@ -355,6 +387,167 @@ namespace Sudoku.Tests.Unsolver
                 "Expected add handler to stop after the repeated transition is blocked.");
             Assert.AreEqual(2, removeHandler.Calls,
                 "Expected remove handler to stop after the repeated transition is blocked.");
+        }
+
+        /**
+         * Counts board solutions up to a caller-defined cap.
+         *
+         * @param board Source board to evaluate.
+         * @param maxCount Maximum number of solutions to count before early-exit.
+         * @returns Number of solutions found, capped by maxCount.
+         */
+        private static int CountSolutionsUpTo(Board board, int maxCount)
+        {
+            if (board == null || maxCount <= 0)
+            {
+                return 0;
+            }
+
+            return CountSolutionsRecursive(PuzzleGenerator.CloneBoard(board), maxCount);
+        }
+
+        /**
+         * Backtracking solution counter used by tests.
+         *
+         * @param board Mutable board under search.
+         * @param maxCount Maximum number of solutions to count before early-exit.
+         * @returns Number of solutions found, capped by maxCount.
+         */
+        private static int CountSolutionsRecursive(Board board, int maxCount)
+        {
+            if (maxCount <= 0)
+            {
+                return 0;
+            }
+
+            if (!TryFindMostConstrainedEmptyCell(board, out int row, out int column))
+            {
+                return 1;
+            }
+
+            int count = 0;
+            for (int value = 1; value <= board.Size; value++)
+            {
+                if (!IsValidPlacement(board, row, column, value))
+                {
+                    continue;
+                }
+
+                board.Cells[row, column].Value = value;
+                count += CountSolutionsRecursive(board, maxCount - count);
+                board.Cells[row, column].Value = null;
+                if (count >= maxCount)
+                {
+                    return count;
+                }
+            }
+
+            return count;
+        }
+
+        /**
+         * Finds the next empty cell with the lowest candidate count.
+         *
+         * @param board Board to inspect.
+         * @param bestRow Output row index of the chosen cell.
+         * @param bestColumn Output column index of the chosen cell.
+         * @returns True when an empty cell exists; otherwise false.
+         */
+        private static bool TryFindMostConstrainedEmptyCell(Board board, out int bestRow, out int bestColumn)
+        {
+            bestRow = -1;
+            bestColumn = -1;
+            int bestCandidateCount = int.MaxValue;
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    if (board.Cells[row, column].Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    int candidateCount = 0;
+                    for (int value = 1; value <= board.Size; value++)
+                    {
+                        if (!IsValidPlacement(board, row, column, value))
+                        {
+                            continue;
+                        }
+
+                        candidateCount++;
+                        if (candidateCount >= bestCandidateCount)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (candidateCount == 0)
+                    {
+                        bestRow = row;
+                        bestColumn = column;
+                        return true;
+                    }
+
+                    if (candidateCount < bestCandidateCount)
+                    {
+                        bestCandidateCount = candidateCount;
+                        bestRow = row;
+                        bestColumn = column;
+
+                        if (bestCandidateCount == 1)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return bestRow >= 0;
+        }
+
+        /**
+         * Checks whether placing a value at the target cell preserves Sudoku constraints.
+         *
+         * @param board Board under validation.
+         * @param row Target row index.
+         * @param column Target column index.
+         * @param value Candidate value.
+         * @returns True when placement is valid; otherwise false.
+         */
+        private static bool IsValidPlacement(Board board, int row, int column, int value)
+        {
+            for (int c = 0; c < board.Size; c++)
+            {
+                if (c != column && board.Cells[row, c].Value == value)
+                {
+                    return false;
+                }
+            }
+
+            for (int r = 0; r < board.Size; r++)
+            {
+                if (r != row && board.Cells[r, column].Value == value)
+                {
+                    return false;
+                }
+            }
+
+            int boxRowStart = (row / board.BoxHeight) * board.BoxHeight;
+            int boxColumnStart = (column / board.BoxWidth) * board.BoxWidth;
+            for (int r = boxRowStart; r < boxRowStart + board.BoxHeight; r++)
+            {
+                for (int c = boxColumnStart; c < boxColumnStart + board.BoxWidth; c++)
+                {
+                    if ((r != row || c != column) && board.Cells[r, c].Value == value)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         private sealed class LoopAddRule : ISudokuRule

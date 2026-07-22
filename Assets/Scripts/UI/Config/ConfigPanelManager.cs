@@ -475,6 +475,42 @@ namespace Sudoku.UI
                 RuntimeConfigService.SaveCurrent(_registry);
             }
 
+            bool generateUniqueSolvable = GUILayout.Toggle(
+                GenerationSettings.GenerateUniqueSolvable,
+                "Generate Unique Solvable",
+                _toggleStyle,
+                GUILayout.Height(28f),
+                GUILayout.ExpandWidth(true));
+
+            if (generateUniqueSolvable != GenerationSettings.GenerateUniqueSolvable)
+            {
+                GenerationSettings.GenerateUniqueSolvable = generateUniqueSolvable;
+                RuntimeConfigService.SaveCurrent(_registry);
+            }
+
+            if (!GenerationSettings.GenerateUniqueSolvable)
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("  Max Allowed Solutions (Non-Unique)", _ruleNameStyle);
+
+                int currentMaxAllowed = GenerationSettings.MaxAllowedSolutionsWhenNonUnique;
+                float sliderValue = GUILayout.HorizontalSlider(
+                    currentMaxAllowed,
+                    GenerationSettings.MinAllowedSolutionsWhenNonUnique,
+                    GenerationSettings.MaxAllowedSolutionsWhenNonUniqueLimit,
+                    GUILayout.Height(24f),
+                    GUILayout.ExpandWidth(true));
+                int newMaxAllowed = Mathf.RoundToInt(sliderValue);
+
+                GUILayout.Label($"  {newMaxAllowed}", _ruleNameStyle);
+
+                if (newMaxAllowed != currentMaxAllowed)
+                {
+                    GenerationSettings.MaxAllowedSolutionsWhenNonUnique = newMaxAllowed;
+                    RuntimeConfigService.SaveCurrent(_registry);
+                }
+            }
+
             GUILayout.Space(16f);
             GUILayout.EndVertical();
 
