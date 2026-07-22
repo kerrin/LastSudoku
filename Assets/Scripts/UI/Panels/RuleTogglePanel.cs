@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Panels
 {
@@ -17,6 +18,9 @@ namespace Sudoku.UI.Panels
  */
 public class RuleTogglePanel : MonoBehaviour
 {
+    private const string ColouringRuleTypeName = nameof(ColouringRule);
+    private const string ColouringRuleRequirementSuffix = " (requires 2 colours)";
+
     private static readonly Difficulty[] DifficultyDisplayOrder =
     {
         Difficulty.Easy,
@@ -53,6 +57,7 @@ public class RuleTogglePanel : MonoBehaviour
     // Cached reference to the Content transform so external state changes
     // can update toggle visuals without rebuilding the whole list.
     private Transform _togglesParent;
+    private bool? _lastColouringPrerequisiteMet;
 
     /**
      * Simplified Start: Validate runner/registry, build panel, then finalize layout.
@@ -97,11 +102,31 @@ public class RuleTogglePanel : MonoBehaviour
         ReorderTogglesToRegistryOrder(togglesParent);
         RefreshScrollLayout(togglesParent);
 
+        ApplyColouringRulePrerequisiteVisualState(force: true);
+        _lastColouringPrerequisiteMet = ColourSettings.GetEnabledColourCount() >= 2;
+
         // Allow layout to settle then finalize horizontal sizing
         yield return null;
         RefreshScrollLayout(togglesParent);
         FinalizeLayout(panelRootGO, panelRootRT, rectWidth);
         AlignWithSidePanel(panelRootGO, panelRootRT);
+    }
+
+    private void Update()
+    {
+        if (_togglesParent == null)
+        {
+            return;
+        }
+
+        bool prerequisiteMet = ColourSettings.GetEnabledColourCount() >= 2;
+        if (_lastColouringPrerequisiteMet.HasValue && _lastColouringPrerequisiteMet.Value == prerequisiteMet)
+        {
+            return;
+        }
+
+        _lastColouringPrerequisiteMet = prerequisiteMet;
+        ApplyColouringRulePrerequisiteVisualState(force: true);
     }
 
     // --- Helper methods ---
@@ -753,12 +778,23 @@ public class RuleTogglePanel : MonoBehaviour
         // Use None transition so PlayEffect never starts a fade coroutine that can
         // conflict with our direct colour management below.
         toggle.toggleTransition = Toggle.ToggleTransition.None;
-        toggle.isOn = enabled;
         string ruleTypeName = rule.GetType().Name;
+        bool colouringPrerequisiteMet = !string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal) ||
+                                        ColourSettings.GetEnabledColourCount() >= 2;
+
+        toggle.isOn = enabled;
         toggle.onValueChanged.AddListener((val) =>
         {
+            if (string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal) &&
+                ColourSettings.GetEnabledColourCount() < 2)
+            {
+                toggle.SetIsOnWithoutNotify(false);
+                return;
+            }
+
             _registry.SetEnabled(ruleTypeName, val);
             Runner?.HandleRuleToggleChanged(ruleTypeName, val);
+            RuntimeConfigService.SaveCurrent(_registry);
             RefreshApplyRulesPanel();
             // Keep the GO always active; control visibility via alpha.
             if (toggle.graphic != null)
@@ -774,6 +810,115 @@ public class RuleTogglePanel : MonoBehaviour
             toggle.graphic.gameObject.SetActive(true);
             toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
         }
+
+        if (!colouringPrerequisiteMet)
+        {
+            toggle.interactable = false;
+            rowButton.interactable = false;
+            label.color = new Color(1f, 1f, 1f, 0.45f);
+            label.text = lblTxt + ColouringRuleRequirementSuffix;
+        }
+    }
+
+    /**
+     * Refresh ColouringRule row visual/interactable state based on colour prerequisite.
+     *
+     * @param force When true, apply the state even if no local cache exists.
+     */
+    private void ApplyColouringRulePrerequisiteVisualState(bool force)
+    {
+        if (_togglesParent == null || _registry == null)
+        {
+            return;
+        }
+
+        bool prerequisiteMet = ColourSettings.GetEnabledColourCount() >= 2;
+        if (!force && _lastColouringPrerequisiteMet.HasValue && _lastColouringPrerequisiteMet.Value == prerequisiteMet)
+        {
+            return;
+        }
+
+        var rowTransform = _togglesParent.Find(ColouringRuleTypeName + "_Toggle");
+        if (rowTransform == null)
+        {
+            return;
+        }
+
+        var toggle = rowTransform.Find("Toggle")?.GetComponent<Toggle>();
+        var button = rowTransform.GetComponent<Button>();
+        var label = rowTransform.Find("Label")?.GetComponent<Text>();
+
+        if (!prerequisiteMet)
+        {
+            if (toggle != null)
+            {
+                toggle.interactable = false;
+                if (toggle.graphic != null)
+                {
+                    toggle.graphic.gameObject.SetActive(true);
+                    bool enabled = IsRuleEnabled(ColouringRuleTypeName);
+                    toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
+                }
+            }
+
+            if (button != null)
+            {
+                button.interactable = false;
+            }
+
+            if (label != null)
+            {
+                label.color = new Color(1f, 1f, 1f, 0.45f);
+                string baseText = label.text.Replace(ColouringRuleRequirementSuffix, string.Empty);
+                label.text = baseText + ColouringRuleRequirementSuffix;
+            }
+
+            return;
+        }
+
+        if (toggle != null)
+        {
+            toggle.interactable = true;
+            bool enabled = IsRuleEnabled(ColouringRuleTypeName);
+            toggle.SetIsOnWithoutNotify(enabled);
+            if (toggle.graphic != null)
+            {
+                toggle.graphic.gameObject.SetActive(true);
+                toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
+            }
+        }
+
+        if (button != null)
+        {
+            button.interactable = true;
+        }
+
+        if (label != null)
+        {
+            label.color = Color.white;
+            label.text = label.text.Replace(ColouringRuleRequirementSuffix, string.Empty);
+        }
+    }
+
+    /**
+     * Check whether a rule type is currently enabled.
+     *
+     * @param ruleTypeName Rule type name.
+     * @returns True when enabled.
+     */
+    private bool IsRuleEnabled(string ruleTypeName)
+    {
+        var rules = _registry.GetRulesWithStatus();
+        for (int i = 0; i < rules.Count; i++)
+        {
+            var (rule, enabled) = rules[i];
+            if (rule != null && string.Equals(rule.GetType().Name, ruleTypeName, System.StringComparison.Ordinal))
+            {
+                return enabled;
+            }
+        }
+
+        return false;
     }
 
     private string SplitPascalCase(string input)

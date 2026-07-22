@@ -22,6 +22,15 @@ namespace Sudoku.UI
      */
     public class ConfigPanelManager : MonoBehaviour
     {
+        private enum PendingColourDisable
+        {
+            None = 0,
+            Green = 1,
+            Amber = 2,
+            Red = 3,
+            Blue = 4,
+        }
+
         private enum ConfigTabId
         {
             Rules = 0,
@@ -52,6 +61,10 @@ namespace Sudoku.UI
         private GUIStyle _assistanceSectionStyle;
         private bool     _stylesBuilt;
         private ConfigTabId _activeTab = ConfigTabId.Rules;
+        private PendingColourDisable _pendingColourDisable = PendingColourDisable.None;
+        private bool _showColouringAutoDisableWarning;
+
+        private const string ColouringRuleTypeName = nameof(ColouringRule);
 
         // Panel layout constants.
         private const float PanelW  = 500f;
@@ -95,6 +108,7 @@ namespace Sudoku.UI
             RuntimeConfigService.EnsureLoaded();
             ResolveReferences();
             RuntimeConfigService.ApplySavedRuleStates(_registry, _runner);
+            EnforceColouringRulePrerequisite(persistWhenChanged: false);
             SetUnderlyingUiInputEnabled(false);
             _isOpen = true;
         }
@@ -105,6 +119,7 @@ namespace Sudoku.UI
         public void CloseConfigPanel()
         {
             SetUnderlyingUiInputEnabled(true);
+            CancelPendingColourDisable();
             _isOpen = false;
         }
 
@@ -288,6 +303,8 @@ namespace Sudoku.UI
          */
         private void DrawRuleToggles()
         {
+            EnforceColouringRulePrerequisite(persistWhenChanged: false);
+
             if (_registry == null)
             {
                 GUILayout.Space(8f);
@@ -351,7 +368,26 @@ namespace Sudoku.UI
                     }
 
                     var toggleRect = new Rect(rowRect.x + 10f, rowRect.y + (RowH - 22f) * 0.5f, rowRect.width - 20f, 22f);
+                    bool colouringPrerequisiteMet = !IsColouringRuleTypeName(typeName) || ColourSettings.GetEnabledColourCount() >= 2;
+                    bool previousGuiEnabled = GUI.enabled;
+                    Color previousColor = GUI.color;
+                    if (!colouringPrerequisiteMet)
+                    {
+                        GUI.enabled = false;
+                        GUI.color = new Color(previousColor.r, previousColor.g, previousColor.b, previousColor.a * 0.45f);
+                    }
+
                     bool newEnabled = GUI.Toggle(toggleRect, enabled, "  " + displayName, _toggleStyle);
+
+                    if (!colouringPrerequisiteMet)
+                    {
+                        GUI.enabled = previousGuiEnabled;
+                        GUI.color = previousColor;
+
+                        var noteRect = new Rect(rowRect.x + 230f, rowRect.y + (RowH - 18f) * 0.5f, rowRect.width - 240f, 18f);
+                        GUI.Label(noteRect, "Requires at least 2 colours", _ruleNameStyle);
+                    }
+
                     ApplyToggleChange(typeName, oldEnabled: enabled, newEnabled);
                     rowIndex++;
                 }
@@ -529,21 +565,210 @@ namespace Sudoku.UI
             GUILayout.Label("  Enabled Highlight Colours", _ruleNameStyle);
             GUILayout.Space(4f);
 
-            bool green = GUILayout.Toggle(ColourSettings.GreenEnabled, "  Green", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
-            if (green != ColourSettings.GreenEnabled) { ColourSettings.GreenEnabled = green; RuntimeConfigService.SaveCurrent(_registry); }
+            DrawColourToggle("Green", ColourSettings.GreenEnabled, PendingColourDisable.Green);
+            DrawColourToggle("Amber", ColourSettings.AmberEnabled, PendingColourDisable.Amber);
+            DrawColourToggle("Red", ColourSettings.RedEnabled, PendingColourDisable.Red);
+            DrawColourToggle("Blue", ColourSettings.BlueEnabled, PendingColourDisable.Blue);
 
-            bool amber = GUILayout.Toggle(ColourSettings.AmberEnabled, "  Amber", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
-            if (amber != ColourSettings.AmberEnabled) { ColourSettings.AmberEnabled = amber; RuntimeConfigService.SaveCurrent(_registry); }
+            if (_showColouringAutoDisableWarning)
+            {
+                GUILayout.Space(8f);
+                GUILayout.Label("  Disabling this colour will auto-disable Colouring rule (requires at least 2 colours).", _ruleNameStyle);
+                GUILayout.Space(4f);
 
-            bool red = GUILayout.Toggle(ColourSettings.RedEnabled, "  Red", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
-            if (red != ColourSettings.RedEnabled) { ColourSettings.RedEnabled = red; RuntimeConfigService.SaveCurrent(_registry); }
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button("Disable Colour + Rule", GUILayout.Height(28f)))
+                {
+                    ConfirmColourDisableWithAutoRuleDisable();
+                }
 
-            bool blue = GUILayout.Toggle(ColourSettings.BlueEnabled, "  Blue", _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
-            if (blue != ColourSettings.BlueEnabled) { ColourSettings.BlueEnabled = blue; RuntimeConfigService.SaveCurrent(_registry); }
+                if (GUILayout.Button("Cancel", GUILayout.Height(28f)))
+                {
+                    CancelPendingColourDisable();
+                }
+
+                GUILayout.EndHorizontal();
+            }
 
             GUILayout.Space(16f);
             GUILayout.EndVertical();
             GUILayout.FlexibleSpace();
+        }
+
+        /**
+         * Draw and process one highlight-colour toggle.
+         *
+         * @param label Display label for the toggle.
+         * @param currentValue Current enabled state.
+         * @param pendingValue Identifier used when a confirmation is required.
+         */
+        private void DrawColourToggle(string label, bool currentValue, PendingColourDisable pendingValue)
+        {
+            RuntimeConfigService.EnsureLoaded();
+
+            bool newValue = GUILayout.Toggle(currentValue, "  " + label, _toggleStyle, GUILayout.Height(28f), GUILayout.ExpandWidth(true));
+            if (newValue == currentValue)
+            {
+                return;
+            }
+
+            if (!newValue && RequiresColouringRuleAutoDisableWarning())
+            {
+                _pendingColourDisable = pendingValue;
+                _showColouringAutoDisableWarning = true;
+                return;
+            }
+
+            SetColourEnabled(pendingValue, newValue);
+            EnforceColouringRulePrerequisite(persistWhenChanged: false);
+            RuntimeConfigService.SaveCurrent(_registry);
+        }
+
+        /**
+         * Commit the pending colour disable and auto-disable Colouring rule.
+         */
+        private void ConfirmColourDisableWithAutoRuleDisable()
+        {
+            RuntimeConfigService.EnsureLoaded();
+
+            if (_pendingColourDisable == PendingColourDisable.None)
+            {
+                _showColouringAutoDisableWarning = false;
+                return;
+            }
+
+            if (IsRuleEnabledByTypeName(ColouringRuleTypeName))
+            {
+                _registry?.SetEnabled(ColouringRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
+                RefreshApplyRulesPanel();
+                RefreshCreateModeStatusPanels();
+            }
+
+            SetColourEnabled(_pendingColourDisable, false);
+            CancelPendingColourDisable();
+            RuntimeConfigService.SaveCurrent(_registry);
+        }
+
+        /**
+         * Clear pending warning state without changing any settings.
+         */
+        private void CancelPendingColourDisable()
+        {
+            _pendingColourDisable = PendingColourDisable.None;
+            _showColouringAutoDisableWarning = false;
+        }
+
+        /**
+         * Enforce ColouringRule prerequisite based on enabled colour count.
+         *
+         * @param persistWhenChanged When true, persist the auto-disable immediately.
+         */
+        private void EnforceColouringRulePrerequisite(bool persistWhenChanged)
+        {
+            if (_registry == null)
+            {
+                return;
+            }
+
+            if (ColourSettings.GetEnabledColourCount() >= 2)
+            {
+                return;
+            }
+
+            if (!IsRuleEnabledByTypeName(ColouringRuleTypeName))
+            {
+                return;
+            }
+
+            _registry.SetEnabled(ColouringRuleTypeName, false);
+            _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
+            RefreshApplyRulesPanel();
+            RefreshCreateModeStatusPanels();
+
+            if (persistWhenChanged)
+            {
+                RuntimeConfigService.SaveCurrent(_registry);
+            }
+        }
+
+        /**
+         * Determine whether disabling one more colour will require auto-disabling ColouringRule.
+         *
+         * @returns True when warning/confirmation is required.
+         */
+        private bool RequiresColouringRuleAutoDisableWarning()
+        {
+            return ColourSettings.GetEnabledColourCount() == 2 && IsRuleEnabledByTypeName(ColouringRuleTypeName);
+        }
+
+        /**
+         * Check whether the given rule type name is currently enabled.
+         *
+         * @param typeName Rule type name.
+         * @returns True if the rule exists in registry and is enabled.
+         */
+        private bool IsRuleEnabledByTypeName(string typeName)
+        {
+            if (_registry == null || string.IsNullOrEmpty(typeName))
+            {
+                return false;
+            }
+
+            var rules = _registry.GetRulesWithStatus();
+            for (int i = 0; i < rules.Count; i++)
+            {
+                var (rule, enabled) = rules[i];
+                if (rule != null && string.Equals(rule.GetType().Name, typeName, System.StringComparison.Ordinal))
+                {
+                    return enabled;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Determine whether a type-name references the Colouring rule.
+         *
+         * @param typeName Rule type name.
+         * @returns True for ColouringRule.
+         */
+        private static bool IsColouringRuleTypeName(string typeName)
+        {
+            return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal);
+        }
+
+        /**
+         * Set one highlight colour enabled-state by identifier.
+         *
+         * @param colourId Colour identifier.
+         * @param enabled Desired enabled state.
+         */
+        private static void SetColourEnabled(PendingColourDisable colourId, bool enabled)
+        {
+            if (colourId == PendingColourDisable.Green)
+            {
+                ColourSettings.GreenEnabled = enabled;
+                return;
+            }
+
+            if (colourId == PendingColourDisable.Amber)
+            {
+                ColourSettings.AmberEnabled = enabled;
+                return;
+            }
+
+            if (colourId == PendingColourDisable.Red)
+            {
+                ColourSettings.RedEnabled = enabled;
+                return;
+            }
+
+            if (colourId == PendingColourDisable.Blue)
+            {
+                ColourSettings.BlueEnabled = enabled;
+            }
         }
 
         /**
@@ -556,6 +781,12 @@ namespace Sudoku.UI
         private void ApplyToggleChange(string typeName, bool oldEnabled, bool newEnabled)
         {
             if (newEnabled == oldEnabled) return;
+
+            if (newEnabled && IsColouringRuleTypeName(typeName) && ColourSettings.GetEnabledColourCount() < 2)
+            {
+                return;
+            }
+
             _registry.SetEnabled(typeName, newEnabled);
             _runner?.HandleRuleToggleChanged(typeName, newEnabled);
             RefreshApplyRulesPanel();

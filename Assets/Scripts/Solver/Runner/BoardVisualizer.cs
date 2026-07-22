@@ -5,6 +5,7 @@ using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Config;
 using Sudoku.UI.Menus;
 using static System.StringComparison;
 
@@ -452,6 +453,12 @@ namespace Sudoku.Solver
                 var activePreview = Runner.PreviewRuleResult != null && Runner.PreviewRuleResult.Apply;
                 var resultToShow = activePreview ? Runner.PreviewRuleResult : (_lastSeenRuleResult ?? Runner.LastRuleResult);
                 var validationConflictCells = Runner.LastBoardStateConflictCells;
+                bool colouringChainEvidenceActive = resultToShow != null &&
+                                                   resultToShow.UsedCells != null &&
+                                                   resultToShow.UsedCells.Exists(u =>
+                                                       !string.IsNullOrWhiteSpace(u.HighlightTag) &&
+                                                       (string.Equals(u.HighlightTag, "TargetA", OrdinalIgnoreCase) ||
+                                                        string.Equals(u.HighlightTag, "TargetB", OrdinalIgnoreCase)));
 
                 // Log when the display source changes or preview toggles (throttled)
                 if (resultToShow != _lastLoggedResultToShow || activePreview != _lastLoggedPreviewActive)
@@ -472,7 +479,7 @@ namespace Sudoku.Solver
                 {
                     Rect cellRect = new Rect(x0 + c * cellSize, y0 + r * cellSize, cellSize, cellSize);
                     // highlight changes from the last applied rule (placed values / candidate removals)
-                    System.Collections.Generic.HashSet<int> usedCandidatesForCell = null;
+                    System.Collections.Generic.Dictionary<int, Color> usedCandidateHighlightColors = null;
                     // If the result actually applied, show placed values and remove highlights
                     if (resultToShow != null && resultToShow.Apply)
                     {
@@ -514,25 +521,52 @@ namespace Sudoku.Solver
                             {
                                 if (uc.Row == r && uc.Column == c)
                                 {
-                                    if (usedCandidatesForCell == null) usedCandidatesForCell = new System.Collections.Generic.HashSet<int>();
+                                    if (usedCandidateHighlightColors == null) usedCandidateHighlightColors = new System.Collections.Generic.Dictionary<int, Color>();
                                     var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
                                     if (!string.IsNullOrWhiteSpace(uc.HighlightTag))
                                     {
                                         if (string.Equals(uc.HighlightTag, "Target", OrdinalIgnoreCase))
                                         {
-                                            highlightColor = new Color(0.16f, 0.86f, 0.24f, 0.52f);
+                                            highlightColor = ResolveChainHighlightColor("TargetA");
+                                        }
+                                        else if (string.Equals(uc.HighlightTag, "TargetA", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = ResolveChainHighlightColor("TargetA");
+                                        }
+                                        else if (string.Equals(uc.HighlightTag, "TargetB", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = ResolveChainHighlightColor("TargetB");
                                         }
                                         else if (string.Equals(uc.HighlightTag, "Deduction", OrdinalIgnoreCase))
                                         {
-                                            highlightColor = new Color(1f, 0.58f, 0.1f, 0.50f);
+                                            highlightColor = colouringChainEvidenceActive
+                                                ? ResolveChainHighlightColor("TargetA", 0.50f)
+                                                : new Color(1f, 0.58f, 0.1f, 0.50f);
                                         }
                                         else if (string.Equals(uc.HighlightTag, "Failure", OrdinalIgnoreCase))
                                         {
-                                            highlightColor = new Color(1f, 0.2f, 0.2f, 0.62f);
+                                            highlightColor = colouringChainEvidenceActive
+                                                ? ResolveChainHighlightColor("TargetB", 0.62f)
+                                                : new Color(1f, 0.2f, 0.2f, 0.62f);
                                         }
                                     }
-                                    DrawHighlight(cellRect, highlightColor);
-                                    if (uc.Candidate.HasValue) usedCandidatesForCell.Add(uc.Candidate.Value);
+
+                                    if (uc.Candidate.HasValue)
+                                    {
+                                        int candidate = uc.Candidate.Value;
+                                        if (!usedCandidateHighlightColors.TryGetValue(candidate, out var existingColor))
+                                        {
+                                            usedCandidateHighlightColors[candidate] = highlightColor;
+                                        }
+                                        else if (GetHighlightPriority(highlightColor) > GetHighlightPriority(existingColor))
+                                        {
+                                            usedCandidateHighlightColors[candidate] = highlightColor;
+                                        }
+                                    }
+                                    else
+                                    {
+                                        DrawHighlight(cellRect, highlightColor);
+                                    }
                                 }
                             }
                         }
@@ -565,7 +599,7 @@ namespace Sudoku.Solver
                     else if (ShowCandidates)
                     {
                         // draw candidates as small grid of digits; optionally highlight specific candidates
-                        DrawCandidates(cellRect, cell, usedCandidatesForCell);
+                        DrawCandidates(cellRect, cell, usedCandidateHighlightColors);
                     }
                 }
             }
@@ -1037,7 +1071,7 @@ namespace Sudoku.Solver
             OpenRadialMenu();
         }
 
-        private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.HashSet<int> highlightDigits)
+        private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.Dictionary<int, Color> highlightDigits)
         {
             if (cell == null || cell.Candidates == null) return;
             // Temporary debug: if this cell is affected by the preview or the
@@ -1169,13 +1203,19 @@ namespace Sudoku.Solver
                 // no longer exists so UI can show what the rule removed when it ran.
                 inspectWithCallback(appliedRes, (val) => { if (val) wasRemovedByApplied = true; });
 
-                bool isHighlighted = highlightDigits != null && highlightDigits.Contains(d);
-                // Draw a small yellow border around candidates used in deductions so
-                // the highlight remains visible even when the candidate digit itself
-                // is drawn in red for recent removals.
+                bool isHighlighted = false;
+                Color candidateHighlightColor = new Color(1f, 0.85f, 0.25f, 1f);
+                if (highlightDigits != null && highlightDigits.TryGetValue(d, out var mappedColor))
+                {
+                    isHighlighted = true;
+                    candidateHighlightColor = mappedColor;
+                }
+
+                // Candidate-level evidence should tint the candidate slot itself.
                 if (isHighlighted)
                 {
-                    DrawCandidateBorder(r, new Color(1f, 0.85f, 0.25f, 1f));
+                    DrawHighlight(r, new Color(candidateHighlightColor.r, candidateHighlightColor.g, candidateHighlightColor.b, 0.35f));
+                    DrawCandidateBorder(r, new Color(candidateHighlightColor.r, candidateHighlightColor.g, candidateHighlightColor.b, 1f));
                 }
 
                 if (previewActive)
@@ -1258,6 +1298,65 @@ namespace Sudoku.Solver
             GUI.color = color;
             GUI.DrawTexture(rect, _highlightTex);
             GUI.color = prev;
+        }
+
+        /**
+         * Rank highlight colors so failure/deduction evidence can override base chain colors for candidate slots.
+         *
+         * @param color Candidate highlight color.
+         * @returns Relative priority where larger values are stronger.
+         */
+        private static int GetHighlightPriority(Color color)
+        {
+            if (ApproximatelyColor(color, new Color(1f, 0.2f, 0.2f, 0.62f))) return 3; // Failure
+            if (ApproximatelyColor(color, new Color(1f, 0.58f, 0.1f, 0.50f))) return 2; // Deduction
+            return 1; // Chain colours and default evidence
+        }
+
+        /**
+         * Compare colors with tolerance for float math.
+         *
+         * @param a First color.
+         * @param b Second color.
+         * @returns True when components are approximately equal.
+         */
+        private static bool ApproximatelyColor(Color a, Color b)
+        {
+            const float epsilon = 0.005f;
+            return Mathf.Abs(a.r - b.r) <= epsilon &&
+                   Mathf.Abs(a.g - b.g) <= epsilon &&
+                   Mathf.Abs(a.b - b.b) <= epsilon;
+        }
+
+        /**
+         * Resolve chain highlight colours from currently enabled colour settings.
+         * Uses the first two enabled colours in display order.
+         *
+         * @param tag Chain tag: TargetA or TargetB.
+         * @returns Candidate-slot tint colour for the requested chain side.
+         */
+        private static Color ResolveChainHighlightColor(string tag, float alpha = 0.52f)
+        {
+            var enabled = ColourSettings.GetEnabledColours();
+
+            HighlightColor first = HighlightColor.Green;
+            HighlightColor second = HighlightColor.Blue;
+            if (enabled.Count > 0)
+            {
+                first = enabled[0];
+            }
+
+            if (enabled.Count > 1)
+            {
+                second = enabled[1];
+            }
+
+            var baseColor = string.Equals(tag, "TargetB", OrdinalIgnoreCase)
+                ? HighlightColorPalette.ToColor(second)
+                : HighlightColorPalette.ToColor(first);
+
+            baseColor.a = alpha;
+            return baseColor;
         }
 
         private void DrawHighlightBorder(Rect rect, Color color)

@@ -1,35 +1,1088 @@
+using System.Collections.Generic;
+using System.Linq;
+using Sudoku.Models;
+using Sudoku.UI.Config;
 using Board = Sudoku.Models.Board;
 
 namespace Sudoku.Solver.Rules
 {
     /**
      * Colouring (also known as Single Chains) is a technique used to eliminate candidates by coloring cells in a way that reveals contradictions.
-     * If a candidate appears in two different colors in the same unit, it can be removed from all other cells in that unit.
-     * You start by picking a candidate and coloring it in one color. Then, you look for cells that see that candidate and color them in the opposite color.
-     * Once the chain resolves, you then start again with other candidates and continue the process of coloring until you can find a contradiction or eliminate candidates based on the coloring.
+     * Importantly, each candidate should only see (Row, Column, Box) 2 candidates of the same digit, regardless of colour,
+     * and those candidates cannot see each other, otherwise the chain is invalid, and no deduction can be made.
+     * In theory a chain could see more than 2 other candidates, but they must all resolve to the opposite colour without contradictions, and not see each other, otherwise the chain is invalid.
+     * Start by picking a candidate and coloring it in one color. Then, look for all cells that see that candidate and color them in the opposite color. 
+     * The chain fails if a candidate can see more than one candidate of the same color, as this would create a contradiction.
+     * On failing the chain, all candidates of the same colour can be eliminated from the board.
+     * If you evaluate all candidates in the chain and find no contradictions, then no action can be taken as the chain is inconclusive.
      * 
      * This rule should only be applied if colouring is enabled and has at least two colours enabled.
      */
     public class ColouringRule : ISudokuRule
     {
+        private const string TargetATag = "TargetA";
+        private const string TargetBTag = "TargetB";
+        private const string DeductionTag = "Deduction";
+        private const string FailureTag = "Failure";
+
+        private sealed class ChainNode
+        {
+            public int Row;
+            public int Column;
+            public int Box;
+        }
+
+        private sealed class EliminationPlan
+        {
+            public int Digit;
+            public List<ChainNode> ComponentNodes;
+            public Dictionary<int, int> NodeColours;
+            public List<ChainNode> ContradictionNodes;
+            public List<ChainNode> RemovalNodes;
+            public string Description;
+
+            public EliminationPlan(
+                int digit,
+                List<ChainNode> componentNodes,
+                Dictionary<int, int> nodeColours,
+                List<ChainNode> contradictionNodes,
+                List<ChainNode> removalNodes,
+                string description)
+            {
+                Digit = digit;
+                ComponentNodes = componentNodes;
+                NodeColours = nodeColours;
+                ContradictionNodes = contradictionNodes;
+                RemovalNodes = removalNodes;
+                Description = description;
+            }
+        }
+
         public string Name => "Colouring";
 
         public Difficulty Difficulty => Difficulty.Expert;
+
+        /**
+         * Determine whether the Colouring rule can be applied to the current board.
+         *
+         * @param board Current puzzle board.
+         * @returns True when the board is valid, colour prerequisites are met, and a colouring elimination exists.
+         */
         public bool CanApply(Board board)
         {
-            // TODO: Not implemented
-            return false;
+            if (board == null) return false;
+            if (!board.IsValid()) return false;
+            if (ColourSettings.GetEnabledColourCount() < 2) return false;
+
+            var plan = FindEliminationPlan(board);
+            return plan != null;
         }
 
+        /**
+         * Calculate candidate removals produced by Single Chains colouring.
+         *
+         * @param board Current puzzle board.
+         * @returns RuleResult containing candidate removals and the evidence chain.
+         */
         public RuleResult CalculateChanges(Board board)
         {
             var result = new RuleResult();
-            
-            // TODO: Not implemented
-            
-            result.Apply = false;
+
+            if (board == null || !board.IsValid() || ColourSettings.GetEnabledColourCount() < 2)
+            {
+                result.Apply = false;
+                return result;
+            }
+
+            var plan = FindEliminationPlan(board);
+            if (plan == null)
+            {
+                result.Apply = false;
+                return result;
+            }
+
+            for (int i = 0; i < plan.ComponentNodes.Count; i++)
+            {
+                var node = plan.ComponentNodes[i];
+                int nodeKey = ToNodeKey(board, node.Row, node.Column);
+                int colour = 0;
+                if (plan.NodeColours != null && plan.NodeColours.TryGetValue(nodeKey, out var storedColour))
+                {
+                    colour = storedColour;
+                }
+
+                AddUsedCell(result.UsedCells, node.Row, node.Column, plan.Digit, colour == 0 ? TargetATag : TargetBTag);
+            }
+
+            for (int i = 0; i < plan.ContradictionNodes.Count; i++)
+            {
+                var node = plan.ContradictionNodes[i];
+                AddUsedCell(result.UsedCells, node.Row, node.Column, plan.Digit, FailureTag);
+            }
+
+            for (int i = 0; i < plan.RemovalNodes.Count; i++)
+            {
+                var node = plan.RemovalNodes[i];
+                if (board.Cells[node.Row, node.Column].Value.HasValue)
+                {
+                    continue;
+                }
+
+                if (!board.Cells[node.Row, node.Column].Candidates.Contains(plan.Digit))
+                {
+                    continue;
+                }
+
+                var change = new CellChange { Row = node.Row, Column = node.Column };
+                change.RemovedCandidates.Add(plan.Digit);
+                result.Changes.Add(change);
+
+                AddUsedCell(result.UsedCells, node.Row, node.Column, plan.Digit, DeductionTag);
+            }
+
+            result.Description = plan.Description;
+            result.Apply = result.Changes.Count > 0;
             return result;
         }
-}
+
+        /**
+         * Find the first deterministic colouring elimination plan.
+         *
+         * @param board Current puzzle board.
+         * @returns Elimination plan, or null when none exists.
+         */
+        private static EliminationPlan FindEliminationPlan(Board board)
+        {
+            EliminationPlan bestPlan = null;
+
+            for (int digit = 1; digit <= board.Size; digit++)
+            {
+                var graph = BuildStrongLinkGraph(board, digit);
+                if (graph.Count == 0)
+                {
+                    continue;
+                }
+
+                var sortedKeys = graph.Keys.OrderBy(k => k).ToList();
+                var visited = new HashSet<int>();
+
+                for (int keyIndex = 0; keyIndex < sortedKeys.Count; keyIndex++)
+                {
+                    int startKey = sortedKeys[keyIndex];
+                    if (visited.Contains(startKey))
+                    {
+                        continue;
+                    }
+
+                    var componentKeys = new List<int>();
+                    var colors = new Dictionary<int, int>();
+                    var queue = new Queue<int>();
+                    queue.Enqueue(startKey);
+                    colors[startKey] = 0;
+                    visited.Add(startKey);
+
+                    while (queue.Count > 0)
+                    {
+                        int current = queue.Dequeue();
+                        componentKeys.Add(current);
+
+                        var neighbors = graph[current];
+                        for (int i = 0; i < neighbors.Count; i++)
+                        {
+                            int next = neighbors[i];
+                            if (!colors.ContainsKey(next))
+                            {
+                                colors[next] = 1 - colors[current];
+                            }
+
+                            if (!visited.Contains(next))
+                            {
+                                visited.Add(next);
+                                queue.Enqueue(next);
+                            }
+                        }
+                    }
+
+                    if (componentKeys.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    var componentGraph = BuildComponentGraph(graph, componentKeys);
+                    componentKeys.Sort();
+                    var componentColours = BuildAlternatingColoursFromComponent(componentKeys, componentGraph);
+                    if (componentColours.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    if (!IsValidChainComponent(board, digit, componentGraph, componentKeys, componentColours))
+                    {
+                        continue;
+                    }
+
+                    var componentNodes = new List<ChainNode>(componentKeys.Count);
+                    for (int i = 0; i < componentKeys.Count; i++)
+                    {
+                        componentNodes.Add(DecodeNode(board, componentKeys[i]));
+                    }
+
+                    var contradictionPlan = BuildContradictionElimination(board, digit, componentKeys, componentColours, componentNodes, componentColours);
+                    if (IsBetterPlan(contradictionPlan, bestPlan))
+                    {
+                        bestPlan = contradictionPlan;
+                    }
+                }
+            }
+
+            return bestPlan;
+        }
+
+        /**
+         * Compare two elimination plans and decide whether candidate should replace current.
+         *
+         * @param candidate Candidate plan to evaluate.
+         * @param current Current best plan.
+         * @returns True when candidate is a better plan.
+         */
+        private static bool IsBetterPlan(EliminationPlan candidate, EliminationPlan current)
+        {
+            if (candidate == null)
+            {
+                return false;
+            }
+
+            if (current == null)
+            {
+                return true;
+            }
+
+            int candidateComponentSize = candidate.ComponentNodes != null ? candidate.ComponentNodes.Count : 0;
+            int currentComponentSize = current.ComponentNodes != null ? current.ComponentNodes.Count : 0;
+            if (candidateComponentSize != currentComponentSize)
+            {
+                return candidateComponentSize > currentComponentSize;
+            }
+
+            bool candidateHasContradiction = candidate.ContradictionNodes != null && candidate.ContradictionNodes.Count > 0;
+            bool currentHasContradiction = current.ContradictionNodes != null && current.ContradictionNodes.Count > 0;
+            if (candidateHasContradiction != currentHasContradiction)
+            {
+                return candidateHasContradiction;
+            }
+
+            int candidateRemovalCount = candidate.RemovalNodes != null ? candidate.RemovalNodes.Count : 0;
+            int currentRemovalCount = current.RemovalNodes != null ? current.RemovalNodes.Count : 0;
+            if (candidateRemovalCount != currentRemovalCount)
+            {
+                return candidateRemovalCount > currentRemovalCount;
+            }
+
+            if (candidate.Digit != current.Digit)
+            {
+                return candidate.Digit < current.Digit;
+            }
+
+            return false;
+        }
+
+        /**
+         * Build adjacency map limited to nodes within one connected component.
+         *
+         * @param graph Full strong-link graph.
+         * @param componentKeys Node keys in the connected component.
+         * @returns Component-scoped adjacency map.
+         */
+        private static Dictionary<int, List<int>> BuildComponentGraph(Dictionary<int, List<int>> graph, List<int> componentKeys)
+        {
+            var componentSet = new HashSet<int>(componentKeys);
+            var result = new Dictionary<int, List<int>>();
+
+            for (int i = 0; i < componentKeys.Count; i++)
+            {
+                int key = componentKeys[i];
+                var neighbors = new List<int>();
+                if (graph.TryGetValue(key, out var raw))
+                {
+                    for (int n = 0; n < raw.Count; n++)
+                    {
+                        int next = raw[n];
+                        if (componentSet.Contains(next))
+                        {
+                            neighbors.Add(next);
+                        }
+                    }
+                }
+
+                neighbors.Sort();
+                result[key] = neighbors;
+            }
+
+            return result;
+        }
+
+        /**
+         * Build candidate chain paths by taking the longest simple path from each meaningful start node.
+         *
+         * @param componentGraph Component adjacency map.
+         * @param componentKeys Node keys in the connected component.
+         * @returns Distinct chain candidates ordered by length descending.
+         */
+        private static List<List<int>> BuildChainCandidates(Dictionary<int, List<int>> componentGraph, List<int> componentKeys)
+        {
+            var starts = componentKeys
+                .Where(k => componentGraph.TryGetValue(k, out var neighbors) && neighbors.Count <= 1)
+                .OrderBy(k => k)
+                .ToList();
+
+            if (starts.Count == 0)
+            {
+                starts = componentKeys.OrderBy(k => k).ToList();
+            }
+
+            var uniquePaths = new Dictionary<string, List<int>>();
+            for (int i = 0; i < starts.Count; i++)
+            {
+                int start = starts[i];
+                var bestFromStart = FindLongestSimplePathFrom(start, componentGraph);
+                if (bestFromStart == null || bestFromStart.Count < 2)
+                {
+                    continue;
+                }
+
+                string key = BuildPathCanonicalKey(bestFromStart);
+                if (!uniquePaths.ContainsKey(key))
+                {
+                    uniquePaths[key] = bestFromStart;
+                }
+            }
+
+            var paths = uniquePaths.Values.ToList();
+            paths.Sort((a, b) =>
+            {
+                int cmp = b.Count.CompareTo(a.Count);
+                if (cmp != 0) return cmp;
+
+                int limit = a.Count < b.Count ? a.Count : b.Count;
+                for (int i = 0; i < limit; i++)
+                {
+                    if (a[i] != b[i]) return a[i].CompareTo(b[i]);
+                }
+
+                return 0;
+            });
+
+            return paths;
+        }
+
+        /**
+         * Find the longest simple path starting from a node.
+         *
+         * @param start Start node key.
+         * @param componentGraph Component adjacency map.
+         * @returns Longest path from start.
+         */
+        private static List<int> FindLongestSimplePathFrom(int start, Dictionary<int, List<int>> componentGraph)
+        {
+            var bestPath = new List<int>();
+            var currentPath = new List<int>();
+            var visited = new HashSet<int>();
+
+            ExploreLongestPath(start, componentGraph, visited, currentPath, bestPath);
+            return bestPath;
+        }
+
+        /**
+         * DFS helper for longest simple path search.
+         */
+        private static void ExploreLongestPath(
+            int current,
+            Dictionary<int, List<int>> componentGraph,
+            HashSet<int> visited,
+            List<int> currentPath,
+            List<int> bestPath)
+        {
+            visited.Add(current);
+            currentPath.Add(current);
+
+            if (currentPath.Count > bestPath.Count ||
+                (currentPath.Count == bestPath.Count && IsLexicographicallySmaller(currentPath, bestPath)))
+            {
+                bestPath.Clear();
+                bestPath.AddRange(currentPath);
+            }
+
+            if (componentGraph.TryGetValue(current, out var neighbors))
+            {
+                for (int i = 0; i < neighbors.Count; i++)
+                {
+                    int next = neighbors[i];
+                    if (visited.Contains(next))
+                    {
+                        continue;
+                    }
+
+                    ExploreLongestPath(next, componentGraph, visited, currentPath, bestPath);
+                }
+            }
+
+            currentPath.RemoveAt(currentPath.Count - 1);
+            visited.Remove(current);
+        }
+
+        /**
+         * Build alternating 2-colour assignments along an ordered chain path.
+         *
+         * @param chainKeys Ordered chain node keys.
+         * @returns Node-to-colour map (0 or 1).
+         */
+        private static Dictionary<int, int> BuildAlternatingColours(List<int> chainKeys)
+        {
+            var colours = new Dictionary<int, int>();
+            for (int i = 0; i < chainKeys.Count; i++)
+            {
+                colours[chainKeys[i]] = i % 2;
+            }
+
+            return colours;
+        }
+
+        /**
+         * Build an order-independent string key for path de-duplication.
+         *
+         * @param path Path node keys.
+         * @returns Canonical key.
+         */
+        private static string BuildPathCanonicalKey(List<int> path)
+        {
+            var forward = string.Join("-", path);
+            var reversed = new List<int>(path);
+            reversed.Reverse();
+            var backward = string.Join("-", reversed);
+            return string.CompareOrdinal(forward, backward) <= 0 ? forward : backward;
+        }
+
+        /**
+         * Compare two integer sequences lexicographically.
+         *
+         * @param a First sequence.
+         * @param b Second sequence.
+         * @returns True if a is lexicographically smaller than b.
+         */
+        private static bool IsLexicographicallySmaller(List<int> a, List<int> b)
+        {
+            int limit = a.Count < b.Count ? a.Count : b.Count;
+            for (int i = 0; i < limit; i++)
+            {
+                if (a[i] == b[i]) continue;
+                return a[i] < b[i];
+            }
+
+            return a.Count < b.Count;
+        }
+
+        /**
+         * A valid chain component cannot branch: each node may connect to at most 2 chain neighbors.
+         *
+         * @param componentGraph Component adjacency map.
+         * @param componentKeys Node keys inside this component.
+         * @returns True when the component is a non-branching chain/cycle.
+         */
+        private static bool IsValidChainComponent(
+            Board board,
+            int digit,
+            Dictionary<int, List<int>> componentGraph,
+            List<int> componentKeys,
+            Dictionary<int, int> componentColours)
+        {
+            var componentNodeMap = componentKeys.ToDictionary(k => k, k => DecodeNode(board, k));
+            var allDigitKeys = new List<int>();
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
+                    {
+                        continue;
+                    }
+
+                    allDigitKeys.Add(ToNodeKey(board, row, column));
+                }
+            }
+
+            var allDigitNodeMap = allDigitKeys.ToDictionary(k => k, k => DecodeNode(board, k));
+
+            for (int i = 0; i < componentKeys.Count; i++)
+            {
+                int key = componentKeys[i];
+                if (!componentGraph.TryGetValue(key, out var neighbors))
+                {
+                    return false;
+                }
+
+                if (neighbors.Count > 2)
+                {
+                    return false;
+                }
+
+                var currentNode = componentNodeMap[key];
+                int currentColour = componentColours[key];
+                var visiblePeers = new List<int>();
+                for (int n = 0; n < allDigitKeys.Count; n++)
+                {
+                    int peerKey = allDigitKeys[n];
+                    if (peerKey == key)
+                    {
+                        continue;
+                    }
+
+                    if (ArePeers(currentNode, allDigitNodeMap[peerKey]))
+                    {
+                        visiblePeers.Add(peerKey);
+                    }
+                }
+
+                if (visiblePeers.Count <= 2)
+                {
+                    continue;
+                }
+
+                var componentOppositePeers = new List<int>();
+                int externalPeerCount = 0;
+
+                for (int p = 0; p < visiblePeers.Count; p++)
+                {
+                    int peerKey = visiblePeers[p];
+                    if (!componentColours.TryGetValue(peerKey, out var peerColour))
+                    {
+                        externalPeerCount++;
+                        continue;
+                    }
+
+                    if (peerColour == currentColour)
+                    {
+                        return false;
+                    }
+                    else
+                    {
+                        componentOppositePeers.Add(peerKey);
+                    }
+                }
+
+                // Peers outside the component make >2 visibility ambiguous under this rule.
+                if (externalPeerCount > 0)
+                {
+                    return false;
+                }
+
+                // If there are no same-colour peers, >2 visibility is only valid when opposite peers
+                // are mutually independent (they must not see each other).
+                for (int a = 0; a < componentOppositePeers.Count; a++)
+                {
+                    var left = allDigitNodeMap[componentOppositePeers[a]];
+                    for (int b = a + 1; b < componentOppositePeers.Count; b++)
+                    {
+                        var right = allDigitNodeMap[componentOppositePeers[b]];
+                        if (ArePeers(left, right))
+                        {
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
+        /**
+         * Determine whether two chain nodes can see each other by Sudoku peer rules.
+         *
+         * @param a First node.
+         * @param b Second node.
+         * @returns True when nodes share row, column, or box.
+         */
+        private static bool ArePeers(ChainNode a, ChainNode b)
+        {
+            return a.Row == b.Row || a.Column == b.Column || a.Box == b.Box;
+        }
+
+        /**
+         * Build alternating colors for a valid non-branching component.
+         *
+         * @param componentKeys Node keys in the component.
+         * @param componentGraph Component adjacency map.
+         * @returns Node-to-colour map (0 or 1).
+         */
+        private static Dictionary<int, int> BuildAlternatingColoursFromComponent(List<int> componentKeys, Dictionary<int, List<int>> componentGraph)
+        {
+            var colors = new Dictionary<int, int>();
+
+            // Prefer an endpoint when present so chain orientation is deterministic.
+            int start = componentKeys
+                .Where(k => componentGraph.TryGetValue(k, out var neighbors) && neighbors.Count == 1)
+                .OrderBy(k => k)
+                .FirstOrDefault();
+
+            if (start == 0 && !componentKeys.Contains(0))
+            {
+                start = componentKeys.OrderBy(k => k).First();
+            }
+
+            var queue = new Queue<int>();
+            colors[start] = 0;
+            queue.Enqueue(start);
+
+            while (queue.Count > 0)
+            {
+                int current = queue.Dequeue();
+                if (!componentGraph.TryGetValue(current, out var neighbors))
+                {
+                    continue;
+                }
+
+                for (int i = 0; i < neighbors.Count; i++)
+                {
+                    int next = neighbors[i];
+                    if (!colors.ContainsKey(next))
+                    {
+                        colors[next] = 1 - colors[current];
+                        queue.Enqueue(next);
+                        continue;
+                    }
+
+                    // If a strong-link edge connects same-colour nodes, this component cannot be
+                    // represented as a valid two-colour chain under the rule prerequisites.
+                    if (colors[next] == colors[current])
+                    {
+                        return new Dictionary<int, int>();
+                    }
+                }
+            }
+
+            return colors;
+        }
+
+        /**
+         * Build a graph of strong links for one candidate digit.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @returns Adjacency map of node key to strongly-linked node keys.
+         */
+        private static Dictionary<int, List<int>> BuildStrongLinkGraph(Board board, int digit)
+        {
+            var graph = new Dictionary<int, List<int>>();
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                var candidates = new List<int>();
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    {
+                        candidates.Add(ToNodeKey(board, row, column));
+                    }
+                }
+
+                AddStrongLink(graph, candidates);
+            }
+
+            for (int column = 0; column < board.Size; column++)
+            {
+                var candidates = new List<int>();
+                for (int row = 0; row < board.Size; row++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    {
+                        candidates.Add(ToNodeKey(board, row, column));
+                    }
+                }
+
+                AddStrongLink(graph, candidates);
+            }
+
+            for (int box = 0; box < board.Size; box++)
+            {
+                var candidates = new List<int>();
+                foreach (var cell in board.GetBox(box))
+                {
+                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    {
+                        candidates.Add(ToNodeKey(board, cell.Row, cell.Column));
+                    }
+                }
+
+                AddStrongLink(graph, candidates);
+            }
+
+            return graph;
+        }
+
+        /**
+         * Add an undirected strong link when a unit has exactly two candidate locations.
+         *
+         * @param graph Adjacency map to modify.
+         * @param candidates Candidate node keys found in one unit.
+         */
+        private static void AddStrongLink(Dictionary<int, List<int>> graph, List<int> candidates)
+        {
+            if (candidates == null || candidates.Count != 2)
+            {
+                return;
+            }
+
+            int a = candidates[0];
+            int b = candidates[1];
+
+            EnsureNode(graph, a);
+            EnsureNode(graph, b);
+
+            if (!graph[a].Contains(b)) graph[a].Add(b);
+            if (!graph[b].Contains(a)) graph[b].Add(a);
+        }
+
+        /**
+         * Build elimination from a same-colour contradiction found inside one unit.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @param componentKeys Node keys in this connected component.
+         * @param colors Two-colour assignment for each key.
+         * @param componentNodes Decoded component nodes.
+         * @returns Elimination plan or null when no contradiction elimination exists.
+         */
+        private static EliminationPlan BuildContradictionElimination(
+            Board board,
+            int digit,
+            List<int> componentKeys,
+            Dictionary<int, int> colors,
+            List<ChainNode> componentNodes,
+            Dictionary<int, int> componentColours)
+        {
+            for (int colour = 0; colour <= 1; colour++)
+            {
+                for (int row = 0; row < board.Size; row++)
+                {
+                    var sameColour = GetNodesInRow(board, componentKeys, colors, colour, row);
+                    if (sameColour.Count >= 2)
+                    {
+                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "row", row + 1);
+                    }
+                }
+
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var sameColour = GetNodesInColumn(board, componentKeys, colors, colour, column);
+                    if (sameColour.Count >= 2)
+                    {
+                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "column", column + 1);
+                    }
+                }
+
+                for (int box = 0; box < board.Size; box++)
+                {
+                    var sameColour = GetNodesInBox(board, componentKeys, colors, colour, box);
+                    if (sameColour.Count >= 2)
+                    {
+                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "box", box + 1);
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Build an elimination plan where an uncoloured cell sees both colours.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @param componentKeys Node keys in this connected component.
+         * @param colors Two-colour assignment for each key.
+         * @param componentNodes Decoded component nodes.
+         * @returns Elimination plan or null when no intersection elimination exists.
+         */
+        private static EliminationPlan BuildIntersectionElimination(
+            Board board,
+            int digit,
+            List<int> componentKeys,
+            Dictionary<int, int> colors,
+            List<ChainNode> componentNodes,
+            Dictionary<int, int> componentColours)
+        {
+            var componentSet = new HashSet<int>(componentKeys);
+            var removals = new List<ChainNode>();
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    int key = ToNodeKey(board, row, column);
+                    if (componentSet.Contains(key))
+                    {
+                        continue;
+                    }
+
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
+                    {
+                        continue;
+                    }
+
+                    bool seesColourA = SeesColour(board, row, column, 0, componentKeys, colors);
+                    if (!seesColourA)
+                    {
+                        continue;
+                    }
+
+                    bool seesColourB = SeesColour(board, row, column, 1, componentKeys, colors);
+                    if (!seesColourB)
+                    {
+                        continue;
+                    }
+
+                    removals.Add(new ChainNode
+                    {
+                        Row = row,
+                        Column = column,
+                        Box = board.Cells[row, column].Box
+                    });
+                }
+            }
+
+            if (removals.Count == 0)
+            {
+                return null;
+            }
+
+            var description = $"Colouring removed {digit} from {removals.Count} cell(s) that see both colours in a single chain";
+            return new EliminationPlan(digit, componentNodes, componentColours, new List<ChainNode>(), removals, description);
+        }
+
+        /**
+         * Build a contradiction-elimination plan for one colour assignment.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @param componentKeys Node keys in this connected component.
+         * @param colors Two-colour assignment for each key.
+         * @param componentNodes Decoded component nodes.
+         * @param contradictionColour Colour index (0 or 1) proven false.
+         * @param contradictionNodes Nodes that expose the contradiction.
+         * @param unitName Human-readable unit type.
+         * @param unitIndex One-based unit index for description.
+         * @returns Elimination plan.
+         */
+        private static EliminationPlan BuildContradictionResult(
+            Board board,
+            int digit,
+            List<int> componentKeys,
+            Dictionary<int, int> colors,
+            List<ChainNode> componentNodes,
+            Dictionary<int, int> componentColours,
+            int contradictionColour,
+            List<ChainNode> contradictionNodes,
+            string unitName,
+            int unitIndex)
+        {
+            var removals = new List<ChainNode>();
+            for (int i = 0; i < componentKeys.Count; i++)
+            {
+                int key = componentKeys[i];
+                if (colors[key] != contradictionColour)
+                {
+                    continue;
+                }
+
+                var node = DecodeNode(board, key);
+                var cell = board.Cells[node.Row, node.Column];
+                if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                {
+                    removals.Add(node);
+                }
+            }
+
+            if (removals.Count == 0)
+            {
+                return null;
+            }
+
+            string colourName = contradictionColour == 0 ? "A" : "B";
+            string description = $"Colouring removed {digit}: colour {colourName} contradicts itself in {unitName} {unitIndex}";
+            return new EliminationPlan(digit, componentNodes, componentColours, contradictionNodes.Take(2).ToList(), removals, description);
+        }
+
+        /**
+         * Collect component nodes of a specific colour inside one row.
+         *
+         * @param board Current puzzle board.
+         * @param componentKeys Node keys in this component.
+         * @param colors Two-colour assignment for each key.
+         * @param colour Desired colour index.
+         * @param row Desired row.
+         * @returns Matching nodes ordered by column.
+         */
+        private static List<ChainNode> GetNodesInRow(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int row)
+        {
+            return componentKeys
+                .Where(k => colors[k] == colour)
+                .Select(k => DecodeNode(board, k))
+                .Where(n => n.Row == row)
+                .OrderBy(n => n.Column)
+                .ToList();
+        }
+
+        /**
+         * Collect component nodes of a specific colour inside one column.
+         *
+         * @param board Current puzzle board.
+         * @param componentKeys Node keys in this component.
+         * @param colors Two-colour assignment for each key.
+         * @param colour Desired colour index.
+         * @param column Desired column.
+         * @returns Matching nodes ordered by row.
+         */
+        private static List<ChainNode> GetNodesInColumn(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int column)
+        {
+            return componentKeys
+                .Where(k => colors[k] == colour)
+                .Select(k => DecodeNode(board, k))
+                .Where(n => n.Column == column)
+                .OrderBy(n => n.Row)
+                .ToList();
+        }
+
+        /**
+         * Collect component nodes of a specific colour inside one box.
+         *
+         * @param board Current puzzle board.
+         * @param componentKeys Node keys in this component.
+         * @param colors Two-colour assignment for each key.
+         * @param colour Desired colour index.
+         * @param box Desired box index.
+         * @returns Matching nodes ordered by row then column.
+         */
+        private static List<ChainNode> GetNodesInBox(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int box)
+        {
+            return componentKeys
+                .Where(k => colors[k] == colour)
+                .Select(k => DecodeNode(board, k))
+                .Where(n => n.Box == box)
+                .OrderBy(n => n.Row)
+                .ThenBy(n => n.Column)
+                .ToList();
+        }
+
+        /**
+         * Determine whether a target cell sees at least one chain node of the given colour.
+         *
+         * @param board Current puzzle board.
+         * @param row Target row.
+         * @param column Target column.
+         * @param colour Desired colour index.
+         * @param componentKeys Node keys in this component.
+         * @param colors Two-colour assignment for each key.
+         * @returns True when any node of the colour is a peer of the target.
+         */
+        private static bool SeesColour(Board board, int row, int column, int colour, List<int> componentKeys, Dictionary<int, int> colors)
+        {
+            int targetBox = board.Cells[row, column].Box;
+            for (int i = 0; i < componentKeys.Count; i++)
+            {
+                int key = componentKeys[i];
+                if (colors[key] != colour)
+                {
+                    continue;
+                }
+
+                var node = DecodeNode(board, key);
+                if (node.Row == row || node.Column == column || node.Box == targetBox)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /**
+         * Add one evidence entry while preventing exact duplicates.
+         *
+         * @param usedCells Collection to update.
+         * @param row Cell row.
+         * @param column Cell column.
+         * @param candidate Candidate digit.
+         * @param tag Highlight semantic tag.
+         */
+        private static void AddUsedCell(List<UsedCell> usedCells, int row, int column, int candidate, string tag)
+        {
+            bool exists = usedCells.Exists(u =>
+                u.Row == row &&
+                u.Column == column &&
+                u.Candidate == candidate &&
+                u.HighlightTag == tag);
+            if (exists)
+            {
+                return;
+            }
+
+            usedCells.Add(new UsedCell
+            {
+                Row = row,
+                Column = column,
+                Candidate = candidate,
+                HighlightTag = tag
+            });
+        }
+
+        /**
+         * Ensure a node exists in the adjacency map.
+         *
+         * @param graph Graph map.
+         * @param key Node key.
+         */
+        private static void EnsureNode(Dictionary<int, List<int>> graph, int key)
+        {
+            if (!graph.ContainsKey(key))
+            {
+                graph[key] = new List<int>();
+            }
+        }
+
+        /**
+         * Convert row/column coordinates to a deterministic integer node key.
+         *
+         * @param board Current puzzle board.
+         * @param row Row index.
+         * @param column Column index.
+         * @returns Encoded key.
+         */
+        private static int ToNodeKey(Board board, int row, int column)
+        {
+            return row * board.Size + column;
+        }
+
+        /**
+         * Decode a node key back to row/column/box coordinates.
+         *
+         * @param board Current puzzle board.
+         * @param key Encoded node key.
+         * @returns Decoded chain node.
+         */
+        private static ChainNode DecodeNode(Board board, int key)
+        {
+            int row = key / board.Size;
+            int column = key % board.Size;
+            return new ChainNode
+            {
+                Row = row,
+                Column = column,
+                Box = board.Cells[row, column].Box
+            };
+        }
+    }
 
 }

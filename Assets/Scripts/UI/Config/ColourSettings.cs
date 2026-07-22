@@ -28,6 +28,21 @@ namespace Sudoku.UI.Config
             GreenEnabled || AmberEnabled || RedEnabled || BlueEnabled;
 
         /**
+         * Count how many highlight colours are currently enabled.
+         *
+         * @returns Number of enabled colours in the range 0..4.
+         */
+        public static int GetEnabledColourCount()
+        {
+            int count = 0;
+            if (GreenEnabled) count++;
+            if (AmberEnabled) count++;
+            if (RedEnabled) count++;
+            if (BlueEnabled) count++;
+            return count;
+        }
+
+        /**
          * Return the ordered list of currently enabled highlight colours.
          *
          * @returns Enabled colours in display order: Green, Amber, Red, Blue.

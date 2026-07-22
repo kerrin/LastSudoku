@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 using Sudoku.Models;
+using Sudoku.UI.Config;
 
 namespace Sudoku.UI.Panels
 {
@@ -14,6 +15,8 @@ namespace Sudoku.UI.Panels
  */
 public class ApplyRulePanel : MonoBehaviour
 {
+    private const string ColouringRuleTypeName = nameof(ColouringRule);
+
     public SolverRunner Runner;
 
     [Tooltip("Optional: width of the panel in pixels")]
@@ -190,10 +193,16 @@ public class ApplyRulePanel : MonoBehaviour
             RuleResult preview = null;
             try { preview = rule.CalculateChanges(Runner.CurrentBoard); } catch { preview = null; }
             bool applies = (preview != null && preview.Apply) || can;
-            if (!applies) continue;
+
+            bool isColouringRule = IsColouringRule(rule);
+            bool colouringPrerequisiteMet = !isColouringRule || ColourSettings.GetEnabledColourCount() >= 2;
+            if (!applies && !(isColouringRule && !colouringPrerequisiteMet)) continue;
 
             bool usedInAnalysis = usedRuleNames.Contains(rule.GetType().Name);
-            CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis);
+            bool interactable = applies && colouringPrerequisiteMet;
+            bool faded = isColouringRule && !colouringPrerequisiteMet;
+            string subtitle = faded ? "Requires at least 2 colours" : string.Empty;
+            CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis, interactable, faded, subtitle);
             created++;
         }
 
@@ -312,7 +321,7 @@ public class ApplyRulePanel : MonoBehaviour
         return true;
     }
 
-    private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview, bool usedInAnalysis)
+    private void CreateRuleRow(Transform parent, ISudokuRule rule, RuleResult preview, bool usedInAnalysis, bool interactable, bool faded, string subtitle)
     {
         var ruleGO = new GameObject(rule.GetType().Name + "_Row", typeof(RectTransform));
         ruleGO.transform.SetParent(parent, false);
@@ -327,10 +336,13 @@ public class ApplyRulePanel : MonoBehaviour
         le.preferredHeight = 36f;
 
         var btnImg = ruleGO.AddComponent<Image>();
-        btnImg.color = usedInAnalysis
-            ? new Color(0.17f, 0.42f, 0.2f, 0.85f)
-            : new Color(1f, 1f, 1f, 0.02f);
+        btnImg.color = faded
+            ? new Color(1f, 1f, 1f, 0.01f)
+            : (usedInAnalysis
+                ? new Color(0.17f, 0.42f, 0.2f, 0.85f)
+                : new Color(1f, 1f, 1f, 0.02f));
         var button = ruleGO.AddComponent<Button>();
+        button.interactable = interactable;
 
         // Label
         var labelGO = new GameObject("Label", typeof(RectTransform));
@@ -339,7 +351,7 @@ public class ApplyRulePanel : MonoBehaviour
         label.text = rule.Name;
         label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         label.fontSize = 16;
-        label.color = Color.white;
+        label.color = faded ? new Color(1f, 1f, 1f, 0.45f) : Color.white;
         label.alignment = TextAnchor.MiddleLeft;
         var lblRT = labelGO.GetComponent<RectTransform>();
         // Place the label to fill the row vertically.
@@ -350,21 +362,58 @@ public class ApplyRulePanel : MonoBehaviour
         var labelLE = labelGO.AddComponent<LayoutElement>();
         labelLE.flexibleWidth = 1f;
 
-        // click runs the rule. Suppress preview requests during the apply so
-        // the preview doesn't reappear while the rule is enacting and causing
-        // visual-state inconsistencies.
-        button.onClick.AddListener(() => { StartCoroutine(ApplyRuleCoroutine(rule)); });
+        if (interactable)
+        {
+            // click runs the rule. Suppress preview requests during the apply so
+            // the preview doesn't reappear while the rule is enacting and causing
+            // visual-state inconsistencies.
+            button.onClick.AddListener(() => { StartCoroutine(ApplyRuleCoroutine(rule)); });
 
-        // add hover preview via EventTrigger
-        var trigger = ruleGO.AddComponent<EventTrigger>();
-        var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-        entryEnter.callback.AddListener((data) => { Runner.PreviewRule(rule); });
-        trigger.triggers.Add(entryEnter);
-        var entryExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-        entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
-        trigger.triggers.Add(entryExit);
+            // add hover preview via EventTrigger
+            var trigger = ruleGO.AddComponent<EventTrigger>();
+            var entryEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
+            entryEnter.callback.AddListener((data) => { Runner.PreviewRule(rule); });
+            trigger.triggers.Add(entryEnter);
+            var entryExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
+            entryExit.callback.AddListener((data) => { Runner.ClearPreview(); });
+            trigger.triggers.Add(entryExit);
+        }
+
+        if (!string.IsNullOrWhiteSpace(subtitle))
+        {
+            var subtitleGO = new GameObject("Subtitle", typeof(RectTransform));
+            subtitleGO.transform.SetParent(ruleGO.transform, false);
+            var subtitleLabel = subtitleGO.AddComponent<Text>();
+            subtitleLabel.text = subtitle;
+            subtitleLabel.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            subtitleLabel.fontSize = 12;
+            subtitleLabel.color = new Color(1f, 1f, 1f, 0.38f);
+            subtitleLabel.alignment = TextAnchor.LowerRight;
+
+            var subtitleRT = subtitleGO.GetComponent<RectTransform>();
+            subtitleRT.anchorMin = new Vector2(0f, 0f);
+            subtitleRT.anchorMax = new Vector2(1f, 1f);
+            subtitleRT.offsetMin = new Vector2(8f, 2f);
+            subtitleRT.offsetMax = new Vector2(-8f, -2f);
+        }
 
         // Description/tooltips removed: list shows only the rule name.
+    }
+
+    /**
+     * Determine whether a rule instance is the Colouring rule.
+     *
+     * @param rule Rule instance.
+     * @returns True when the rule type name matches ColouringRule.
+     */
+    private static bool IsColouringRule(ISudokuRule rule)
+    {
+        if (rule == null)
+        {
+            return false;
+        }
+
+        return string.Equals(rule.GetType().Name, ColouringRuleTypeName, System.StringComparison.Ordinal);
     }
 
     private void CreateReinitialiseCandidatesRow(Transform parent)
