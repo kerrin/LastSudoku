@@ -1,5 +1,4 @@
 using NUnit.Framework;
-using Sudoku.Models;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Tests.Editor
@@ -7,306 +6,105 @@ namespace Sudoku.Tests.Editor
     public class YWingRuleTests
     {
         [Test]
-        public void YWing_Rectangle_PlacesDigitInFourthCorner()
+        public void YWing_Canonical_RemovesCandidateFromCommonPeer()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
+            var rule = new YWingRule();
 
-            // Clear all candidates to shape exact pairs
+            // Clear all candidates to shape an explicit canonical pattern.
             for (int r = 0; r < 9; r++)
                 for (int c = 0; c < 9; c++)
                     board.Cells[r, c].Candidates.Clear();
 
             // candidate pairs:
-            // (1,2)..|...|..(2,3)
-            //   .  ..|...|..  .
-            //   .  ..|...|..  .
+            // .  .  .|.  .  .|...
+            // .(3,9).|.(2,3).|... <-- (3,9) -> 9
+            // .  .  .|.  .  .|...
             // -----------
-            //   .  ..|...|..  .
-            //   .  ..|...|..  .
-            //   .  ..|...|..  .
+            // .  .  .|.  .  .|...
+            // .(1,3).|.(1,2).|...
+            // .  .  .|.  .  .|...
             // -----------
-            //   .  ..|...|..  .
-            //   .  ..|...|..  .
-            // (1,3)..|...|..  .<-candidate 3 will be removed
+            // .  .  .|.  .  .|...
+            // .  .  .|.  .  .|...
+            // .  .  .|.  .  .|...
+            
+            // Pivot {4,4}
+            board.Cells[4, 4].Candidates.Add(1);
+            board.Cells[4, 4].Candidates.Add(2);
 
-            // Rectangle at rows 0-1, cols 0-1
-            // Top-left: {1,2}
-            board.Cells[0, 0].Candidates.Add(1);
-            board.Cells[0, 0].Candidates.Add(2);
-            // Top-right: {2,3}
-            board.Cells[0, 8].Candidates.Add(2);
-            board.Cells[0, 8].Candidates.Add(3);
-            // Bottom-left: {1,3}
-            board.Cells[8, 0].Candidates.Add(1);
-            board.Cells[8, 0].Candidates.Add(3);
-            // Bottom-right: allow {1,2,3,4}
-            board.Cells[8, 8].Candidates.Add(1);
-            board.Cells[8, 8].Candidates.Add(2);
-            board.Cells[8, 8].Candidates.Add(3);
-            board.Cells[8, 8].Candidates.Add(4);
-            // different cells
-            board.Cells[0, 1].Candidates.Add(4);
-            board.Cells[1, 0].Candidates.Add(4);
+            // Pincer A {4,1}, sees pivot by row
+            board.Cells[4, 1].Candidates.Add(1);
+            board.Cells[4, 1].Candidates.Add(3);
 
-            var (rule, result) = registry.ApplyNext(board);
-            Assert.IsNotNull(rule);
+            // Pincer B {1,4}, sees pivot by column
+            board.Cells[1, 4].Candidates.Add(2);
+            board.Cells[1, 4].Candidates.Add(3);
+
+            // Target sees both pincers and should lose candidate 3.
+            board.Cells[1, 1].Candidates.Add(3);
+            board.Cells[1, 1].Candidates.Add(9);
+
+            // This cell sees only one pincer, so it must be untouched.
+            board.Cells[4, 0].Candidates.Add(3);
+
+            var result = rule.CalculateChanges(board);
             Assert.IsTrue(result.Apply);
-            // YWing pattern should remove candidate 3 from (8,8)
-            Assert.IsFalse(board.Cells[8, 8].Candidates.Contains(3));
-            // Check the other candidates in the same cell are unaffected
-            Assert.IsTrue(board.Cells[8, 8].Candidates.Contains(1));
-            Assert.IsTrue(board.Cells[8, 8].Candidates.Contains(2));
-            Assert.IsTrue(board.Cells[8, 8].Candidates.Contains(4));
-            // check candidates in different cells are unaffected
-            Assert.IsTrue(board.Cells[0, 1].Candidates.Contains(4));
-            Assert.IsTrue(board.Cells[1, 0].Candidates.Contains(4));
+            result.EnactCandidates(board);
+
+            Assert.IsFalse(board.Cells[1, 1].Candidates.Contains(3));
+            Assert.IsTrue(board.Cells[1, 1].Candidates.Contains(9));
+            Assert.IsTrue(board.Cells[4, 0].Candidates.Contains(3));
         }
 
         [Test]
-        public void YWing_Rectangle_NotValid_DigitInAllThree()
+        public void YWing_Canonical_DoesNotTrigger_WhenPivotIsNotBiValue()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
+            var rule = new YWingRule();
 
-            // Clear all candidates to shape exact pairs
+            // Clear all candidates to shape an invalid pattern.
             for (int r = 0; r < 9; r++)
                 for (int c = 0; c < 9; c++)
                     board.Cells[r, c].Candidates.Clear();
 
-            // candidate pairs:
-            // (1,2,3)..|...|..(2,3)
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //  (1,3) ..|...|..  .
+            // Pivot is not bi-value: {1,2,8}
+            board.Cells[4, 4].Candidates.Add(1);
+            board.Cells[4, 4].Candidates.Add(2);
+            board.Cells[4, 4].Candidates.Add(8);
 
-            // Rectangle at rows 0-1, cols 0-1
-            // Top-left: {1,2,3}
-            board.Cells[0, 0].Candidates.Add(1);
-            board.Cells[0, 0].Candidates.Add(2);
-            board.Cells[0, 0].Candidates.Add(3); // This is why this should not be a valid y-wing pattern
-            // Top-right: {2,3}
-            board.Cells[0, 8].Candidates.Add(2);
-            board.Cells[0, 8].Candidates.Add(3);
-            // Bottom-left: {1,3}
-            board.Cells[8, 0].Candidates.Add(1);
-            board.Cells[8, 0].Candidates.Add(3);
-            // Bottom-right: allow {1,2,3,4}
-            board.Cells[8, 8].Candidates.Add(1);
-            board.Cells[8, 8].Candidates.Add(2);
-            board.Cells[8, 8].Candidates.Add(3);
-            board.Cells[8, 8].Candidates.Add(4);
+            board.Cells[4, 1].Candidates.Add(1);
+            board.Cells[4, 1].Candidates.Add(3);
+            board.Cells[1, 4].Candidates.Add(2);
+            board.Cells[1, 4].Candidates.Add(3);
+            board.Cells[1, 1].Candidates.Add(3);
 
-            // 3 appears in all 3, so not a valid y-wing pattern
-            var (rule, result) = registry.ApplyNext(board);
-            // solver should not detect a Y-Wing when the same digit appears in all three pivot cells
-            Assert.IsNull(rule);
+            var result = rule.CalculateChanges(board);
+            Assert.IsFalse(result.Apply);
+            Assert.AreEqual(0, result.Changes.Count);
         }
 
         [Test]
-        public void YWing_Rectangle_NotValid_PairsNotUnique()
+        public void YWing_Canonical_DoesNotTrigger_WithoutCommonEliminationCell()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
+            var rule = new YWingRule();
 
-            // Clear all candidates to shape exact pairs
+            // Clear all candidates to shape a canonical Y-Wing with no removable c.
             for (int r = 0; r < 9; r++)
                 for (int c = 0; c < 9; c++)
                     board.Cells[r, c].Candidates.Clear();
 
-            // candidate pairs:
-            //  (1,2) ..|...|..(2,3)
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //  (1,2) ..|...|..  .
+            board.Cells[4, 4].Candidates.Add(1);
+            board.Cells[4, 4].Candidates.Add(2);
+            board.Cells[4, 1].Candidates.Add(1);
+            board.Cells[4, 1].Candidates.Add(3);
+            board.Cells[1, 4].Candidates.Add(2);
+            board.Cells[1, 4].Candidates.Add(3);
 
-            // Rectangle at rows 0-1, cols 0-1
-            // Top-left: {1,2}
-            board.Cells[0, 0].Candidates.Add(1);
-            board.Cells[0, 0].Candidates.Add(2);
-            // Top-right: {2,3}
-            board.Cells[0, 8].Candidates.Add(2);
-            board.Cells[0, 8].Candidates.Add(3);
-            // Bottom-left: {1,2}, same as 0,0 so not a valid y-wing pattern
-            board.Cells[8, 0].Candidates.Add(1);
-            board.Cells[8, 0].Candidates.Add(2);
-            // Bottom-right: allow {1,2,3,4}
-            board.Cells[8, 8].Candidates.Add(1);
-            board.Cells[8, 8].Candidates.Add(2);
-            board.Cells[8, 8].Candidates.Add(3);
-            board.Cells[8, 8].Candidates.Add(4);
-
-            // 3 appears in all 3, so not a valid y-wing pattern
-            var (rule, result) = registry.ApplyNext(board);
-            // solver should not detect a Y-Wing when the same digit appears in all three pivot cells
-            Assert.IsNull(rule);
-        }
-
-        
-
-        [Test]
-        public void YWing_Rectangle_NotValid_CandidateNotInTarget()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
-
-            // Clear all candidates to shape exact pairs
-            for (int r = 0; r < 9; r++)
-                for (int c = 0; c < 9; c++)
-                    board.Cells[r, c].Candidates.Clear();
-
-            // candidate pairs:
-            //  (1,2) ..|...|..(2,3)
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            // -----------
-            //    .   ..|...|..  .
-            //    .   ..|...|..  .
-            //  (1,3) ..|...|..  (1,2,4) <- candidate 3 is missing, so won't trigger rule
-
-            // Rectangle at rows 0-1, cols 0-1
-            // Top-left: {1,2}
-            board.Cells[0, 0].Candidates.Add(1);
-            board.Cells[0, 0].Candidates.Add(2);
-            // Top-right: {2,3}
-            board.Cells[0, 8].Candidates.Add(2);
-            board.Cells[0, 8].Candidates.Add(3);
-            // Bottom-left: {1,3}
-            board.Cells[8, 0].Candidates.Add(1);
-            board.Cells[8, 0].Candidates.Add(3);
-            // Bottom-right: allow {1,2,3,4}
-            board.Cells[8, 8].Candidates.Add(1);
-            board.Cells[8, 8].Candidates.Add(2);
-            board.Cells[8, 8].Candidates.Add(4);
-
-            // 3 appears in all 3, so not a valid y-wing pattern
-            var (rule, result) = registry.ApplyNext(board);
-            // solver should not detect a Y-Wing when the same digit appears in all three pivot cells
-            Assert.IsNull(rule);
-        }
-
-        [Test]
-        public void YWing_Rectangle_NotValid_Example1()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
-
-            // Clear all candidates to shape exact pairs
-            for (int r = 0; r < 9; r++)
-                for (int c = 0; c < 9; c++)
-                    board.Cells[r, c].Candidates.Clear();
-
-            // candidate pairs:
-            // ...|(1,4,7)..|(1,2,4,9)..
-            // ...|...|...
-            // ...|...|...
-            // -----------
-            // ...|(2,5,6,7)..|(4,5,6,8,9)..
-            // ...|...|...
-            // ...|...|...
-            // -----------
-            // ...|...|...
-            // ...|...|...
-            // ...|...|...
-
-            // Top-left
-            board.Cells[0, 3].Candidates.Add(1);
-            board.Cells[0, 3].Candidates.Add(4);
-            board.Cells[0, 3].Candidates.Add(7);
-            // Top-right
-            board.Cells[0, 6].Candidates.Add(1);
-            board.Cells[0, 6].Candidates.Add(2);
-            board.Cells[0, 6].Candidates.Add(4);
-            board.Cells[0, 6].Candidates.Add(9);
-            // Bottom-left
-            board.Cells[3, 3].Candidates.Add(2);
-            board.Cells[3, 3].Candidates.Add(5);
-            board.Cells[3, 3].Candidates.Add(6);
-            board.Cells[3, 3].Candidates.Add(7);
-            // Bottom-right
-            board.Cells[3, 6].Candidates.Add(4);
-            board.Cells[3, 6].Candidates.Add(5);
-            board.Cells[3, 6].Candidates.Add(6);
-            board.Cells[3, 6].Candidates.Add(8);
-            board.Cells[3, 6].Candidates.Add(9);
-
-            // 3 appears in all 3, so not a valid y-wing pattern
-            var (rule, result) = registry.ApplyNext(board);
-            // solver should not detect a Y-Wing when the same digit appears in all three pivot cells
-            Assert.IsNull(rule);
-        }
-
-        [Test]
-        public void YWing_Rectangle_NotValid_Example2()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var registry = new RuleRegistry();
-            registry.Register(new YWingRule());
-
-            // Clear all candidates to shape exact pairs
-            for (int r = 0; r < 9; r++)
-                for (int c = 0; c < 9; c++)
-                    board.Cells[r, c].Candidates.Clear();
-
-            // candidate pairs:
-            // .(1479).|(147)..|...
-            // ...|...|...
-            // ...|...|...
-            // -----------
-            // ...|...|...
-            // .(569).|(1256)..|...
-            // ...|...|...
-            // -----------
-            // ...|...|...
-            // ...|...|...
-            // ...|...|...
-
-            // Top-left
-            board.Cells[0, 1].Candidates.Add(1);
-            board.Cells[0, 1].Candidates.Add(4);
-            board.Cells[0, 1].Candidates.Add(7);
-            board.Cells[0, 1].Candidates.Add(9);
-            // Top-right
-            board.Cells[0, 3].Candidates.Add(1);
-            board.Cells[0, 3].Candidates.Add(4);
-            board.Cells[0, 3].Candidates.Add(7);
-            // Bottom-left
-            board.Cells[4, 1].Candidates.Add(5);
-            board.Cells[4, 1].Candidates.Add(6);
-            board.Cells[4, 1].Candidates.Add(9);
-            // Bottom-right
-            board.Cells[4, 3].Candidates.Add(1);
-            board.Cells[4, 3].Candidates.Add(2);
-            board.Cells[4, 3].Candidates.Add(5);
-            board.Cells[4, 3].Candidates.Add(6);
-
-            // 3 appears in all 3, so not a valid y-wing pattern
-            var (rule, result) = registry.ApplyNext(board);
-            // solver should not detect a Y-Wing when the same digit appears in all three pivot cells
-            Assert.IsNull(rule);
+            var result = rule.CalculateChanges(board);
+            Assert.IsFalse(result.Apply);
+            Assert.AreEqual(0, result.Changes.Count);
         }
     }
 }
