@@ -9,7 +9,7 @@ namespace Sudoku.Solver.Rules
      *
      * For a digit d, find two rows each containing exactly two candidate positions
      * for d and those candidate columns are identical for both rows. Then any other
-     * cell in those two columns, rows or boxes cannot contain d and
+      * cell in those two columns (or two rows in the transposed case) cannot contain d and
      * the candidate can be removed.
      */
     public class XWingRule : ISudokuRule
@@ -87,25 +87,6 @@ namespace Sudoku.Solver.Rules
                                 if (!cell1.Value.HasValue && cell1.Candidates.Contains(digit)) removals.Add((r, c1));
                                 if (!cell2.Value.HasValue && cell2.Candidates.Contains(digit)) removals.Add((r, c2));
                             }
-                            // Also consider eliminations inside the boxes that contain the witnesses.
-                            // For each of the four witness boxes, eliminate the digit from cells
-                            // that are not in the two witness rows/columns and are not the witnesses themselves.
-                            var boxWitnesses = new List<(int r,int c)>{(r1.row,c1),(r1.row,c2),(r2.row,c1),(r2.row,c2)};
-                            var boxesSeen = new HashSet<int>();
-                            foreach (var w in boxWitnesses)
-                            {
-                                int box = Sudoku.Models.Cell.ComputeBox(w.r, w.c);
-                                if (boxesSeen.Contains(box)) continue;
-                                boxesSeen.Add(box);
-                                foreach (var bc in board.GetBox(box))
-                                {
-                                    if (bc.Row == w.r && (bc.Column == w.c)) continue;
-                                    // skip the two witness rows and two witness columns
-                                    if (bc.Row == r1.row || bc.Row == r2.row) continue;
-                                    if (bc.Column == c1 || bc.Column == c2) continue;
-                                    if (!bc.Value.HasValue && bc.Candidates.Contains(digit)) removals.Add((bc.Row, bc.Column));
-                                }
-                            }
                             if (removals.Count > 0)
                             {
                                 var witnesses = new List<(int r,int c)>{(r1.row,c1),(r1.row,c2),(r2.row,c1),(r2.row,c2)};
@@ -147,23 +128,6 @@ namespace Sudoku.Solver.Rules
                                 var cell2 = board.Cells[r2, c];
                                 if (!cell1.Value.HasValue && cell1.Candidates.Contains(digit)) removals.Add((r1, c));
                                 if (!cell2.Value.HasValue && cell2.Candidates.Contains(digit)) removals.Add((r2, c));
-                            }
-                            // Also consider eliminations inside the boxes that contain the witnesses.
-                            var boxWitnesses = new List<(int r,int c)>{(r1,c1.col),(r1,c2.col),(r2,c1.col),(r2,c2.col)};
-                            var boxesSeen = new HashSet<int>();
-                            foreach (var w in boxWitnesses)
-                            {
-                                int box = Sudoku.Models.Cell.ComputeBox(w.r, w.c);
-                                if (boxesSeen.Contains(box)) continue;
-                                boxesSeen.Add(box);
-                                foreach (var bc in board.GetBox(box))
-                                {
-                                    if (bc.Column == w.c && bc.Row == w.r) continue;
-                                    // skip the two witness columns and two witness rows
-                                    if (bc.Column == c1.col || bc.Column == c2.col) continue;
-                                    if (bc.Row == r1 || bc.Row == r2) continue;
-                                    if (!bc.Value.HasValue && bc.Candidates.Contains(digit)) removals.Add((bc.Row, bc.Column));
-                                }
                             }
                             if (removals.Count > 0)
                             {

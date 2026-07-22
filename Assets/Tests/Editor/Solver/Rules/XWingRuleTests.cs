@@ -114,62 +114,32 @@ namespace Sudoku.Tests.Editor
         
 
         [Test]
-        public void XWing_BoxBased_RemovesCandidatesInBoxes()
+        public void XWing_DoesNotRemoveCandidatesOutsideCrossLines()
         {
             var board = TestHelpers.CreateEmptyBoard();
             var rule = new XWingRule();
 
             int d = 7;
-            int d2 = 9;
             for (int r = 0; r < 9; r++)
                 for (int c = 0; c < 9; c++)
                     board.Cells[r, c].Candidates.Clear();
 
-            // candidates:
-            // 7..|...|..7
-            // ..7|...|...
-            // ...|...|..7
-            // -----------
-            // ...|...|...
-            // ...|.7.|...
-            // ...|...|...
-            // -----------
-            // ...|...|.7.
-            // .7.|...|...
-            // 7..|...|..7
-            // boxes 0, 2, 6, 8 have candidates in corners
+            // Valid X-Wing witnesses at row 0/8 and col 0/8.
             board.Cells[0, 0].Candidates.Add(d);
             board.Cells[0, 8].Candidates.Add(d);
             board.Cells[8, 0].Candidates.Add(d);
             board.Cells[8, 8].Candidates.Add(d);
 
-            // candidate to be removed: 
-            // box0 (rows 0-2, cols 0-2)
+            // These candidates are in witness boxes but NOT on the X-Wing cross lines
+            // (rows 0/8 and cols 0/8), so standard X-Wing must not remove them.
             board.Cells[1, 2].Candidates.Add(d);
-            // box2 (rows 0-2, cols 6-8)
-            board.Cells[2, 8].Candidates.Add(d);
-            // box6 (rows 6-8, cols 0-2)
+            board.Cells[2, 7].Candidates.Add(d);
             board.Cells[7, 1].Candidates.Add(d);
-            // box8 (rows 6-8, cols 6-8)
-            board.Cells[6, 7].Candidates.Add(d);            
-            // box4 (rows 3-5, cols 3-5) should be unaffected since it doesn't have candidates in the first place
-            board.Cells[4, 4].Candidates.Add(d);
-            // candidate to be unaffected since it's a different candidate in box 0
-            board.Cells[1, 8].Candidates.Add(d2);
+            board.Cells[6, 7].Candidates.Add(d);
 
             var res = rule.CalculateChanges(board);
-            Assert.IsTrue(res.Apply);
-            res.EnactCandidates(board);
-            // expect removals at (1,2), (2,8), (7,1), (6,7)
-            Assert.IsFalse(board.Cells[1, 2].Candidates.Contains(d));
-            Assert.IsFalse(board.Cells[2, 8].Candidates.Contains(d));
-            Assert.IsFalse(board.Cells[7, 1].Candidates.Contains(d));
-            Assert.IsFalse(board.Cells[6, 7].Candidates.Contains(d));
-
-            // expect no change at (4,4) since it's not a candidate in the first place
-            Assert.IsTrue(board.Cells[4, 4].Candidates.Contains(d));
-            // expect no change at (1,8) since it's a different candidate
-            Assert.IsTrue(board.Cells[1, 8].Candidates.Contains(d2));
+            Assert.IsFalse(res.Apply);
+            Assert.AreEqual(0, res.Changes.Count);
         }
     }
 }
