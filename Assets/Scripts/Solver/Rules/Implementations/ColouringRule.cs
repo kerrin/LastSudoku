@@ -3,10 +3,12 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * Colouring is a technique used to eliminate candidates by coloring cells in a way that reveals contradictions.
+     * Colouring (also known as Single Chains) is a technique used to eliminate candidates by coloring cells in a way that reveals contradictions.
      * If a candidate appears in two different colors in the same unit, it can be removed from all other cells in that unit.
      * You start by picking a candidate and coloring it in one color. Then, you look for cells that see that candidate and color them in the opposite color.
      * Once the chain resolves, you then start again with other candidates and continue the process of coloring until you can find a contradiction or eliminate candidates based on the coloring.
+     * 
+     * This rule should only be applied if colouring is enabled and has at least two colours enabled.
      */
     public class ColouringRule : ISudokuRule
     {
@@ -15,7 +17,7 @@ namespace Sudoku.Solver.Rules
         public Difficulty Difficulty => Difficulty.Expert;
         public bool CanApply(Board board)
         {
-            // Not implemented
+            // TODO: Not implemented
             return false;
         }
 
@@ -23,7 +25,7 @@ namespace Sudoku.Solver.Rules
         {
             var result = new RuleResult();
             
-            // Not implemented
+            // TODO: Not implemented
             
             result.Apply = false;
             return result;
