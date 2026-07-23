@@ -36,7 +36,7 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ColouringRule_SameColourContradiction_RemovesContradictingColourCandidates()
+        public void ColouringRule_SameColourContradiction_IsInconclusive_WhenChainCellsAreInIneligibleBoxes()
         {
             var board = TestHelpers.CreateEmptyBoard();
             var rule = new ColouringRule();
@@ -44,32 +44,20 @@ namespace Sudoku.Tests.Editor
 
             ClearAllCandidates(board);
 
-            // Minimal valid chain:
-            // r1c1 - r1c2 (row), r1c2 - r2c2 (column)
-            // Colors r1c1 and r2c2 the same, and they contradict in box 1.
-            // No node sees more than two same-digit peers.
+            // The old contradiction pattern sits entirely inside a box with >2 candidates,
+            // so none of these cells are eligible for links under the revised rule.
             board.Cells[0, 0].Candidates.Add(digit); // r1c1
             board.Cells[0, 1].Candidates.Add(digit); // r1c2
             board.Cells[1, 1].Candidates.Add(digit); // r2c2
 
             var result = rule.CalculateChanges(board);
-            Assert.IsTrue(result.Apply);
-
-            var removed = result.Changes
-                .Select(c => (c.Row, c.Column))
-                .OrderBy(x => x.Row)
-                .ThenBy(x => x.Column)
-                .ToList();
-
-            CollectionAssert.AreEquivalent(new[] { (0, 0), (1, 1) }, removed);
-            Assert.IsTrue(result.UsedCells.Any(u => u.HighlightTag == "Failure" && u.Candidate == digit));
-            Assert.IsTrue(result.UsedCells.Any(u => u.HighlightTag == "Deduction" && u.Row == 0 && u.Column == 0 && u.Candidate == digit));
-            Assert.IsTrue(result.UsedCells.Any(u => u.HighlightTag == "Deduction" && u.Row == 1 && u.Column == 1 && u.Candidate == digit));
+            Assert.IsFalse(result.Apply);
+            Assert.IsEmpty(result.Changes);
 
             result.EnactCandidates(board);
-            Assert.IsFalse(board.Cells[0, 0].Candidates.Contains(digit));
-            Assert.IsFalse(board.Cells[1, 1].Candidates.Contains(digit));
+            Assert.IsTrue(board.Cells[0, 0].Candidates.Contains(digit));
             Assert.IsTrue(board.Cells[0, 1].Candidates.Contains(digit));
+            Assert.IsTrue(board.Cells[1, 1].Candidates.Contains(digit));
         }
 
         [Test]
@@ -122,7 +110,7 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ColouringRule_WhenNodeSeesMoreThanTwoComponentPeers_IsInvalidAndDoesNotApply()
+        public void ColouringRule_WhenNodeSeesMoreThanTwoComponentPeers_ChainIsIneligibleByBoxRule()
         {
             var board = TestHelpers.CreateEmptyBoard();
             var rule = new ColouringRule();
@@ -132,13 +120,33 @@ namespace Sudoku.Tests.Editor
 
             // Base chain:
             // r1c1 - r1c2 (row), r1c2 - r2c2 (column), r2c2 - r2c3 (row), r2c3 - r3c3 (column)
-            // Extra topology makes r1c2 see three same-digit nodes in the component (r1c1, r2c2, r3c3),
-            // which must invalidate the chain under the clarified rule.
+            // All nodes are in the same box, making box candidate count >2,
+            // so no links may be formed under the revised rule.
             board.Cells[0, 0].Candidates.Add(digit); // r1c1
             board.Cells[0, 1].Candidates.Add(digit); // r1c2
             board.Cells[1, 1].Candidates.Add(digit); // r2c2
             board.Cells[1, 2].Candidates.Add(digit); // r2c3
             board.Cells[2, 2].Candidates.Add(digit); // r3c3
+
+            var result = rule.CalculateChanges(board);
+            Assert.IsFalse(result.Apply);
+            Assert.IsEmpty(result.Changes);
+        }
+
+        [Test]
+        public void ColouringRule_WhenBoxHasMoreThanTwoDigitCandidates_CellsFromThatBoxAreNotLinked()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var rule = new ColouringRule();
+            const int digit = 2;
+
+            ClearAllCandidates(board);
+
+            // Box 1 has three candidates for this digit, so none of them are eligible chain nodes.
+            // Without that restriction this would form a contradiction chain in box 1.
+            board.Cells[0, 0].Candidates.Add(digit); // r1c1
+            board.Cells[0, 1].Candidates.Add(digit); // r1c2
+            board.Cells[1, 1].Candidates.Add(digit); // r2c2
 
             var result = rule.CalculateChanges(board);
             Assert.IsFalse(result.Apply);

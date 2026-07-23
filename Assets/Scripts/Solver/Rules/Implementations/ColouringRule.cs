@@ -8,15 +8,18 @@ namespace Sudoku.Solver.Rules
 {
     /**
      * Colouring (also known as Single Chains) is a technique used to eliminate candidates by coloring cells in a way that reveals contradictions.
-     * Importantly, each candidate should only see (Row, Column, Box) 2 candidates of the same digit, regardless of colour,
-     * and those candidates cannot see each other, otherwise the chain is invalid, and no deduction can be made.
-     * In theory a chain could see more than 2 other candidates, but they must all resolve to the opposite colour without contradictions, and not see each other, otherwise the chain is invalid.
-     * Start by picking a candidate and coloring it in one color. Then, look for all cells that see that candidate and color them in the opposite color. 
-     * The chain fails if a candidate can see more than one candidate of the same color, as this would create a contradiction.
-     * On failing the chain, all candidates of the same colour can be eliminated from the board.
-     * If you evaluate all candidates in the chain and find no contradictions, then no action can be taken as the chain is inconclusive.
+     * Importantly, we can only make links between cells in the deduction if their box has 1 or 2 candidates of that digit.
      * 
+     * Start by picking a candidate in a cell and coloring it in one colour.
+    * Then look at all cells that see (column, row, box (if it has only 2 candidates of that digit)) that candidate, and colour the digit in the opposite colour.
+    * The chain can trigger when a same-colour contradiction exists in one unit (row, column, or box), so that entire colour is false.
+     * 
+     * The strategy is all about recognising that one of the colours will be the solution and the other not.
+     *
      * This rule should only be applied if colouring is enabled and has at least two colours enabled.
+     * Example board: PexgJNCqJyeY81q73gz6Ptf1PxzMPJNMpvWpWFq0jwDy3r
+     * Starting in the top left box, the 5s in cell (0,1) or (1,0) can be the start of the chain.
+     * See https://www.sudokuwiki.org/Print_Simple_Colouring
      */
     public class ColouringRule : ISudokuRule
     {
@@ -216,7 +219,7 @@ namespace Sudoku.Solver.Rules
                         continue;
                     }
 
-                    if (!IsValidChainComponent(board, digit, componentGraph, componentKeys, componentColours))
+                    if (!IsValidChainComponent(componentGraph, componentKeys, componentColours))
                     {
                         continue;
                     }
@@ -232,6 +235,7 @@ namespace Sudoku.Solver.Rules
                     {
                         bestPlan = contradictionPlan;
                     }
+
                 }
             }
 
@@ -482,37 +486,17 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * A valid chain component cannot branch: each node may connect to at most 2 chain neighbors.
+         * Validate whether a component can be represented by a consistent two-colour assignment.
          *
          * @param componentGraph Component adjacency map.
          * @param componentKeys Node keys inside this component.
-         * @returns True when the component is a non-branching chain/cycle.
+         * @returns True when every component node has a valid colour and no branching beyond degree 2.
          */
         private static bool IsValidChainComponent(
-            Board board,
-            int digit,
             Dictionary<int, List<int>> componentGraph,
             List<int> componentKeys,
             Dictionary<int, int> componentColours)
         {
-            var componentNodeMap = componentKeys.ToDictionary(k => k, k => DecodeNode(board, k));
-            var allDigitKeys = new List<int>();
-            for (int row = 0; row < board.Size; row++)
-            {
-                for (int column = 0; column < board.Size; column++)
-                {
-                    var cell = board.Cells[row, column];
-                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
-                    {
-                        continue;
-                    }
-
-                    allDigitKeys.Add(ToNodeKey(board, row, column));
-                }
-            }
-
-            var allDigitNodeMap = allDigitKeys.ToDictionary(k => k, k => DecodeNode(board, k));
-
             for (int i = 0; i < componentKeys.Count; i++)
             {
                 int key = componentKeys[i];
@@ -521,74 +505,14 @@ namespace Sudoku.Solver.Rules
                     return false;
                 }
 
+                if (!componentColours.ContainsKey(key))
+                {
+                    return false;
+                }
+
                 if (neighbors.Count > 2)
                 {
                     return false;
-                }
-
-                var currentNode = componentNodeMap[key];
-                int currentColour = componentColours[key];
-                var visiblePeers = new List<int>();
-                for (int n = 0; n < allDigitKeys.Count; n++)
-                {
-                    int peerKey = allDigitKeys[n];
-                    if (peerKey == key)
-                    {
-                        continue;
-                    }
-
-                    if (ArePeers(currentNode, allDigitNodeMap[peerKey]))
-                    {
-                        visiblePeers.Add(peerKey);
-                    }
-                }
-
-                if (visiblePeers.Count <= 2)
-                {
-                    continue;
-                }
-
-                var componentOppositePeers = new List<int>();
-                int externalPeerCount = 0;
-
-                for (int p = 0; p < visiblePeers.Count; p++)
-                {
-                    int peerKey = visiblePeers[p];
-                    if (!componentColours.TryGetValue(peerKey, out var peerColour))
-                    {
-                        externalPeerCount++;
-                        continue;
-                    }
-
-                    if (peerColour == currentColour)
-                    {
-                        return false;
-                    }
-                    else
-                    {
-                        componentOppositePeers.Add(peerKey);
-                    }
-                }
-
-                // Peers outside the component make >2 visibility ambiguous under this rule.
-                if (externalPeerCount > 0)
-                {
-                    return false;
-                }
-
-                // If there are no same-colour peers, >2 visibility is only valid when opposite peers
-                // are mutually independent (they must not see each other).
-                for (int a = 0; a < componentOppositePeers.Count; a++)
-                {
-                    var left = allDigitNodeMap[componentOppositePeers[a]];
-                    for (int b = a + 1; b < componentOppositePeers.Count; b++)
-                    {
-                        var right = allDigitNodeMap[componentOppositePeers[b]];
-                        if (ArePeers(left, right))
-                        {
-                            return false;
-                        }
-                    }
                 }
             }
 
@@ -673,6 +597,7 @@ namespace Sudoku.Solver.Rules
         private static Dictionary<int, List<int>> BuildStrongLinkGraph(Board board, int digit)
         {
             var graph = new Dictionary<int, List<int>>();
+            var boxDigitCounts = CountDigitCandidatesPerBox(board, digit);
 
             for (int row = 0; row < board.Size; row++)
             {
@@ -680,7 +605,9 @@ namespace Sudoku.Solver.Rules
                 for (int column = 0; column < board.Size; column++)
                 {
                     var cell = board.Cells[row, column];
-                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    if (!cell.Value.HasValue &&
+                        cell.Candidates.Contains(digit) &&
+                        IsCellEligibleForChain(board, row, column, boxDigitCounts))
                     {
                         candidates.Add(ToNodeKey(board, row, column));
                     }
@@ -695,7 +622,9 @@ namespace Sudoku.Solver.Rules
                 for (int row = 0; row < board.Size; row++)
                 {
                     var cell = board.Cells[row, column];
-                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    if (!cell.Value.HasValue &&
+                        cell.Candidates.Contains(digit) &&
+                        IsCellEligibleForChain(board, row, column, boxDigitCounts))
                     {
                         candidates.Add(ToNodeKey(board, row, column));
                     }
@@ -709,7 +638,9 @@ namespace Sudoku.Solver.Rules
                 var candidates = new List<int>();
                 foreach (var cell in board.GetBox(box))
                 {
-                    if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
+                    if (!cell.Value.HasValue &&
+                        cell.Candidates.Contains(digit) &&
+                        IsCellEligibleForChain(board, cell.Row, cell.Column, boxDigitCounts))
                     {
                         candidates.Add(ToNodeKey(board, cell.Row, cell.Column));
                     }
@@ -719,6 +650,49 @@ namespace Sudoku.Solver.Rules
             }
 
             return graph;
+        }
+
+        /**
+         * Count unsolved candidate occurrences for the given digit in each box.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @returns Per-box candidate counts indexed by box number.
+         */
+        private static int[] CountDigitCandidatesPerBox(Board board, int digit)
+        {
+            var counts = new int[board.Size];
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
+                    {
+                        continue;
+                    }
+
+                    counts[cell.Box]++;
+                }
+            }
+
+            return counts;
+        }
+
+        /**
+         * Decide whether a candidate cell is eligible to participate in the chain.
+         *
+         * @param board Current puzzle board.
+         * @param row Candidate row.
+         * @param column Candidate column.
+         * @param boxDigitCounts Precomputed per-box candidate counts for the digit.
+         * @returns True when the candidate's box contains one or two occurrences of the digit.
+         */
+        private static bool IsCellEligibleForChain(Board board, int row, int column, int[] boxDigitCounts)
+        {
+            int box = board.Cells[row, column].Box;
+            return boxDigitCounts[box] <= 2;
         }
 
         /**
@@ -793,73 +767,6 @@ namespace Sudoku.Solver.Rules
             }
 
             return null;
-        }
-
-        /**
-         * Build an elimination plan where an uncoloured cell sees both colours.
-         *
-         * @param board Current puzzle board.
-         * @param digit Candidate digit.
-         * @param componentKeys Node keys in this connected component.
-         * @param colors Two-colour assignment for each key.
-         * @param componentNodes Decoded component nodes.
-         * @returns Elimination plan or null when no intersection elimination exists.
-         */
-        private static EliminationPlan BuildIntersectionElimination(
-            Board board,
-            int digit,
-            List<int> componentKeys,
-            Dictionary<int, int> colors,
-            List<ChainNode> componentNodes,
-            Dictionary<int, int> componentColours)
-        {
-            var componentSet = new HashSet<int>(componentKeys);
-            var removals = new List<ChainNode>();
-
-            for (int row = 0; row < board.Size; row++)
-            {
-                for (int column = 0; column < board.Size; column++)
-                {
-                    int key = ToNodeKey(board, row, column);
-                    if (componentSet.Contains(key))
-                    {
-                        continue;
-                    }
-
-                    var cell = board.Cells[row, column];
-                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
-                    {
-                        continue;
-                    }
-
-                    bool seesColourA = SeesColour(board, row, column, 0, componentKeys, colors);
-                    if (!seesColourA)
-                    {
-                        continue;
-                    }
-
-                    bool seesColourB = SeesColour(board, row, column, 1, componentKeys, colors);
-                    if (!seesColourB)
-                    {
-                        continue;
-                    }
-
-                    removals.Add(new ChainNode
-                    {
-                        Row = row,
-                        Column = column,
-                        Box = board.Cells[row, column].Box
-                    });
-                }
-            }
-
-            if (removals.Count == 0)
-            {
-                return null;
-            }
-
-            var description = $"Colouring removed {digit} from {removals.Count} cell(s) that see both colours in a single chain";
-            return new EliminationPlan(digit, componentNodes, componentColours, new List<ChainNode>(), removals, description);
         }
 
         /**
@@ -974,38 +881,6 @@ namespace Sudoku.Solver.Rules
                 .OrderBy(n => n.Row)
                 .ThenBy(n => n.Column)
                 .ToList();
-        }
-
-        /**
-         * Determine whether a target cell sees at least one chain node of the given colour.
-         *
-         * @param board Current puzzle board.
-         * @param row Target row.
-         * @param column Target column.
-         * @param colour Desired colour index.
-         * @param componentKeys Node keys in this component.
-         * @param colors Two-colour assignment for each key.
-         * @returns True when any node of the colour is a peer of the target.
-         */
-        private static bool SeesColour(Board board, int row, int column, int colour, List<int> componentKeys, Dictionary<int, int> colors)
-        {
-            int targetBox = board.Cells[row, column].Box;
-            for (int i = 0; i < componentKeys.Count; i++)
-            {
-                int key = componentKeys[i];
-                if (colors[key] != colour)
-                {
-                    continue;
-                }
-
-                var node = DecodeNode(board, key);
-                if (node.Row == row || node.Column == column || node.Box == targetBox)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /**
