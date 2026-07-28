@@ -11,10 +11,15 @@ namespace Sudoku.Solver.Rules
      * Importantly, we can only make links between cells in the deduction if their box has 1 or 2 candidates of that digit.
      * 
      * Start by picking a candidate in a cell and coloring it in one colour.
-    * Then look at all cells that see (column, row, box (if it has only 2 candidates of that digit)) that candidate, and colour the digit in the opposite colour.
-    * The chain can trigger when a same-colour contradiction exists in one unit (row, column, or box), so that entire colour is false.
+     * Then look at all cells that sees (column, row, box) that candidate, for each row, column, and box where the digit only appear 1 or 2 times,
+     * we can chain to those candidates, setting them all to the oposite colour.
+     * If the row, column or box has more than 2 candidates of that digit, we cannot chain to those candidates and they are not bi-location links.
+     * 
+     * When checking bi-location candidates in the chain, if the candidate is already the same colour as another candidate in the same unit (row, column, or box), the same-colour contradiction exists, so that entire colour is false.
      * 
      * The strategy is all about recognising that one of the colours will be the solution and the other not.
+     * 
+     * We follow the chain of bi-location candidates, and if we find a candidate that sees it's own colour, we can eliminate all candidates of that colour.
      *
      * This rule should only be applied if colouring is enabled and has at least two colours enabled.
      * Example board: PexgJNCqJyeY81q73gz6Ptf1PxzMPJNMpvWpWFq0jwDy3r
@@ -178,10 +183,10 @@ namespace Sudoku.Solver.Rules
                     }
 
                     var componentKeys = new List<int>();
-                    var colors = new Dictionary<int, int>();
+                    var colours = new Dictionary<int, int>();
                     var queue = new Queue<int>();
                     queue.Enqueue(startKey);
-                    colors[startKey] = 0;
+                    colours[startKey] = 0;
                     visited.Add(startKey);
 
                     while (queue.Count > 0)
@@ -193,9 +198,9 @@ namespace Sudoku.Solver.Rules
                         for (int i = 0; i < neighbors.Count; i++)
                         {
                             int next = neighbors[i];
-                            if (!colors.ContainsKey(next))
+                            if (!colours.ContainsKey(next))
                             {
-                                colors[next] = 1 - colors[current];
+                                colours[next] = 1 - colours[current];
                             }
 
                             if (!visited.Contains(next))
@@ -236,6 +241,12 @@ namespace Sudoku.Solver.Rules
                         bestPlan = contradictionPlan;
                     }
 
+                    var twoColourPlan = BuildTwoColourElimination(board, digit, componentKeys, componentColours, componentNodes);
+                    if (IsBetterPlan(twoColourPlan, bestPlan))
+                    {
+                        bestPlan = twoColourPlan;
+                    }
+
                 }
             }
 
@@ -261,13 +272,6 @@ namespace Sudoku.Solver.Rules
                 return true;
             }
 
-            int candidateComponentSize = candidate.ComponentNodes != null ? candidate.ComponentNodes.Count : 0;
-            int currentComponentSize = current.ComponentNodes != null ? current.ComponentNodes.Count : 0;
-            if (candidateComponentSize != currentComponentSize)
-            {
-                return candidateComponentSize > currentComponentSize;
-            }
-
             bool candidateHasContradiction = candidate.ContradictionNodes != null && candidate.ContradictionNodes.Count > 0;
             bool currentHasContradiction = current.ContradictionNodes != null && current.ContradictionNodes.Count > 0;
             if (candidateHasContradiction != currentHasContradiction)
@@ -280,6 +284,13 @@ namespace Sudoku.Solver.Rules
             if (candidateRemovalCount != currentRemovalCount)
             {
                 return candidateRemovalCount > currentRemovalCount;
+            }
+
+            int candidateComponentSize = candidate.ComponentNodes != null ? candidate.ComponentNodes.Count : 0;
+            int currentComponentSize = current.ComponentNodes != null ? current.ComponentNodes.Count : 0;
+            if (candidateComponentSize != currentComponentSize)
+            {
+                return candidateComponentSize > currentComponentSize;
             }
 
             if (candidate.Digit != current.Digit)
@@ -326,171 +337,11 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Build candidate chain paths by taking the longest simple path from each meaningful start node.
-         *
-         * @param componentGraph Component adjacency map.
-         * @param componentKeys Node keys in the connected component.
-         * @returns Distinct chain candidates ordered by length descending.
-         */
-        private static List<List<int>> BuildChainCandidates(Dictionary<int, List<int>> componentGraph, List<int> componentKeys)
-        {
-            var starts = componentKeys
-                .Where(k => componentGraph.TryGetValue(k, out var neighbors) && neighbors.Count <= 1)
-                .OrderBy(k => k)
-                .ToList();
-
-            if (starts.Count == 0)
-            {
-                starts = componentKeys.OrderBy(k => k).ToList();
-            }
-
-            var uniquePaths = new Dictionary<string, List<int>>();
-            for (int i = 0; i < starts.Count; i++)
-            {
-                int start = starts[i];
-                var bestFromStart = FindLongestSimplePathFrom(start, componentGraph);
-                if (bestFromStart == null || bestFromStart.Count < 2)
-                {
-                    continue;
-                }
-
-                string key = BuildPathCanonicalKey(bestFromStart);
-                if (!uniquePaths.ContainsKey(key))
-                {
-                    uniquePaths[key] = bestFromStart;
-                }
-            }
-
-            var paths = uniquePaths.Values.ToList();
-            paths.Sort((a, b) =>
-            {
-                int cmp = b.Count.CompareTo(a.Count);
-                if (cmp != 0) return cmp;
-
-                int limit = a.Count < b.Count ? a.Count : b.Count;
-                for (int i = 0; i < limit; i++)
-                {
-                    if (a[i] != b[i]) return a[i].CompareTo(b[i]);
-                }
-
-                return 0;
-            });
-
-            return paths;
-        }
-
-        /**
-         * Find the longest simple path starting from a node.
-         *
-         * @param start Start node key.
-         * @param componentGraph Component adjacency map.
-         * @returns Longest path from start.
-         */
-        private static List<int> FindLongestSimplePathFrom(int start, Dictionary<int, List<int>> componentGraph)
-        {
-            var bestPath = new List<int>();
-            var currentPath = new List<int>();
-            var visited = new HashSet<int>();
-
-            ExploreLongestPath(start, componentGraph, visited, currentPath, bestPath);
-            return bestPath;
-        }
-
-        /**
-         * DFS helper for longest simple path search.
-         */
-        private static void ExploreLongestPath(
-            int current,
-            Dictionary<int, List<int>> componentGraph,
-            HashSet<int> visited,
-            List<int> currentPath,
-            List<int> bestPath)
-        {
-            visited.Add(current);
-            currentPath.Add(current);
-
-            if (currentPath.Count > bestPath.Count ||
-                (currentPath.Count == bestPath.Count && IsLexicographicallySmaller(currentPath, bestPath)))
-            {
-                bestPath.Clear();
-                bestPath.AddRange(currentPath);
-            }
-
-            if (componentGraph.TryGetValue(current, out var neighbors))
-            {
-                for (int i = 0; i < neighbors.Count; i++)
-                {
-                    int next = neighbors[i];
-                    if (visited.Contains(next))
-                    {
-                        continue;
-                    }
-
-                    ExploreLongestPath(next, componentGraph, visited, currentPath, bestPath);
-                }
-            }
-
-            currentPath.RemoveAt(currentPath.Count - 1);
-            visited.Remove(current);
-        }
-
-        /**
-         * Build alternating 2-colour assignments along an ordered chain path.
-         *
-         * @param chainKeys Ordered chain node keys.
-         * @returns Node-to-colour map (0 or 1).
-         */
-        private static Dictionary<int, int> BuildAlternatingColours(List<int> chainKeys)
-        {
-            var colours = new Dictionary<int, int>();
-            for (int i = 0; i < chainKeys.Count; i++)
-            {
-                colours[chainKeys[i]] = i % 2;
-            }
-
-            return colours;
-        }
-
-        /**
-         * Build an order-independent string key for path de-duplication.
-         *
-         * @param path Path node keys.
-         * @returns Canonical key.
-         */
-        private static string BuildPathCanonicalKey(List<int> path)
-        {
-            var forward = string.Join("-", path);
-            var reversed = new List<int>(path);
-            reversed.Reverse();
-            var backward = string.Join("-", reversed);
-            return string.CompareOrdinal(forward, backward) <= 0 ? forward : backward;
-        }
-
-        /**
-         * Compare two integer sequences lexicographically.
-         *
-         * @param a First sequence.
-         * @param b Second sequence.
-         * @returns True if a is lexicographically smaller than b.
-         */
-        private static bool IsLexicographicallySmaller(List<int> a, List<int> b)
-        {
-            int limit = a.Count < b.Count ? a.Count : b.Count;
-            for (int i = 0; i < limit; i++)
-            {
-                if (a[i] == b[i]) continue;
-                return a[i] < b[i];
-            }
-
-            return a.Count < b.Count;
-        }
-
-        /**
          * Validate whether a component can be represented by a consistent two-colour assignment.
          *
          * @param componentGraph Component adjacency map.
          * @param componentKeys Node keys inside this component.
-         * @returns True when every component node has a valid colour and no branching beyond degree 2.
+         * @returns True when every component node has a valid two-colour assignment.
          */
         private static bool IsValidChainComponent(
             Dictionary<int, List<int>> componentGraph,
@@ -509,30 +360,13 @@ namespace Sudoku.Solver.Rules
                 {
                     return false;
                 }
-
-                if (neighbors.Count > 2)
-                {
-                    return false;
-                }
             }
 
             return true;
         }
 
         /**
-         * Determine whether two chain nodes can see each other by Sudoku peer rules.
-         *
-         * @param a First node.
-         * @param b Second node.
-         * @returns True when nodes share row, column, or box.
-         */
-        private static bool ArePeers(ChainNode a, ChainNode b)
-        {
-            return a.Row == b.Row || a.Column == b.Column || a.Box == b.Box;
-        }
-
-        /**
-         * Build alternating colors for a valid non-branching component.
+         * Build alternating colours for a valid non-branching component.
          *
          * @param componentKeys Node keys in the component.
          * @param componentGraph Component adjacency map.
@@ -540,7 +374,7 @@ namespace Sudoku.Solver.Rules
          */
         private static Dictionary<int, int> BuildAlternatingColoursFromComponent(List<int> componentKeys, Dictionary<int, List<int>> componentGraph)
         {
-            var colors = new Dictionary<int, int>();
+            var colours = new Dictionary<int, int>();
 
             // Prefer an endpoint when present so chain orientation is deterministic.
             int start = componentKeys
@@ -554,7 +388,7 @@ namespace Sudoku.Solver.Rules
             }
 
             var queue = new Queue<int>();
-            colors[start] = 0;
+            colours[start] = 0;
             queue.Enqueue(start);
 
             while (queue.Count > 0)
@@ -568,23 +402,23 @@ namespace Sudoku.Solver.Rules
                 for (int i = 0; i < neighbors.Count; i++)
                 {
                     int next = neighbors[i];
-                    if (!colors.ContainsKey(next))
+                    if (!colours.ContainsKey(next))
                     {
-                        colors[next] = 1 - colors[current];
+                        colours[next] = 1 - colours[current];
                         queue.Enqueue(next);
                         continue;
                     }
 
                     // If a strong-link edge connects same-colour nodes, this component cannot be
                     // represented as a valid two-colour chain under the rule prerequisites.
-                    if (colors[next] == colors[current])
+                    if (colours[next] == colours[current])
                     {
                         return new Dictionary<int, int>();
                     }
                 }
             }
 
-            return colors;
+            return colours;
         }
 
         /**
@@ -597,7 +431,6 @@ namespace Sudoku.Solver.Rules
         private static Dictionary<int, List<int>> BuildStrongLinkGraph(Board board, int digit)
         {
             var graph = new Dictionary<int, List<int>>();
-            var boxDigitCounts = CountDigitCandidatesPerBox(board, digit);
 
             for (int row = 0; row < board.Size; row++)
             {
@@ -606,8 +439,7 @@ namespace Sudoku.Solver.Rules
                 {
                     var cell = board.Cells[row, column];
                     if (!cell.Value.HasValue &&
-                        cell.Candidates.Contains(digit) &&
-                        IsCellEligibleForChain(board, row, column, boxDigitCounts))
+                        cell.Candidates.Contains(digit))
                     {
                         candidates.Add(ToNodeKey(board, row, column));
                     }
@@ -623,8 +455,7 @@ namespace Sudoku.Solver.Rules
                 {
                     var cell = board.Cells[row, column];
                     if (!cell.Value.HasValue &&
-                        cell.Candidates.Contains(digit) &&
-                        IsCellEligibleForChain(board, row, column, boxDigitCounts))
+                        cell.Candidates.Contains(digit))
                     {
                         candidates.Add(ToNodeKey(board, row, column));
                     }
@@ -639,8 +470,7 @@ namespace Sudoku.Solver.Rules
                 foreach (var cell in board.GetBox(box))
                 {
                     if (!cell.Value.HasValue &&
-                        cell.Candidates.Contains(digit) &&
-                        IsCellEligibleForChain(board, cell.Row, cell.Column, boxDigitCounts))
+                        cell.Candidates.Contains(digit))
                     {
                         candidates.Add(ToNodeKey(board, cell.Row, cell.Column));
                     }
@@ -650,49 +480,6 @@ namespace Sudoku.Solver.Rules
             }
 
             return graph;
-        }
-
-        /**
-         * Count unsolved candidate occurrences for the given digit in each box.
-         *
-         * @param board Current puzzle board.
-         * @param digit Candidate digit.
-         * @returns Per-box candidate counts indexed by box number.
-         */
-        private static int[] CountDigitCandidatesPerBox(Board board, int digit)
-        {
-            var counts = new int[board.Size];
-
-            for (int row = 0; row < board.Size; row++)
-            {
-                for (int column = 0; column < board.Size; column++)
-                {
-                    var cell = board.Cells[row, column];
-                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
-                    {
-                        continue;
-                    }
-
-                    counts[cell.Box]++;
-                }
-            }
-
-            return counts;
-        }
-
-        /**
-         * Decide whether a candidate cell is eligible to participate in the chain.
-         *
-         * @param board Current puzzle board.
-         * @param row Candidate row.
-         * @param column Candidate column.
-         * @param boxDigitCounts Precomputed per-box candidate counts for the digit.
-         * @returns True when the candidate's box contains one or two occurrences of the digit.
-         */
-        private static bool IsCellEligibleForChain(Board board, int row, int column, int[] boxDigitCounts)
-        {
-            int box = board.Cells[row, column].Box;
-            return boxDigitCounts[box] <= 2;
         }
 
         /**
@@ -724,7 +511,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param digit Candidate digit.
          * @param componentKeys Node keys in this connected component.
-         * @param colors Two-colour assignment for each key.
+         * @param colours Two-colour assignment for each key.
          * @param componentNodes Decoded component nodes.
          * @returns Elimination plan or null when no contradiction elimination exists.
          */
@@ -732,7 +519,7 @@ namespace Sudoku.Solver.Rules
             Board board,
             int digit,
             List<int> componentKeys,
-            Dictionary<int, int> colors,
+            Dictionary<int, int> colours,
             List<ChainNode> componentNodes,
             Dictionary<int, int> componentColours)
         {
@@ -740,28 +527,28 @@ namespace Sudoku.Solver.Rules
             {
                 for (int row = 0; row < board.Size; row++)
                 {
-                    var sameColour = GetNodesInRow(board, componentKeys, colors, colour, row);
+                    var sameColour = GetNodesInRow(board, componentKeys, colours, colour, row);
                     if (sameColour.Count >= 2)
                     {
-                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "row", row + 1);
+                        return BuildContradictionResult(board, digit, componentKeys, colours, componentNodes, componentColours, colour, sameColour, "row", row + 1);
                     }
                 }
 
                 for (int column = 0; column < board.Size; column++)
                 {
-                    var sameColour = GetNodesInColumn(board, componentKeys, colors, colour, column);
+                    var sameColour = GetNodesInColumn(board, componentKeys, colours, colour, column);
                     if (sameColour.Count >= 2)
                     {
-                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "column", column + 1);
+                        return BuildContradictionResult(board, digit, componentKeys, colours, componentNodes, componentColours, colour, sameColour, "column", column + 1);
                     }
                 }
 
                 for (int box = 0; box < board.Size; box++)
                 {
-                    var sameColour = GetNodesInBox(board, componentKeys, colors, colour, box);
+                    var sameColour = GetNodesInBox(board, componentKeys, colours, colour, box);
                     if (sameColour.Count >= 2)
                     {
-                        return BuildContradictionResult(board, digit, componentKeys, colors, componentNodes, componentColours, colour, sameColour, "box", box + 1);
+                        return BuildContradictionResult(board, digit, componentKeys, colours, componentNodes, componentColours, colour, sameColour, "box", box + 1);
                     }
                 }
             }
@@ -775,7 +562,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param digit Candidate digit.
          * @param componentKeys Node keys in this connected component.
-         * @param colors Two-colour assignment for each key.
+         * @param colours Two-colour assignment for each key.
          * @param componentNodes Decoded component nodes.
          * @param contradictionColour Colour index (0 or 1) proven false.
          * @param contradictionNodes Nodes that expose the contradiction.
@@ -787,7 +574,7 @@ namespace Sudoku.Solver.Rules
             Board board,
             int digit,
             List<int> componentKeys,
-            Dictionary<int, int> colors,
+            Dictionary<int, int> colours,
             List<ChainNode> componentNodes,
             Dictionary<int, int> componentColours,
             int contradictionColour,
@@ -799,7 +586,7 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < componentKeys.Count; i++)
             {
                 int key = componentKeys[i];
-                if (colors[key] != contradictionColour)
+                if (colours[key] != contradictionColour)
                 {
                     continue;
                 }
@@ -823,19 +610,98 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
+         * Build elimination from uncoloured cells that see both colours in one component.
+         *
+         * @param board Current puzzle board.
+         * @param digit Candidate digit.
+         * @param componentKeys Node keys in this connected component.
+         * @param colours Two-colour assignment for each key.
+         * @param componentNodes Decoded component nodes.
+         * @returns Elimination plan or null when no two-colour elimination exists.
+         */
+        private static EliminationPlan BuildTwoColourElimination(
+            Board board,
+            int digit,
+            List<int> componentKeys,
+            Dictionary<int, int> colours,
+            List<ChainNode> componentNodes)
+        {
+            var componentSet = new HashSet<int>(componentKeys);
+            var removals = new List<ChainNode>();
+
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
+                    {
+                        continue;
+                    }
+
+                    int cellKey = ToNodeKey(board, row, column);
+                    if (componentSet.Contains(cellKey))
+                    {
+                        continue;
+                    }
+
+                    bool seesColourA = false;
+                    bool seesColourB = false;
+                    for (int i = 0; i < componentKeys.Count; i++)
+                    {
+                        int key = componentKeys[i];
+                        var node = DecodeNode(board, key);
+                        if (node.Row != row && node.Column != column && node.Box != cell.Box)
+                        {
+                            continue;
+                        }
+
+                        if (colours[key] == 0)
+                        {
+                            seesColourA = true;
+                        }
+                        else
+                        {
+                            seesColourB = true;
+                        }
+
+                        if (seesColourA && seesColourB)
+                        {
+                            removals.Add(new ChainNode { Row = row, Column = column, Box = cell.Box });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (removals.Count == 0)
+            {
+                return null;
+            }
+
+            removals = removals
+                .OrderBy(n => n.Row)
+                .ThenBy(n => n.Column)
+                .ToList();
+
+            string description = $"Colouring removed {digit}: candidate sees both colours in the chain";
+            return new EliminationPlan(digit, componentNodes, colours, new List<ChainNode>(), removals, description);
+        }
+
+        /**
          * Collect component nodes of a specific colour inside one row.
          *
          * @param board Current puzzle board.
          * @param componentKeys Node keys in this component.
-         * @param colors Two-colour assignment for each key.
+         * @param colours Two-colour assignment for each key.
          * @param colour Desired colour index.
          * @param row Desired row.
          * @returns Matching nodes ordered by column.
          */
-        private static List<ChainNode> GetNodesInRow(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int row)
+        private static List<ChainNode> GetNodesInRow(Board board, List<int> componentKeys, Dictionary<int, int> colours, int colour, int row)
         {
             return componentKeys
-                .Where(k => colors[k] == colour)
+                .Where(k => colours[k] == colour)
                 .Select(k => DecodeNode(board, k))
                 .Where(n => n.Row == row)
                 .OrderBy(n => n.Column)
@@ -847,15 +713,15 @@ namespace Sudoku.Solver.Rules
          *
          * @param board Current puzzle board.
          * @param componentKeys Node keys in this component.
-         * @param colors Two-colour assignment for each key.
+         * @param colours Two-colour assignment for each key.
          * @param colour Desired colour index.
          * @param column Desired column.
          * @returns Matching nodes ordered by row.
          */
-        private static List<ChainNode> GetNodesInColumn(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int column)
+        private static List<ChainNode> GetNodesInColumn(Board board, List<int> componentKeys, Dictionary<int, int> colours, int colour, int column)
         {
             return componentKeys
-                .Where(k => colors[k] == colour)
+                .Where(k => colours[k] == colour)
                 .Select(k => DecodeNode(board, k))
                 .Where(n => n.Column == column)
                 .OrderBy(n => n.Row)
@@ -867,15 +733,15 @@ namespace Sudoku.Solver.Rules
          *
          * @param board Current puzzle board.
          * @param componentKeys Node keys in this component.
-         * @param colors Two-colour assignment for each key.
+         * @param colours Two-colour assignment for each key.
          * @param colour Desired colour index.
          * @param box Desired box index.
          * @returns Matching nodes ordered by row then column.
          */
-        private static List<ChainNode> GetNodesInBox(Board board, List<int> componentKeys, Dictionary<int, int> colors, int colour, int box)
+        private static List<ChainNode> GetNodesInBox(Board board, List<int> componentKeys, Dictionary<int, int> colours, int colour, int box)
         {
             return componentKeys
-                .Where(k => colors[k] == colour)
+                .Where(k => colours[k] == colour)
                 .Select(k => DecodeNode(board, k))
                 .Where(n => n.Box == box)
                 .OrderBy(n => n.Row)

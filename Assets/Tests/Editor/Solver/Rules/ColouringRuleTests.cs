@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using Sudoku.Models;
 using Sudoku.Solver.Rules;
 using Sudoku.UI.Config;
 
@@ -36,59 +37,37 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ColouringRule_SameColourContradiction_IsInconclusive_WhenChainCellsAreInIneligibleBoxes()
+        public void ColouringRule_PuzzleCodeRegression_TriggersTwoColourElimination_WithExpectedHighlights()
         {
-            var board = TestHelpers.CreateEmptyBoard();
+            var board = PuzzleCodeGenerator.DecodeBoardFromCode("PexgJNCqJyeY81q73gz6Ptf1PxzMPJNMpvWpWFq0jwDy3r");
             var rule = new ColouringRule();
-            const int digit = 5;
-
-            ClearAllCandidates(board);
-
-            // The old contradiction pattern sits entirely inside a box with >2 candidates,
-            // so none of these cells are eligible for links under the revised rule.
-            board.Cells[0, 0].Candidates.Add(digit); // r1c1
-            board.Cells[0, 1].Candidates.Add(digit); // r1c2
-            board.Cells[1, 1].Candidates.Add(digit); // r2c2
+            Assert.IsNotNull(board);
+            RecomputeCandidates(board);
 
             var result = rule.CalculateChanges(board);
-            Assert.IsFalse(result.Apply);
-            Assert.IsEmpty(result.Changes);
+            Assert.IsTrue(result.Apply);
+            Assert.AreEqual(4, result.Changes.Count);
+            StringAssert.Contains("removed 5", result.Description);
+
+            var changedCells = result.Changes
+                .Select(change => (change.Row, change.Column, Removed: change.RemovedCandidates.ToArray()))
+                .ToList();
+
+            Assert.IsTrue(changedCells.Any(change => change.Row == 4 && change.Column == 0 && change.Removed.Length == 1 && change.Removed[0] == 5));
+            Assert.IsTrue(changedCells.Any(change => change.Row == 5 && change.Column == 0 && change.Removed.Length == 1 && change.Removed[0] == 5));
+            Assert.IsTrue(changedCells.Any(change => change.Row == 6 && change.Column == 5 && change.Removed.Length == 1 && change.Removed[0] == 5));
+            Assert.IsTrue(changedCells.Any(change => change.Row == 8 && change.Column == 5 && change.Removed.Length == 1 && change.Removed[0] == 5));
+
+            Assert.AreEqual(4, result.UsedCells.Count(used => used.HighlightTag == "Deduction" && used.Candidate == 5));
+            Assert.GreaterOrEqual(result.UsedCells.Count(used => used.HighlightTag == "TargetA" && used.Candidate == 5), 1);
+            Assert.GreaterOrEqual(result.UsedCells.Count(used => used.HighlightTag == "TargetB" && used.Candidate == 5), 1);
+            Assert.IsFalse(result.UsedCells.Any(used => used.HighlightTag == "Failure"));
 
             result.EnactCandidates(board);
-            Assert.IsTrue(board.Cells[0, 0].Candidates.Contains(digit));
-            Assert.IsTrue(board.Cells[0, 1].Candidates.Contains(digit));
-            Assert.IsTrue(board.Cells[1, 1].Candidates.Contains(digit));
-        }
-
-        [Test]
-        public void ColouringRule_TwoColourIntersection_IsInconclusive_WhenNoContradictionExists()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ColouringRule();
-            const int digit = 7;
-
-            ClearAllCandidates(board);
-
-            // Chain with no same-colour contradiction:
-            // r1c1 - r1c2 (row), r1c2 - r4c2 (column), r4c2 - r4c3 (row)
-            board.Cells[0, 0].Candidates.Add(digit);
-            board.Cells[0, 1].Candidates.Add(digit);
-            board.Cells[3, 1].Candidates.Add(digit);
-            board.Cells[3, 2].Candidates.Add(digit);
-
-            // Target sees both colours (box + column visibility).
-            board.Cells[1, 2].Candidates.Add(digit);
-
-            // Keep column 3 from becoming a strong link for the target.
-            board.Cells[8, 2].Candidates.Add(digit);
-
-            var result = rule.CalculateChanges(board);
-            Assert.IsFalse(result.Apply);
-            Assert.IsEmpty(result.Changes);
-
-            result.EnactCandidates(board);
-            Assert.IsTrue(board.Cells[1, 2].Candidates.Contains(digit));
-            Assert.IsTrue(board.Cells[8, 2].Candidates.Contains(digit));
+            Assert.IsFalse(board.Cells[4, 0].Candidates.Contains(5));
+            Assert.IsFalse(board.Cells[5, 0].Candidates.Contains(5));
+            Assert.IsFalse(board.Cells[6, 5].Candidates.Contains(5));
+            Assert.IsFalse(board.Cells[8, 5].Candidates.Contains(5));
         }
 
         [Test]
@@ -103,50 +82,6 @@ namespace Sudoku.Tests.Editor
             // A single strong link by itself is insufficient for an elimination.
             board.Cells[0, 0].Candidates.Add(digit);
             board.Cells[0, 1].Candidates.Add(digit);
-
-            var result = rule.CalculateChanges(board);
-            Assert.IsFalse(result.Apply);
-            Assert.IsEmpty(result.Changes);
-        }
-
-        [Test]
-        public void ColouringRule_WhenNodeSeesMoreThanTwoComponentPeers_ChainIsIneligibleByBoxRule()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ColouringRule();
-            const int digit = 4;
-
-            ClearAllCandidates(board);
-
-            // Base chain:
-            // r1c1 - r1c2 (row), r1c2 - r2c2 (column), r2c2 - r2c3 (row), r2c3 - r3c3 (column)
-            // All nodes are in the same box, making box candidate count >2,
-            // so no links may be formed under the revised rule.
-            board.Cells[0, 0].Candidates.Add(digit); // r1c1
-            board.Cells[0, 1].Candidates.Add(digit); // r1c2
-            board.Cells[1, 1].Candidates.Add(digit); // r2c2
-            board.Cells[1, 2].Candidates.Add(digit); // r2c3
-            board.Cells[2, 2].Candidates.Add(digit); // r3c3
-
-            var result = rule.CalculateChanges(board);
-            Assert.IsFalse(result.Apply);
-            Assert.IsEmpty(result.Changes);
-        }
-
-        [Test]
-        public void ColouringRule_WhenBoxHasMoreThanTwoDigitCandidates_CellsFromThatBoxAreNotLinked()
-        {
-            var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ColouringRule();
-            const int digit = 2;
-
-            ClearAllCandidates(board);
-
-            // Box 1 has three candidates for this digit, so none of them are eligible chain nodes.
-            // Without that restriction this would form a contradiction chain in box 1.
-            board.Cells[0, 0].Candidates.Add(digit); // r1c1
-            board.Cells[0, 1].Candidates.Add(digit); // r1c2
-            board.Cells[1, 1].Candidates.Add(digit); // r2c2
 
             var result = rule.CalculateChanges(board);
             Assert.IsFalse(result.Apply);
@@ -212,6 +147,40 @@ namespace Sudoku.Tests.Editor
                 for (int column = 0; column < board.Size; column++)
                 {
                     board.Cells[row, column].Candidates.Clear();
+                }
+            }
+        }
+
+        /**
+         * Recompute legal candidates from solved values.
+         *
+         * @param board Target board.
+         */
+        private static void RecomputeCandidates(Board board)
+        {
+            for (int row = 0; row < board.Size; row++)
+            {
+                for (int column = 0; column < board.Size; column++)
+                {
+                    var cell = board.Cells[row, column];
+                    cell.Candidates.Clear();
+                    if (cell.Value.HasValue)
+                    {
+                        continue;
+                    }
+
+                    for (int digit = 1; digit <= board.Size; digit++)
+                    {
+                        cell.Candidates.Add(digit);
+                    }
+
+                    foreach (var peer in board.GetPeers(cell))
+                    {
+                        if (peer != null && peer.Value.HasValue)
+                        {
+                            cell.Candidates.Remove(peer.Value.Value);
+                        }
+                    }
                 }
             }
         }
