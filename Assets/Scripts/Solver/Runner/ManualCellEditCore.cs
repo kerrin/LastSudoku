@@ -73,12 +73,12 @@ namespace Sudoku.Solver
                     Column = column,
                     ClearValue = true
                 });
-                return ApplyAndRecord(board, result, "ManualSetValueValueOnly");
+                return ApplyAndRecord(board, result, "Manual Set Value");
             }
 
             result.Description = cell.Value.HasValue
-                ? $"Manual replace value at r{row + 1}c{column + 1}: {cell.Value.Value}->{value}"
-                : $"Manual set value r{row + 1}c{column + 1}={value}";
+                ? $"Manual replace value at row {row + 1}, column {column + 1}: {cell.Value.Value} changed to {value}"
+                : $"Manual set value at row {row + 1}, column {column + 1} set to {value}";
 
             result.Changes.Add(new CellChange
             {
@@ -89,7 +89,7 @@ namespace Sudoku.Solver
                 ValueOnlySet = true
             });
 
-            return ApplyAndRecord(board, result, "ManualSetValueValueOnly");
+            return ApplyAndRecord(board, result, "Manual Set Value");
         }
 
         /**
@@ -151,8 +151,8 @@ namespace Sudoku.Solver
             {
                 Apply = true,
                 Description = previousValue.HasValue
-                    ? $"Manual replace value at r{row + 1}c{column + 1}: {previousValue.Value}->{value}"
-                    : $"Manual set value r{row + 1}c{column + 1}={value}"
+                    ? $"Manual replace value at row {row + 1}, column {column + 1}: {previousValue.Value} changed to {value}"
+                    : $"Manual set value at row {row + 1}, column {column + 1} set to {value}"
             };
 
             var placed = new CellChange
@@ -209,7 +209,7 @@ namespace Sudoku.Solver
                 });
             }
 
-            return ApplyAndRecord(board, result, "ManualSetValue");
+            return ApplyAndRecord(board, result, "Manual Set Value");
         }
 
         /**
@@ -261,7 +261,7 @@ namespace Sudoku.Solver
 
             result.Changes.Add(change);
 
-            return ApplyAndRecord(board, result, "ManualAddCandidate");
+            return ApplyAndRecord(board, result, "Manual Add Candidate");
         }
 
         /**
@@ -329,7 +329,7 @@ namespace Sudoku.Solver
                 });
             }
 
-            return ApplyAndRecord(board, result, "ManualClearValue");
+            return ApplyAndRecord(board, result, "Manual Clear Value");
         }
 
         /**
@@ -416,7 +416,94 @@ namespace Sudoku.Solver
                     : $"Candidate {candidate} is not present in editable row/column/box cells.");
             }
 
-            return ApplyAndRecord(board, result, addToUnsolvedCells ? "ManualUnitAddCandidate" : "ManualUnitRemoveCandidate");
+            return ApplyAndRecord(board, result, addToUnsolvedCells ? "Manual Unit AddCandidate" : "ManualUnitRemoveCandidate");
+        }
+
+        /**
+         * Apply a manual digit-colour annotation change and record it as one changelog group.
+         *
+         * @param board Source board.
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param digit Target digit whose colour annotation is changing.
+         * @param colour Highlight colour to add/remove.
+         * @param clearAllColours When true, clear all colours for the target digit.
+         * @returns Operation outcome and optional applied RuleResult.
+         */
+        public static ManualEditExecutionResult ApplyDigitColourChange(Board board, int row, int column, int digit, HighlightColor colour, bool clearAllColours)
+        {
+            if (!TryGetEditableCell(board, row, column, out var cell, out var reason))
+            {
+                return CreateNoOp(reason);
+            }
+
+            if (digit < 1 || digit > board.Size)
+            {
+                return CreateNoOp($"Digit {digit} is outside board range 1..{board.Size}.");
+            }
+
+            bool digitExists = cell.Value.HasValue
+                ? cell.Value.Value == digit
+                : cell.Candidates != null && cell.Candidates.Contains(digit);
+            if (!digitExists)
+            {
+                return CreateNoOp("Colour annotations can only be set on digits already present in the cell.");
+            }
+
+            if (colour == HighlightColor.None)
+            {
+                return CreateNoOp("No colour selected.");
+            }
+
+            var result = new RuleResult
+            {
+                Apply = true,
+                Description = clearAllColours
+                    ? $"Manual clear all colours for digit {digit} at r{row + 1}c{column + 1}"
+                    : $"Manual toggle colour {colour} for digit {digit} at r{row + 1}c{column + 1}"
+            };
+
+            var previousColors = CellChange.CloneDigitColors(cell.DigitColors);
+            var change = new CellChange
+            {
+                Row = row,
+                Column = column,
+                OldDigitColors = previousColors,
+                NewDigitColors = previousColors != null ? CellChange.CloneDigitColors(previousColors) : new Dictionary<int, HashSet<HighlightColor>>()
+            };
+
+            if (clearAllColours)
+            {
+                if (change.NewDigitColors != null)
+                {
+                    change.NewDigitColors.Remove(digit);
+                }
+            }
+            else
+            {
+                if (change.NewDigitColors == null)
+                {
+                    change.NewDigitColors = new Dictionary<int, HashSet<HighlightColor>>();
+                }
+
+                if (!change.NewDigitColors.TryGetValue(digit, out var colours))
+                {
+                    colours = new HashSet<HighlightColor>();
+                    change.NewDigitColors[digit] = colours;
+                }
+
+                if (!colours.Add(colour))
+                {
+                    colours.Remove(colour);
+                    if (colours.Count == 0)
+                    {
+                        change.NewDigitColors.Remove(digit);
+                    }
+                }
+            }
+
+            result.Changes.Add(change);
+            return ApplyAndRecord(board, result, "Manual Digit Colour Change");
         }
 
         /**
@@ -457,7 +544,7 @@ namespace Sudoku.Solver
                 RemovedCandidates = new List<int> { candidate }
             });
 
-            return ApplyAndRecord(board, result, "ManualRemoveCandidate");
+            return ApplyAndRecord(board, result, "Manual Remove Candidate");
         }
 
         private static ManualEditExecutionResult ApplyAndRecord(Board board, RuleResult result, string sourceRuleName)
@@ -506,6 +593,8 @@ namespace Sudoku.Solver
                     ValueOnlySet = change.ValueOnlySet,
                     RemovedCandidates = change.RemovedCandidates != null ? new List<int>(change.RemovedCandidates) : new List<int>(),
                     AddedCandidates = change.AddedCandidates != null ? new List<int>(change.AddedCandidates) : new List<int>(),
+                    OldDigitColors = CellChange.CloneDigitColors(change.OldDigitColors),
+                    NewDigitColors = CellChange.CloneDigitColors(change.NewDigitColors),
                     GroupId = groupId,
                     SourceRuleName = sourceRuleName,
                     SourceRuleDescription = result.Description

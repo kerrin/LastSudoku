@@ -1014,35 +1014,23 @@ namespace Sudoku.Solver
                 cell.DigitColors = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.HashSet<HighlightColor>>();
             }
 
-            if (selection.ClearAllColours)
+            var execution = Runner.ExecuteManualDigitColourChange(
+                SelectedHoldRow,
+                SelectedHoldColumn,
+                digit,
+                selection.SelectedColour,
+                selection.ClearAllColours);
+
+            if (execution != null && execution.Applied)
             {
-                cell.DigitColors.Remove(digit);
-                return $"Cleared all colours for digit {digit}.";
+                return selection.ClearAllColours
+                    ? $"Cleared all colours for digit {digit}."
+                    : (execution.Description ?? $"Updated colour annotations for digit {digit}.");
             }
 
-            if (selection.SelectedColour == HighlightColor.None)
-            {
-                return "No colour selected.";
-            }
-
-            if (!cell.DigitColors.TryGetValue(digit, out var colours))
-            {
-                colours = new System.Collections.Generic.HashSet<HighlightColor>();
-                cell.DigitColors[digit] = colours;
-            }
-
-            if (!colours.Add(selection.SelectedColour))
-            {
-                colours.Remove(selection.SelectedColour);
-                if (colours.Count == 0)
-                {
-                    cell.DigitColors.Remove(digit);
-                }
-
-                return $"Removed {HighlightColorPalette.ToFullName(selection.SelectedColour)} from digit {digit}.";
-            }
-
-            return $"Added {HighlightColorPalette.ToFullName(selection.SelectedColour)} to digit {digit}.";
+            return execution != null && !string.IsNullOrWhiteSpace(execution.Description)
+                ? execution.Description
+                : "No colour annotation change applied.";
         }
 
         private void PollHoldTimer()

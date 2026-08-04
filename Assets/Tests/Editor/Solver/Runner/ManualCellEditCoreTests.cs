@@ -1,5 +1,6 @@
 using System.Linq;
 using NUnit.Framework;
+using Sudoku.Models;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
 
@@ -33,7 +34,7 @@ namespace Sudoku.Tests.Editor
 
             var valueEntry = board.ChangeLog.SingleOrDefault(ch => ch.Row == 0 && ch.Column == 0 && ch.NewValue == 5);
             Assert.IsNotNull(valueEntry);
-            Assert.AreEqual("ManualSetValue", valueEntry.SourceRuleName);
+            Assert.AreEqual("Manual Set Value", valueEntry.SourceRuleName);
 
             Assert.IsTrue(board.UndoLast());
             Assert.IsNull(target.Value);
@@ -182,6 +183,29 @@ namespace Sudoku.Tests.Editor
 
             Assert.IsTrue(board.RedoNext());
             Assert.IsFalse(cell.Candidates.Contains(4));
+        }
+
+        [Test]
+        public void ApplyDigitColourChange_RecordsChangeAndUndoRedo()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var cell = board.Cells[0, 0];
+            cell.Candidates.Clear();
+            cell.Candidates.Add(5);
+
+            var execution = ManualCellEditCore.ApplyDigitColourChange(board, 0, 0, 5, HighlightColor.Green, clearAllColours: false);
+
+            Assert.IsTrue(execution.Applied);
+            Assert.IsTrue(cell.DigitColors.ContainsKey(5));
+            Assert.IsTrue(cell.DigitColors[5].Contains(HighlightColor.Green));
+            Assert.AreEqual(1, board.ChangeLog.Count);
+            Assert.AreEqual("Manual Digit Colour Change", board.ChangeLog[0].SourceRuleName);
+
+            Assert.IsTrue(board.UndoLast());
+            Assert.IsFalse(cell.DigitColors.ContainsKey(5));
+
+            Assert.IsTrue(board.RedoNext());
+            Assert.IsTrue(cell.DigitColors[5].Contains(HighlightColor.Green));
         }
 
         [Test]

@@ -339,6 +339,15 @@ namespace Sudoku.Solver.Rules
                             if (cell.Candidates.Contains(v)) cell.Candidates.Remove(v);
                         }
                     }
+
+                    if (ch.OldDigitColors != null)
+                    {
+                        cell.DigitColors = CellChange.CloneDigitColors(ch.OldDigitColors);
+                    }
+                    else if (ch.NewDigitColors != null)
+                    {
+                        cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
+                    }
                 }
 
                 board.ChangeLogIndex = start;
@@ -397,6 +406,15 @@ namespace Sudoku.Solver.Rules
                         {
                             if (!cell.Candidates.Contains(v)) cell.Candidates.Add(v);
                         }
+                    }
+
+                    if (ch.NewDigitColors != null)
+                    {
+                        cell.DigitColors = CellChange.CloneDigitColors(ch.NewDigitColors);
+                    }
+                    else if (ch.OldDigitColors != null)
+                    {
+                        cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
                     }
                 }
 
@@ -468,7 +486,7 @@ namespace Sudoku.Solver.Rules
                 var g = new ChangeLogGroupSummary()
                 {
                     GroupId = gid,
-                    RuleName = first.SourceRuleName,
+                    RuleName = StringHelper.ClassNameToDisplayString(first.SourceRuleName),
                     StartIndex = idx
                 };
 

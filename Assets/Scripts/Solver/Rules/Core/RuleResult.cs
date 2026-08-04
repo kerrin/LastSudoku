@@ -38,6 +38,12 @@ namespace Sudoku.Solver.Rules
         /** Candidate digits added to the cell as part of the change. */
         public List<int> AddedCandidates = new List<int>();
 
+        /** Snapshot of the cell's per-digit colour annotations before the change. */
+        public Dictionary<int, HashSet<HighlightColor>> OldDigitColors;
+
+        /** Snapshot of the cell's per-digit colour annotations after the change. */
+        public Dictionary<int, HashSet<HighlightColor>> NewDigitColors;
+
         /** Group identifier used to associate multiple CellChange entries produced
          *  by a single rule application so undo/redo can operate atomically. */
         public int GroupId;
@@ -45,6 +51,25 @@ namespace Sudoku.Solver.Rules
         public string SourceRuleName;
         /** Description text provided by the rule result (set when copied into the board ChangeLog). */
         public string SourceRuleDescription;
+
+        /** Clone a per-digit colour annotation snapshot so it can be stored safely in the change log. */
+        public static Dictionary<int, HashSet<HighlightColor>> CloneDigitColors(Dictionary<int, HashSet<HighlightColor>> source)
+        {
+            if (source == null)
+            {
+                return null;
+            }
+
+            var clone = new Dictionary<int, HashSet<HighlightColor>>();
+            foreach (var kvp in source)
+            {
+                clone[kvp.Key] = kvp.Value != null
+                    ? new HashSet<HighlightColor>(kvp.Value)
+                    : new HashSet<HighlightColor>();
+            }
+
+            return clone;
+        }
     }
 
     /**
@@ -150,6 +175,19 @@ namespace Sudoku.Solver.Rules
                     {
                         cell.Candidates.Add(v);
                     }
+                }
+
+                if (change.NewDigitColors != null)
+                {
+                    cell.DigitColors = CellChange.CloneDigitColors(change.NewDigitColors);
+                }
+                else if (change.OldDigitColors != null)
+                {
+                    cell.DigitColors = CellChange.CloneDigitColors(change.OldDigitColors);
+                }
+                else if (cell.DigitColors == null)
+                {
+                    cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
                 }
             }
 

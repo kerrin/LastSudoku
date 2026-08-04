@@ -321,7 +321,7 @@ namespace Sudoku.Solver
                             RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
                             AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
                             GroupId = gid,
-                            SourceRuleName = "InitialiseCandidates",
+                            SourceRuleName = "Initialise Candidates",
                             SourceRuleDescription = result.Description
                         });
                     }
@@ -685,11 +685,11 @@ namespace Sudoku.Solver
                     execution = new ManualEditExecutionResult
                     {
                         Applied = false,
-                        Description = $"Value {value} is not a valid candidate for r{row + 1}c{column + 1}.",
+                        Description = $"Value {value} is not a valid candidate for row {row + 1}, column {column + 1}.",
                         RuleResult = new RuleResult
                         {
                             Apply = false,
-                            Description = $"Value {value} is not a valid candidate for r{row + 1}c{column + 1}."
+                            Description = $"Value {value} is not a valid candidate for row {row + 1}, column {column + 1}."
                         }
                     };
                 }
@@ -886,6 +886,60 @@ namespace Sudoku.Solver
             else
             {
                 execution = ManualCellEditCore.ApplyClearValue(_board, row, column);
+            }
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            FinalizeManualExecution(execution);
+            return execution;
+        }
+
+        /**
+         * Apply a manual digit-colour annotation action and record one atomic changelog group.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param digit Target digit whose colour annotation is changing.
+         * @param colour Highlight colour to add/remove.
+         * @param clearAllColours True to clear all colours for the digit.
+         * @returns True when the action changed board state.
+         */
+        public bool ManualDigitColourChange(int row, int column, int digit, HighlightColor colour, bool clearAllColours)
+        {
+            var execution = ExecuteManualDigitColourChange(row, column, digit, colour, clearAllColours);
+            return execution != null && execution.Applied;
+        }
+
+        /**
+         * Apply a manual digit-colour annotation action and return the full execution outcome.
+         *
+         * @param row Zero-based row index.
+         * @param column Zero-based column index.
+         * @param digit Target digit whose colour annotation is changing.
+         * @param colour Highlight colour to add/remove.
+         * @param clearAllColours True to clear all colours for the digit.
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualDigitColourChange(int row, int column, int digit, HighlightColor colour, bool clearAllColours)
+        {
+            if (_board == null) LoadBoardFromRows();
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode does not support digit colour annotations.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode does not support digit colour annotations."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyDigitColourChange(_board, row, column, digit, colour, clearAllColours);
             }
             LastAppliedRule = null;
             LastRuleResult = execution.RuleResult;
@@ -1839,7 +1893,7 @@ namespace Sudoku.Solver
             // Append a deep copy of each recorded change to the board's in-memory change log
             try
             {
-                if (_board.ChangeLog == null) _board.ChangeLog = new System.Collections.Generic.List<CellChange>();
+                if (_board.ChangeLog == null) _board.ChangeLog = new List<CellChange>();
                 if (_board.ChangeLogIndex < _board.ChangeLog.Count)
                 {
                     _board.ChangeLog.RemoveRange(_board.ChangeLogIndex, _board.ChangeLog.Count - _board.ChangeLogIndex);
@@ -1857,8 +1911,8 @@ namespace Sudoku.Solver
                         ClearValue = ch.ClearValue,
                         ForceSetValue = ch.ForceSetValue,
                         ValueOnlySet = ch.ValueOnlySet,
-                        RemovedCandidates = ch.RemovedCandidates != null ? new System.Collections.Generic.List<int>(ch.RemovedCandidates) : new System.Collections.Generic.List<int>(),
-                        AddedCandidates = ch.AddedCandidates != null ? new System.Collections.Generic.List<int>(ch.AddedCandidates) : new System.Collections.Generic.List<int>(),
+                        RemovedCandidates = ch.RemovedCandidates != null ? new List<int>(ch.RemovedCandidates) : new List<int>(),
+                        AddedCandidates = ch.AddedCandidates != null ? new List<int>(ch.AddedCandidates) : new List<int>(),
                         GroupId = gid,
                         SourceRuleName = rule.GetType().Name,
                         SourceRuleDescription = res.Description
