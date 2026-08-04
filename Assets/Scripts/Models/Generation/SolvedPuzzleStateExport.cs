@@ -90,6 +90,46 @@ namespace Sudoku.Models
                             cellExport.Candidates.Sort();
                         }
 
+                        if (cell.DigitColors != null)
+                        {
+                            foreach (var digitEntry in cell.DigitColors)
+                            {
+                                int digit = digitEntry.Key;
+                                if (digit < 1 || digit > board.Size)
+                                {
+                                    continue;
+                                }
+
+                                if (digitEntry.Value == null || digitEntry.Value.Count == 0)
+                                {
+                                    continue;
+                                }
+
+                                var colourExport = new SolvedPuzzleDigitColorExport
+                                {
+                                    Digit = digit,
+                                };
+
+                                foreach (HighlightColor colour in digitEntry.Value)
+                                {
+                                    if (colour == HighlightColor.None)
+                                    {
+                                        continue;
+                                    }
+
+                                    colourExport.Colours.Add((int)colour);
+                                }
+
+                                colourExport.Colours.Sort();
+                                if (colourExport.Colours.Count > 0)
+                                {
+                                    cellExport.DigitColors.Add(colourExport);
+                                }
+                            }
+
+                            cellExport.DigitColors.Sort((a, b) => a.Digit.CompareTo(b.Digit));
+                        }
+
                         export.Cells.Add(cellExport);
                     }
                 }
@@ -149,6 +189,17 @@ namespace Sudoku.Models
         public bool IsGiven;
         public string Color;
         public List<int> Candidates = new List<int>();
+        public List<SolvedPuzzleDigitColorExport> DigitColors = new List<SolvedPuzzleDigitColorExport>();
+    }
+
+    /**
+     * Serializable colour annotations for a single digit in a cell.
+     */
+    [Serializable]
+    public class SolvedPuzzleDigitColorExport
+    {
+        public int Digit;
+        public List<int> Colours = new List<int>();
     }
 
     /**

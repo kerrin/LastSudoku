@@ -1141,6 +1141,15 @@ namespace Sudoku.UI.Controllers
 
                     target.Value = source.Value;
                     target.IsGiven = source.IsGiven;
+                    if (!string.IsNullOrWhiteSpace(source.Color) && Enum.TryParse(source.Color, ignoreCase: true, out CellColor parsedCellColor))
+                    {
+                        target.Color = parsedCellColor;
+                    }
+                    else
+                    {
+                        target.Color = CellColor.None;
+                    }
+
                     if (target.Candidates == null)
                     {
                         target.Candidates = new HashSet<int>();
@@ -1155,6 +1164,58 @@ namespace Sudoku.UI.Controllers
                             if (candidate >= 1 && candidate <= board.Size)
                             {
                                 target.Candidates.Add(candidate);
+                            }
+                        }
+                    }
+
+                    if (target.DigitColors == null)
+                    {
+                        target.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
+                    }
+
+                    target.DigitColors.Clear();
+                    if (source.DigitColors != null)
+                    {
+                        for (int i = 0; i < source.DigitColors.Count; i++)
+                        {
+                            var sourceDigitEntry = source.DigitColors[i];
+                            if (sourceDigitEntry == null)
+                            {
+                                continue;
+                            }
+
+                            int digit = sourceDigitEntry.Digit;
+                            if (digit < 1 || digit > board.Size)
+                            {
+                                continue;
+                            }
+
+                            if (sourceDigitEntry.Colours == null || sourceDigitEntry.Colours.Count == 0)
+                            {
+                                continue;
+                            }
+
+                            var restoredColours = new HashSet<HighlightColor>();
+                            for (int colourIndex = 0; colourIndex < sourceDigitEntry.Colours.Count; colourIndex++)
+                            {
+                                int colourValue = sourceDigitEntry.Colours[colourIndex];
+                                if (!Enum.IsDefined(typeof(HighlightColor), colourValue))
+                                {
+                                    continue;
+                                }
+
+                                var colour = (HighlightColor)colourValue;
+                                if (colour == HighlightColor.None)
+                                {
+                                    continue;
+                                }
+
+                                restoredColours.Add(colour);
+                            }
+
+                            if (restoredColours.Count > 0)
+                            {
+                                target.DigitColors[digit] = restoredColours;
                             }
                         }
                     }
