@@ -234,6 +234,11 @@ SELECT:
 
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var found = FindElimination(board);
             var r = new RuleResult();
             if (found == null)
@@ -286,3 +291,4 @@ SELECT:
         }
     }
 }
+

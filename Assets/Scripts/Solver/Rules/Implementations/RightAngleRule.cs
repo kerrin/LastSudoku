@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Linq;
 using Sudoku.Models;
 
@@ -48,6 +48,11 @@ namespace Sudoku.Solver.Rules
         }
 
         public RuleResult CalculateChanges(Board board)
+        {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
         {
             var info = FindElimination(board);
             var result = new RuleResult();
@@ -193,3 +198,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+

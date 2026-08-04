@@ -94,6 +94,11 @@ namespace Sudoku.Solver.Rules
          */
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var result = new RuleResult();
 
             if (board == null || !board.IsValid() || ColourSettings.GetEnabledColourCount() < 2)
@@ -827,3 +832,4 @@ namespace Sudoku.Solver.Rules
     }
 
 }
+

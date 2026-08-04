@@ -89,6 +89,8 @@ namespace Sudoku.Solver.Rules
                     foreach (int v in change.AddedCandidates) cell.Candidates.Add(v);
                 }
             }
+
+            board?.InvalidateStateHash();
         }
 
         /**
@@ -163,6 +165,8 @@ namespace Sudoku.Solver.Rules
                     peerCount++;
                 }
             }
+
+            board?.InvalidateStateHash();
         }
     }
 

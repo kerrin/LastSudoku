@@ -35,6 +35,11 @@ namespace Sudoku.Solver.Rules
          */
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var result = new RuleResult();
             //Check for set values, incase the candidates are incomplete or incorrect.
             for (int r = 0; r < board.Size; r++)
@@ -83,3 +88,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+

@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.Linq;
-using Sudoku.Models;
 using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 
@@ -34,6 +33,11 @@ namespace Sudoku.Solver.Rules
         }
 
         public RuleResult CalculateChanges(Board board)
+        {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             int size = board.Size;
@@ -143,3 +147,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+

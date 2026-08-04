@@ -23,6 +23,11 @@ namespace Sudoku.Solver.Rules
 
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var found = FindElimination(board);
             var result = new RuleResult();
             if (found == null)
@@ -190,3 +195,4 @@ namespace Sudoku.Solver.Rules
     }
 
 }
+

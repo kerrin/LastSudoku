@@ -29,6 +29,11 @@ namespace Sudoku.Solver.Rules
          */
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var result = new RuleResult();
             
             // TODO: Implement Naked Triple logic here. This is a placeholder to allow compilation and testing of unsolve handlers without needing the full implementation of this rule.
@@ -38,3 +43,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+

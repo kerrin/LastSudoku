@@ -115,6 +115,11 @@ namespace Sudoku.Solver.Rules
 
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var result = new RuleResult();
             HiddenSingleResult found = FindAny(board);
             if (found == null)
@@ -169,3 +174,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+

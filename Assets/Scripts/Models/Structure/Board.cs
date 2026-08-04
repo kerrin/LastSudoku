@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Sudoku.Solver.Rules;
 
 namespace Sudoku.Models
 {
     [Serializable]
     public class Board
-    {
+    {        
         // Number of cells per side (e.g. 9 for a standard Sudoku).
         public int Size;
 
@@ -27,6 +28,9 @@ namespace Sudoku.Models
 
         /** Next group id to assign when recording a new set of changes as an atomic group. */
         public int NextChangeGroupId = 1;
+
+        /** A hash of the board state, used to detect changes. */
+        public int StateHash = 0;
 
         public Board() { }
 
@@ -66,6 +70,102 @@ namespace Sudoku.Models
             }
 
             Cells = new Cell[Size, Size];
+        }
+
+        /** 
+         * Check if the board state matches a given hash. 
+         * This can be used to detect if the board has changed since a previous state.
+         * @param stateHash The hash to compare against the current board state.
+         * @returns True if the current board state matches the provided hash, false otherwise.
+         */
+        public bool IsSame(int stateHash)
+        {
+            return GetOrCalculateStateHash() == stateHash;
+        }
+
+        /**
+         * Get the cached board state hash, calculating it if it is not set.
+         *
+         * @returns The current cached board state hash.
+         */
+        public int GetOrCalculateStateHash()
+        {
+            if (StateHash == 0)
+            {
+                StateHash = CalculateStateHash();
+            }
+
+            return StateHash;
+        }
+
+        /**
+         * Recalculate and store the board state hash from the current board data.
+         *
+         * @returns The recalculated board state hash.
+         */
+        public int RecalculateStateHash()
+        {
+            StateHash = CalculateStateHash();
+            return StateHash;
+        }
+
+        /**
+         * Invalidate the cached state hash so it will be recalculated on next access.
+         */
+        public void InvalidateStateHash()
+        {
+            StateHash = 0;
+        }
+
+        /** 
+         * Update the stored state hash to reflect the current board state.
+         * This should be called after any changes to the board to keep the hash in sync.
+         * @returns The new state hash after updating.
+         */
+        private int CalculateStateHash()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 31) + Size;
+                hash = (hash * 31) + BoxWidth;
+                hash = (hash * 31) + BoxHeight;
+
+                if (Cells == null)
+                {
+                    return hash == 0 ? 1 : hash;
+                }
+
+                for (int row = 0; row < Size; row++)
+                {
+                    for (int col = 0; col < Size; col++)
+                    {
+                        var cell = Cells[row, col];
+                        if (cell == null)
+                        {
+                            hash = (hash * 31) + -1;
+                            continue;
+                        }
+
+                        hash = (hash * 31) + (cell.Value ?? 0);
+                        hash = (hash * 31) + (cell.IsGiven ? 1 : 0);
+                        hash = (hash * 31) + (int)cell.Color;
+
+                        int candidateCount = cell.Candidates?.Count ?? 0;
+                        hash = (hash * 31) + candidateCount;
+
+                        if (candidateCount > 0)
+                        {
+                            foreach (int candidate in cell.Candidates.OrderBy(v => v))
+                            {
+                                hash = (hash * 31) + candidate;
+                            }
+                        }
+                    }
+                }
+
+                return hash == 0 ? 1 : hash;
+            }
         }
     }
 }

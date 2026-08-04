@@ -67,6 +67,8 @@ namespace Sudoku.Solver.Rules
             {
                 if (peer.Candidates != null) peer.Candidates.Remove(value);
             }
+
+            board?.InvalidateStateHash();
         }
 
         /**
@@ -340,6 +342,7 @@ namespace Sudoku.Solver.Rules
                 }
 
                 board.ChangeLogIndex = start;
+                board.InvalidateStateHash();
                 return true;
             }
 
@@ -398,6 +401,7 @@ namespace Sudoku.Solver.Rules
                 }
 
                 board.ChangeLogIndex = end;
+                board.InvalidateStateHash();
                 return true;
             }
 

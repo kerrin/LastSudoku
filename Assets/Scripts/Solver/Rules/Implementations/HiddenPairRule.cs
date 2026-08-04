@@ -22,6 +22,11 @@ namespace Sudoku.Solver.Rules
 
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var result = new RuleResult();
 
             var rowHit = FindAndBuildHiddenPair(board, EnumerateRows(board));
@@ -183,3 +188,4 @@ namespace Sudoku.Solver.Rules
     }
 
 }
+

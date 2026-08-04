@@ -26,6 +26,11 @@ namespace Sudoku.Solver.Rules
 
         public RuleResult CalculateChanges(Board board)
         {
+            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
+        }
+
+        private RuleResult CalculateChangesInternal(Board board)
+        {
             var res = new RuleResult();
             if (board == null) { res.Apply = false; res.Description = "No board"; return res; }
 
@@ -46,3 +51,4 @@ namespace Sudoku.Solver.Rules
         }
     }
 }
+
