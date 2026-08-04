@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using NUnit.Framework;
 using Sudoku.Solver.Rules;
 using Sudoku.UI.Config;
@@ -6,6 +8,25 @@ namespace Sudoku.Tests.Editor.UI.Config
 {
     public class RuleTogglePanelPersistenceTests
     {
+        private string _tempFilePath;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _tempFilePath = Path.Combine(Path.GetTempPath(), $"sudoku_rule_toggle_persistence_{Guid.NewGuid():N}.json");
+            RuntimeConfigRepository.OverrideFilePath = _tempFilePath;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            RuntimeConfigRepository.OverrideFilePath = null;
+            if (File.Exists(_tempFilePath))
+            {
+                File.Delete(_tempFilePath);
+            }
+        }
+
         [Test]
         public void SaveCurrent_PersistsUpdatedRuleEnabledState_FromSolveModeRegistry()
         {

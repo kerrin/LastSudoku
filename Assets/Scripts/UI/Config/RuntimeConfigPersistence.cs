@@ -320,7 +320,21 @@ namespace Sudoku.UI.Config
 
             if (registry != null)
             {
-                _current.Rules.Clear();
+                _current.Rules ??= new List<RuleConfigEntry>();
+                var existingByTypeName = new Dictionary<string, bool>(StringComparer.Ordinal);
+                for (int i = 0; i < _current.Rules.Count; i++)
+                {
+                    var existing = _current.Rules[i];
+                    if (existing == null || string.IsNullOrWhiteSpace(existing.RuleTypeName))
+                    {
+                        continue;
+                    }
+
+                    existingByTypeName[existing.RuleTypeName] = existing.Enabled;
+                }
+
+                var mergedRules = new List<RuleConfigEntry>();
+                var seen = new HashSet<string>(StringComparer.Ordinal);
                 var rules = registry.GetRulesWithStatus();
                 for (int i = 0; i < rules.Count; i++)
                 {
@@ -330,12 +344,33 @@ namespace Sudoku.UI.Config
                         continue;
                     }
 
-                    _current.Rules.Add(new RuleConfigEntry
+                    var ruleTypeName = rule.GetType().Name;
+                    mergedRules.Add(new RuleConfigEntry
                     {
-                        RuleTypeName = rule.GetType().Name,
+                        RuleTypeName = ruleTypeName,
                         Enabled = enabled
                     });
+                    seen.Add(ruleTypeName);
+                    existingByTypeName.Remove(ruleTypeName);
                 }
+
+                // Preserve any previously-saved rule entries that were not present
+                // in the provided registry snapshot (e.g. partial registries in tests).
+                foreach (var pair in existingByTypeName)
+                {
+                    if (seen.Contains(pair.Key))
+                    {
+                        continue;
+                    }
+
+                    mergedRules.Add(new RuleConfigEntry
+                    {
+                        RuleTypeName = pair.Key,
+                        Enabled = pair.Value
+                    });
+                }
+
+                _current.Rules = mergedRules;
             }
 
             RuntimeConfigRepository.Save(_current);
