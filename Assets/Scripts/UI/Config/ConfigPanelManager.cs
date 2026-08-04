@@ -108,7 +108,7 @@ namespace Sudoku.UI
             RuntimeConfigService.EnsureLoaded();
             ResolveReferences();
             RuntimeConfigService.ApplySavedRuleStates(_registry, _runner);
-            EnforceColouringRulePrerequisite(persistWhenChanged: false);
+            EnforceColouringRulePrerequisite();
             SetUnderlyingUiInputEnabled(false);
             _isOpen = true;
         }
@@ -277,25 +277,21 @@ namespace Sudoku.UI
          */
         private void DrawActiveTabContent()
         {
-            if (_activeTab == ConfigTabId.Assistance)
+            switch (_activeTab)
             {
-                DrawAssistanceOptions();
-                return;
-            }
-
-            if (_activeTab == ConfigTabId.Generation)
-            {
-                DrawGenerationOptions();
-                return;
-            }
-
-            if (_activeTab == ConfigTabId.Colours)
-            {
-                DrawColourOptions();
-                return;
-            }
-
-            DrawRuleToggles();
+                case ConfigTabId.Rules:
+                    DrawRuleToggles();
+                    break;
+                case ConfigTabId.Assistance:
+                    DrawAssistanceOptions();
+                    break;
+                case ConfigTabId.Generation:
+                    DrawGenerationOptions();
+                    break;
+                case ConfigTabId.Colours:
+                    DrawColourOptions();
+                    break;
+            }            
         }
 
         /**
@@ -303,7 +299,7 @@ namespace Sudoku.UI
          */
         private void DrawRuleToggles()
         {
-            EnforceColouringRulePrerequisite(persistWhenChanged: false);
+            EnforceColouringRulePrerequisite();
 
             if (_registry == null)
             {
@@ -320,6 +316,7 @@ namespace Sudoku.UI
                 return;
             }
 
+            // Group rules by difficulty so we can display them in sections.
             var groupedRules = new System.Collections.Generic.Dictionary<Difficulty, System.Collections.Generic.List<(ISudokuRule rule, bool enabled)>>();
             for (int i = 0; i < rules.Count; i++)
             {
@@ -620,7 +617,7 @@ namespace Sudoku.UI
             }
 
             SetColourEnabled(pendingValue, newValue);
-            EnforceColouringRulePrerequisite(persistWhenChanged: false);
+            EnforceColouringRulePrerequisite();
             RuntimeConfigService.SaveCurrent(_registry);
         }
 
@@ -660,11 +657,9 @@ namespace Sudoku.UI
         }
 
         /**
-         * Enforce ColouringRule prerequisite based on enabled colour count.
-         *
-         * @param persistWhenChanged When true, persist the auto-disable immediately.
+         * Enable the ColourRule only if the minimum enabled colours prerequisite is met.
          */
-        private void EnforceColouringRulePrerequisite(bool persistWhenChanged)
+        private void EnforceColouringRulePrerequisite()
         {
             if (_registry == null)
             {
@@ -685,11 +680,6 @@ namespace Sudoku.UI
             _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
             RefreshApplyRulesPanel();
             RefreshCreateModeStatusPanels();
-
-            if (persistWhenChanged)
-            {
-                RuntimeConfigService.SaveCurrent(_registry);
-            }
         }
 
         /**

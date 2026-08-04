@@ -30,7 +30,12 @@ namespace Sudoku.UI.Panels
         private static readonly Color ColourButtonDanger = new Color(0.80f, 0.22f, 0.22f, 1f);
         private static readonly Color ColourEntryBg = new Color(0.13f, 0.13f, 0.13f, 1f);
         private static readonly Color ColourScrollbar = new Color(0.35f, 0.35f, 0.35f, 1f);
-        private static readonly Color ColourScrollHandle = new Color(0.60f, 0.60f, 0.60f, 1f);
+        private static readonly Color ColourScrollHandle = new Color(0.67f, 0.67f, 0.67f, 1f);
+        private static readonly Color ColourScrollNormal = new Color(0.67f, 0.67f, 0.67f, 1f);
+        private static readonly Color ColourScrollHighlighted = new Color(0.51f, 0.51f, 0.51f, 1f);
+        private static readonly Color ColourScrollPressed = new Color(0.43f, 0.43f, 0.43f, 1f);
+        private static readonly Color ColourScrollSelected = new Color(0.59f, 0.59f, 0.59f, 1f);
+        private static readonly Color ColourScrollDisabled = new Color(0.78f, 0.78f, 0.78f, 0.5f);
 
         private static readonly Color PreviewColourEmpty = new Color(0.18f, 0.18f, 0.18f);
         private static readonly Color PreviewColourFilled = new Color(0.90f, 0.70f, 0.18f);
@@ -498,6 +503,7 @@ namespace Sudoku.UI.Panels
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
             scrollRect.scrollSensitivity = 40f;
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
             _scrollRect = scrollRect;
 
             var emptyGO = new GameObject("EmptyLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
@@ -554,7 +560,16 @@ namespace Sudoku.UI.Panels
 
             var scrollbar = scrollbarGO.GetComponent<Scrollbar>();
             scrollbar.handleRect = handleGO.GetComponent<RectTransform>();
-            scrollbar.direction = Scrollbar.Direction.TopToBottom;
+            scrollbar.direction = Scrollbar.Direction.BottomToTop;
+
+            // Set custom colors for the scrollbar states.
+            var colors = scrollbar.colors;
+            colors.normalColor = ColourScrollNormal;
+            colors.highlightedColor = ColourScrollHighlighted;
+            colors.pressedColor = ColourScrollPressed;
+            colors.selectedColor = ColourScrollSelected;
+            colors.disabledColor = ColourScrollDisabled;
+            scrollbar.colors = colors;
 
             return scrollbar;
         }
