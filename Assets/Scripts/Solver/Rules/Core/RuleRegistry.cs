@@ -106,6 +106,7 @@ namespace Sudoku.Solver.Rules
             Register(new NakedTripleRule());
             Register(new HiddenTripleRule());
             Register(new NakedQuadRule());
+            Register(new HiddenQuadRule());
             Register(new XWingRule());
             Register(new SwordFishRule());
             Register(new YWingRule());

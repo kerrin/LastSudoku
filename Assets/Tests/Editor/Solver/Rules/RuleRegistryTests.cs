@@ -37,9 +37,10 @@ namespace Sudoku.Tests.Editor
         {
             var registry = new RuleRegistry();
             registry.RegisterAdvanced();
-            Assert.AreEqual(10, registry.Rules.Count);
+            Assert.AreEqual(11, registry.Rules.Count);
             Assert.IsTrue(registry.Rules.Any(r => r is NakedTripleRule));
             Assert.IsTrue(registry.Rules.Any(r => r is NakedQuadRule));
+            Assert.IsTrue(registry.Rules.Any(r => r is HiddenQuadRule));
             Assert.IsTrue(registry.Rules.Any(r => r is WWingRule));
             Assert.IsTrue(registry.Rules.Any(r => r is XYZWingRule));
         }
