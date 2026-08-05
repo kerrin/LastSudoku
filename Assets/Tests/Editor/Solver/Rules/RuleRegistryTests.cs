@@ -36,7 +36,8 @@ namespace Sudoku.Tests.Editor
         {
             var registry = new RuleRegistry();
             registry.RegisterAdvanced();
-            Assert.AreEqual(7, registry.Rules.Count);
+            Assert.AreEqual(8, registry.Rules.Count);
+            Assert.IsTrue(registry.Rules.Any(r => r is WWingRule));
             Assert.IsTrue(registry.Rules.Any(r => r is XYZWingRule));
         }
 
