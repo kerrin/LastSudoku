@@ -6,13 +6,13 @@ using Cell = Sudoku.Models.Cell;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * Canonical Y-Wing (pivot + two pincers):
-     * - Pivot cell has bi-value {a,b} candidates.
-     * - Pincer 1 cell has bi-value {a,c} candidates and sees the pivot.
-     * - Pincer 2 cell has bi-value {b,c} candidates and sees the pivot.
-     * Any cell that sees (row, column, or box) both pincer cells cannot contain c.
+     * Canonical XYZ-Wing (pivot + two wings):
+     * - Pivot cell has tri-value {a,b,c} candidates.
+     * - Wing 1 cell has bi-value {a,c} candidates and sees the pivot.
+     * - Wing 2 cell has bi-value {b,c} candidates and sees the pivot.
+     * Any cell that sees both wings and the pivot cannot contain c.
      */
-    public class YWingRule : ISudokuRule
+    public class XYZWingRule : ISudokuRule
     {
         private class Placement
         {
@@ -32,7 +32,7 @@ namespace Sudoku.Solver.Rules
             }
         }
 
-        public string Name => "Y-Wing";
+        public string Name => "XYZ-Wing";
 
         public Difficulty Difficulty => Difficulty.Hard;
 
@@ -46,29 +46,34 @@ namespace Sudoku.Solver.Rules
 
         private Placement FindPlacement(Board board)
         {
+            var trivalue = GetTriValueCells(board);
             var bivals = GetBiValueCells(board);
-            foreach (var pivot in bivals)
+
+            foreach (var pivot in trivalue)
             {
                 var pivotCandidates = pivot.Candidates.OrderBy(x => x).ToList();
                 int a = pivotCandidates[0];
                 int b = pivotCandidates[1];
+                int c = pivotCandidates[2];
 
                 var pivotPeers = new HashSet<Cell>(board.GetPeers(pivot));
 
-                // Pincer A candidates: {a,c} where c != b
+                // Wing A candidates: {a,c}
                 var pincerAOptions = bivals
                     .Where(cell => cell != pivot)
                     .Where(cell => pivotPeers.Contains(cell))
                     .Where(cell => cell.Candidates.Contains(a) && !cell.Candidates.Contains(b))
+                    .Where(cell => cell.Candidates.Contains(c))
                     .OrderBy(cell => cell.Row)
                     .ThenBy(cell => cell.Column)
                     .ToList();
 
-                // Pincer B candidates: {b,c} where c != a
+                // Wing B candidates: {b,c}
                 var pincerBOptions = bivals
                     .Where(cell => cell != pivot)
                     .Where(cell => pivotPeers.Contains(cell))
                     .Where(cell => cell.Candidates.Contains(b) && !cell.Candidates.Contains(a))
+                    .Where(cell => cell.Candidates.Contains(c))
                     .OrderBy(cell => cell.Row)
                     .ThenBy(cell => cell.Column)
                     .ToList();
@@ -89,13 +94,27 @@ namespace Sudoku.Solver.Rules
                         }
 
                         int eliminationDigit = shared[0];
-                        if (eliminationDigit == a || eliminationDigit == b)
+                        if (eliminationDigit != c)
+                        {
+                            continue;
+                        }
+
+                        // Wings must be subsets of pivot and together reproduce pivot candidates.
+                        if (!pincerA.Candidates.All(pivot.Candidates.Contains) || !pincerB.Candidates.All(pivot.Candidates.Contains))
+                        {
+                            continue;
+                        }
+
+                        var wingsUnion = new HashSet<int>(pincerA.Candidates);
+                        wingsUnion.UnionWith(pincerB.Candidates);
+                        if (!wingsUnion.SetEquals(pivot.Candidates))
                         {
                             continue;
                         }
 
                         var commonPeers = new HashSet<Cell>(board.GetPeers(pincerA));
                         commonPeers.IntersectWith(board.GetPeers(pincerB));
+                        commonPeers.IntersectWith(board.GetPeers(pivot));
 
                         var removals = commonPeers
                             .Where(cell => cell != pivot && cell != pincerA && cell != pincerB)
@@ -114,6 +133,28 @@ namespace Sudoku.Solver.Rules
             }
 
             return null;
+        }
+
+        private static List<Cell> GetTriValueCells(Board board)
+        {
+            var trivalue = new List<Cell>();
+            int size = board.Size;
+            for (int r = 0; r < size; r++)
+            {
+                for (int c = 0; c < size; c++)
+                {
+                    var cell = board.Cells[r, c];
+                    if (!cell.Value.HasValue && cell.Candidates.Count == 3)
+                    {
+                        trivalue.Add(cell);
+                    }
+                }
+            }
+
+            return trivalue
+                .OrderBy(cell => cell.Row)
+                .ThenBy(cell => cell.Column)
+                .ToList();
         }
 
         private static List<Cell> GetBiValueCells(Board board)
@@ -183,7 +224,7 @@ namespace Sudoku.Solver.Rules
             r.Apply = r.Changes.Count > 0;
             if (r.Apply)
             {
-                r.Description = $"Y-Wing removed {eliminationDigit} from {r.Changes.Count} cell(s)";
+                r.Description = $"XYZ-Wing removed {eliminationDigit} from {r.Changes.Count} cell(s)";
             }
 
             return r;

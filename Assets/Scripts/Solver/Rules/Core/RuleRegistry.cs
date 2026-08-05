@@ -106,6 +106,7 @@ namespace Sudoku.Solver.Rules
             Register(new XWingRule());
             Register(new SwordFishRule());
             Register(new YWingRule());
+            Register(new XYZWingRule());
             Register(new ColouringRule());
         }
 

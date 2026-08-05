@@ -108,6 +108,7 @@ Swordfish
 Phistomefel Ring
 Uniqueness tests (avoid deadly patterns with multiple solutions)
 (Check for errors)
+https://sudokupulse.com/techniques/
 X-Cycles
 XY-Chain
 3D Medusa  
@@ -131,6 +132,7 @@ Cell Forcing Chains
 Unit Forcing Chains
 Quad Forcing Chains
 Almost Locked Sets
+
 
 Advanced Sudoku Puzzle Types to implement later
 -----------------------------------------------

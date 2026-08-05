@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver.Rules;
@@ -35,7 +36,8 @@ namespace Sudoku.Tests.Editor
         {
             var registry = new RuleRegistry();
             registry.RegisterAdvanced();
-            Assert.AreEqual(6, registry.Rules.Count);
+            Assert.AreEqual(7, registry.Rules.Count);
+            Assert.IsTrue(registry.Rules.Any(r => r is XYZWingRule));
         }
 
         /** When the board has no candidates or values, <c>ApplyAll</c> should return an empty result set. */

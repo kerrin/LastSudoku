@@ -6,15 +6,15 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * A simple Pointing Pair implementation.
+     * A simple Pointing Pair/Triple implementation.
      *
      * A Pointing Pair (or pointing triple) occurs when all candidates of a digit inside a 3×3 box fall on the same row or column. 
-     * The candidate must be placed somewhere in that box, so it must be on that row or column - 
+     * The candidates must be placed somewhere in that box, so they must be on that row or column - 
      * which means the digit can be eliminated from the rest of that row or column outside the box.
      */
     public class PointingPairRule : ISudokuRule
     {
-        public string Name => "Pointing Pair";
+        public string Name => "Pointing Pair/Triple";
 
         public Difficulty Difficulty => Difficulty.Medium;
 
@@ -112,7 +112,7 @@ namespace Sudoku.Solver.Rules
                     {
                         Used = candidatesInBox,
                         Targets = targets,
-                        Description = $"Removed {digit} from row {row} outside box {boxIndex} via Pointing Pair"
+                        Description = $"Removed {digit} from row {row} outside box {boxIndex} via Pointing " + (candidatesInBox.Count == 2 ? "Pair" : "Triple")
                     };
                 }
             }
@@ -130,7 +130,7 @@ namespace Sudoku.Solver.Rules
                     {
                         Used = candidatesInBox,
                         Targets = targets,
-                        Description = $"Removed {digit} from column {column} outside box {boxIndex} via Pointing Pair"
+                        Description = $"Removed {digit} from column {column} outside box {boxIndex} via Pointing " + (candidatesInBox.Count == 2 ? "Pair" : "Triple")
                     };
                 }
             }
