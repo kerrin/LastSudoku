@@ -9,23 +9,18 @@ namespace Sudoku.Solver.Rules
      *
     * This rule should only be applied if colouring is enabled and has at least three colours enabled.
      */
-    public class ForcingChainRule : ISudokuRule
+    public class ForcingChainRule : CachedRuleBase
     {
-        public string Name => "Forcing Chain";
+        public override string Name => "Forcing Chain";
 
-        public Difficulty Difficulty => Difficulty.Expert;
-        public bool CanApply(Board board)
+        public override Difficulty Difficulty => Difficulty.Expert;
+        public override bool CanApply(Board board)
         {
             // TODO: Not implemented.
             return false;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             

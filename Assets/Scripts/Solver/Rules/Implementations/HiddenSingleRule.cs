@@ -10,11 +10,11 @@ namespace Sudoku.Solver.Rules
      * (row/column/box), if only one cell can contain that digit according to candidates,
      * place it there.
      */
-    public class HiddenSingleRule : ISudokuRule
+    public class HiddenSingleRule : CachedRuleBase
     {
-        public string Name => "Hidden Single";
+        public override string Name => "Hidden Single";
 
-        public Difficulty Difficulty => Difficulty.Easy;
+        public override Difficulty Difficulty => Difficulty.Easy;
 
         private enum UnitKind { Row, Column, Box }
 
@@ -25,7 +25,7 @@ namespace Sudoku.Solver.Rules
             public UnitKind Unit { get; set; }
             public int UnitIndex { get; set; }
         }
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             return FindAny(board) != null;
         }
@@ -113,12 +113,7 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             HiddenSingleResult found = FindAny(board);

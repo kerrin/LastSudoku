@@ -9,22 +9,13 @@ namespace Sudoku.Solver.Rules
      * Hidden Triple is when there are exactly three candidates in a unit (row, column, or box) that appear only in three cells.
      * These three candidates can be removed from all other cells in that unit.
      */
-    public class HiddenTripleRule : ISudokuRule
+    public class HiddenTripleRule : CachedRuleBase
     {
-        public string Name => "Hidden Triple";
+        public override string Name => "Hidden Triple";
 
-        public Difficulty Difficulty => Difficulty.Hard;
-        public bool CanApply(Board board)
-        {
-            return CalculateChanges(board).Apply;
-        }
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var rowHit = FindAndBuildHiddenTriple(board, EnumerateRows(board));
             if (rowHit != null)

@@ -11,22 +11,17 @@ namespace Sudoku.Solver.Rules
      * then that candidate can be removed from all other cells in those three columns. The same logic applies with rows and columns swapped.
      * https://sudoku.com/sudoku-rules/swordfish/
      */
-    public class SwordFishRule : ISudokuRule
+    public class SwordFishRule : CachedRuleBase
     {
-        public string Name => "Swordfish";
+        public override string Name => "Swordfish";
 
-        public Difficulty Difficulty => Difficulty.Master;
-        public bool CanApply(Board board)
+        public override Difficulty Difficulty => Difficulty.Master;
+        public override bool CanApply(Board board)
         {
             return FindElimination(board) != null;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var found = FindElimination(board);
             var result = new RuleResult();

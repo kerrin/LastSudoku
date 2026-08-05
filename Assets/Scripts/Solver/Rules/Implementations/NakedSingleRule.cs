@@ -13,32 +13,15 @@ namespace Sudoku.Solver.Rules
      * Or another way to say it, when a cell has exactly one candidate
      * it must be that digit, but that relies on the candidates being correct, and would also be found by the Hidden Single technique.
      */
-    public class NakedSingleRule : ISudokuRule
+    public class NakedSingleRule : CachedRuleBase
     {
         /** Rule display name. */
-        public string Name => "Naked Single";
+        public override string Name => "Naked Single";
 
         /** Difficulty classification for this rule. */
-        public Difficulty Difficulty => Difficulty.Easy;
+        public override Difficulty Difficulty => Difficulty.Easy;
 
-        /**
-         * Quick check to see if this rule can be applied to the given board.
-         */
-        public bool CanApply(Board board)
-        {
-           return CalculateChanges(board).Apply;
-        }
-
-        /**
-         * Apply the first naked-single found: set the cell and remove the digit
-         * from all peers' candidate sets.
-         */
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             //Check for set values, incase the candidates are incomplete or incorrect.

@@ -12,24 +12,13 @@ namespace Sudoku.Solver.Rules
      * The candidates must be placed somewhere in that box, so they must be on that row or column - 
      * which means the digit can be eliminated from the rest of that row or column outside the box.
      */
-    public class PointingPairRule : ISudokuRule
+    public class PointingPairRule : CachedRuleBase
     {
-        public string Name => "Pointing Pair/Triple";
+        public override string Name => "Pointing Pair/Triple";
 
-        public Difficulty Difficulty => Difficulty.Medium;
+        public override Difficulty Difficulty => Difficulty.Medium;
 
-        public bool CanApply(Board board)
-        {
-            RuleResult result = CalculateChanges(board);
-            return  result.Apply;
-        }
-
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             int size = board.Size;

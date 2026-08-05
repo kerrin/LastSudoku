@@ -1,6 +1,3 @@
-
-using Board = Sudoku.Models.Board;
-
 namespace Sudoku.Solver.Rules
 {
     /**
@@ -8,39 +5,17 @@ namespace Sudoku.Solver.Rules
      * If two cells in a unit (row, column, or block) have exactly the same two candidates,
      * those candidates can be removed from all other cells in that unit.
      */
-    public class NakedPairRule : ISudokuRule
+    public class NakedPairRule : NakedSubsetRuleBase
     {
         /** Rule display name. */
-        public string Name => "Naked Pair";
+        public override string Name => "Naked Pair";
 
         /** Difficulty classification for this rule. */
-        public Difficulty Difficulty => Difficulty.Medium;
+        public override Difficulty Difficulty => Difficulty.Medium;
 
-        /**
-         * Quick check to see if this rule can be applied to the given board.
-         */
-        public bool CanApply(Board board)
-        {
-           return CalculateChanges(board).Apply;
-        }
+        protected override int SubsetSize => 2;
 
-        /**
-         * Apply the first naked-pair found: remove the pair's candidates from all other cells in the unit.
-         */
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
-        {
-            var result = new RuleResult();
-            
-            // TODO: Implement Naked Pair logic here. This is a placeholder to allow compilation and testing of unsolve handlers without needing the full implementation of this rule.
-            
-            result.Apply = false;
-            return result;
-        }
+        protected override string SubsetLabel => "Pair";
     }
 }
 

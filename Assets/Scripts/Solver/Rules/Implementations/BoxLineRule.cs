@@ -12,13 +12,13 @@ namespace Sudoku.Solver.Rules
      * then that digit can be eliminated from other cells in that row (or column)
      * outside the box.
      */
-    public class BoxLineRule : ISudokuRule
+    public class BoxLineRule : CachedRuleBase
     {
-        public string Name => "Box Line";
+        public override string Name => "Box Line";
 
-        public Difficulty Difficulty => Difficulty.Medium;
+        public override Difficulty Difficulty => Difficulty.Medium;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             int size = board.Size;
             for (int digit = 1; digit <= size; digit++)
@@ -32,12 +32,7 @@ namespace Sudoku.Solver.Rules
             return false;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
             int size = board.Size;

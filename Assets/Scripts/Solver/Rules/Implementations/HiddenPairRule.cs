@@ -9,23 +9,13 @@ namespace Sudoku.Solver.Rules
      * Hidden Pair is when there are exactly two candidates in a unit (row, column, or box) that appear only in two cells.
         * All other candidates can be removed from those two cells.
      */
-    public class HiddenPairRule : ISudokuRule
+    public class HiddenPairRule : CachedRuleBase
     {
-        public string Name => "Hidden Pair";
+        public override string Name => "Hidden Pair";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public bool CanApply(Board board)
-        {
-            return CalculateChanges(board).Apply;
-        }
-
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
 

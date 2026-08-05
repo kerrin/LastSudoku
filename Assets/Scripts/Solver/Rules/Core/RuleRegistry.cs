@@ -86,10 +86,11 @@ namespace Sudoku.Solver.Rules
 
         /**
          * Register medium-difficulty candidate elimination rules.
-         * Tests expect this to register 4 rules.
+         * Tests expect this to register 5 rules.
          */
         public void RegisterMedium()
         {
+            Register(new NakedPairRule());
             Register(new BoxLineRule());
             Register(new PointingPairRule());
             Register(new SkyscraperRule());
@@ -102,7 +103,9 @@ namespace Sudoku.Solver.Rules
         public void RegisterAdvanced()
         {
             Register(new HiddenPairRule());
+            Register(new NakedTripleRule());
             Register(new HiddenTripleRule());
+            Register(new NakedQuadRule());
             Register(new XWingRule());
             Register(new SwordFishRule());
             Register(new YWingRule());

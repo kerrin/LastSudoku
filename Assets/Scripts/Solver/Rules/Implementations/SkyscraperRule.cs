@@ -20,13 +20,13 @@ namespace Sudoku.Solver.Rules
      * 3. The other two cells must appear in different rows to form a slanted roof.
      * 4. Peers of the roof endpoints can have the candidate eliminated.
      */
-    public class SkyscraperRule : ISudokuRule
+    public class SkyscraperRule : CachedRuleBase
     {
-        public string Name => "Skyscraper";
+        public override string Name => "Skyscraper";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             // Avoid firing on a freshly initialized board where every empty cell
             // still contains the full set of candidates (1..Size). Such pristine
@@ -232,12 +232,7 @@ SELECT:
             return best;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var found = FindElimination(board);
             var r = new RuleResult();

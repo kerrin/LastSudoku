@@ -20,12 +20,12 @@ namespace Sudoku.Solver.Rules
      *       Not in 3 the right angle digits
      *       Appears in both the row and column
      */
-    public class RightAngleRule : ISudokuRule
+    public class RightAngleRule : CachedRuleBase
     {
-        public string Name => "Right Angle";
+        public override string Name => "Right Angle";
 
-        public Difficulty Difficulty => Difficulty.Medium;
-        public bool CanApply(Board board)
+        public override Difficulty Difficulty => Difficulty.Medium;
+        public override bool CanApply(Board board)
         {
             // Avoid firing on a pristine board where every empty cell still contains
             // the full set of candidates (1..Size). Only run if some candidate
@@ -47,12 +47,7 @@ namespace Sudoku.Solver.Rules
             return FindElimination(board) != null;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var info = FindElimination(board);
             var result = new RuleResult();

@@ -12,13 +12,13 @@ namespace Sudoku.Solver.Rules
       * cell in those two columns (or two rows in the transposed case) cannot contain d and
      * the candidate can be removed.
      */
-    public class XWingRule : ISudokuRule
+    public class XWingRule : CachedRuleBase
     {
-        public string Name => "X-Wing";
+        public override string Name => "X-Wing";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             int size = board.Size;
             bool anyPruned = false;
@@ -141,12 +141,7 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var found = FindElimination(board);
             var r = new RuleResult();

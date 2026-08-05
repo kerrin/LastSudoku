@@ -12,7 +12,7 @@ namespace Sudoku.Solver.Rules
      * - Each bi-value cell sees one end of that strong link.
      * Then any cell that sees both bi-value cells cannot contain the other candidate (b).
      */
-    public class WWingRule : ISudokuRule
+    public class WWingRule : CachedRuleBase
     {
         private class Placement
         {
@@ -57,11 +57,11 @@ namespace Sudoku.Solver.Rules
             }
         }
 
-        public string Name => "W-Wing";
+        public override string Name => "W-Wing";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             return FindPlacement(board) != null;
         }
@@ -264,12 +264,7 @@ namespace Sudoku.Solver.Rules
             return first.Row == second.Row || first.Column == second.Column || first.Box == second.Box;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var found = FindPlacement(board);
             var r = new RuleResult();

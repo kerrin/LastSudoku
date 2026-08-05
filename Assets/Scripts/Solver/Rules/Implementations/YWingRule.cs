@@ -12,7 +12,7 @@ namespace Sudoku.Solver.Rules
      * - Pincer 2 cell has bi-value {b,c} candidates and sees the pivot.
      * Any cell that sees (row, column, or box) both pincer cells cannot contain c.
      */
-    public class YWingRule : ISudokuRule
+    public class YWingRule : CachedRuleBase
     {
         private class Placement
         {
@@ -32,11 +32,11 @@ namespace Sudoku.Solver.Rules
             }
         }
 
-        public string Name => "Y-Wing";
+        public override string Name => "Y-Wing";
 
-        public Difficulty Difficulty => Difficulty.Hard;
+        public override Difficulty Difficulty => Difficulty.Hard;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             // Directly search for a valid placement. Avoid a global "pristine"
             // early-exit — test setups often clear candidates which can make the
@@ -138,12 +138,7 @@ namespace Sudoku.Solver.Rules
                 .ToList();
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var found = FindPlacement(board);
             var r = new RuleResult();

@@ -26,7 +26,7 @@ namespace Sudoku.Solver.Rules
      * Starting in the top left box, the 5s in cell (0,1) or (1,0) can be the start of the chain.
      * See https://www.sudokuwiki.org/Print_Simple_Colouring
      */
-    public class ColouringRule : ISudokuRule
+    public class ColouringRule : CachedRuleBase
     {
         private const string TargetATag = "TargetA";
         private const string TargetBTag = "TargetB";
@@ -66,9 +66,9 @@ namespace Sudoku.Solver.Rules
             }
         }
 
-        public string Name => "Colouring";
+        public override string Name => "Colouring";
 
-        public Difficulty Difficulty => Difficulty.Expert;
+        public override Difficulty Difficulty => Difficulty.Expert;
 
         /**
          * Determine whether the Colouring rule can be applied to the current board.
@@ -76,7 +76,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @returns True when the board is valid, colour prerequisites are met, and a colouring elimination exists.
          */
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             if (board == null) return false;
             if (!board.IsValid()) return false;
@@ -92,12 +92,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @returns RuleResult containing candidate removals and the evidence chain.
          */
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();
 

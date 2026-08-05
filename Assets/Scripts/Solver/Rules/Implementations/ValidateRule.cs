@@ -10,13 +10,13 @@ namespace Sudoku.Solver.Rules
      * The rule does not modify the board; it simply reports Apply=true when
      * conflicts are present and leaves `Changes` empty.
      */
-    public class ValidateRule : ISudokuRule
+    public class ValidateRule : CachedRuleBase
     {
-        public string Name => "Validate Board";
+        public override string Name => "Validate Board";
 
-        public Difficulty Difficulty => Difficulty.Easy;
+        public override Difficulty Difficulty => Difficulty.Easy;
 
-        public bool CanApply(Board board)
+        public override bool CanApply(Board board)
         {
             // This rule should not be selected automatically by the engine.
             // It exists only as a UI action for explicit validation, so
@@ -24,12 +24,7 @@ namespace Sudoku.Solver.Rules
             return false;
         }
 
-        public RuleResult CalculateChanges(Board board)
-        {
-            return RuleCalculationCache.GetOrCalculate(this, board, () => CalculateChangesInternal(board));
-        }
-
-        private RuleResult CalculateChangesInternal(Board board)
+        protected override RuleResult CalculateChangesInternal(Board board)
         {
             var res = new RuleResult();
             if (board == null) { res.Apply = false; res.Description = "No board"; return res; }
