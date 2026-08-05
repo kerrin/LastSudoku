@@ -16,6 +16,7 @@ namespace Sudoku.UI.Panels
 public class ApplyRulePanel : MonoBehaviour
 {
     private const string ColouringRuleTypeName = nameof(ColouringRule);
+    private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
 
     public SolverRunner Runner;
 
@@ -404,7 +405,7 @@ public class ApplyRulePanel : MonoBehaviour
      * Determine whether a rule instance is the Colouring rule.
      *
      * @param rule Rule instance.
-     * @returns True when the rule type name matches ColouringRule.
+     * @returns True when the rule requires at least two enabled colours.
      */
     private static bool IsColouringRule(ISudokuRule rule)
     {
@@ -413,7 +414,9 @@ public class ApplyRulePanel : MonoBehaviour
             return false;
         }
 
-        return string.Equals(rule.GetType().Name, ColouringRuleTypeName, System.StringComparison.Ordinal);
+        string typeName = rule.GetType().Name;
+        return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
+            || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
     }
 
     private void CreateReinitialiseCandidatesRow(Transform parent)

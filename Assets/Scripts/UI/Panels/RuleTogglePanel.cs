@@ -19,6 +19,7 @@ namespace Sudoku.UI.Panels
 public class RuleTogglePanel : MonoBehaviour
 {
     private const string ColouringRuleTypeName = nameof(ColouringRule);
+    private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
     private const string ColouringRuleRequirementSuffix = " (requires 2 colours)";
 
     private static readonly Difficulty[] DifficultyDisplayOrder =
@@ -779,13 +780,13 @@ public class RuleTogglePanel : MonoBehaviour
         // conflict with our direct colour management below.
         toggle.toggleTransition = Toggle.ToggleTransition.None;
         string ruleTypeName = rule.GetType().Name;
-        bool colouringPrerequisiteMet = !string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal) ||
+        bool colouringPrerequisiteMet = !IsColourDependentRuleTypeName(ruleTypeName) ||
                                         ColourSettings.GetEnabledColourCount() >= 2;
 
         toggle.isOn = enabled;
         toggle.onValueChanged.AddListener((val) =>
         {
-            if (string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal) &&
+            if (IsColourDependentRuleTypeName(ruleTypeName) &&
                 ColourSettings.GetEnabledColourCount() < 2)
             {
                 toggle.SetIsOnWithoutNotify(false);
@@ -838,7 +839,19 @@ public class RuleTogglePanel : MonoBehaviour
             return;
         }
 
-        var rowTransform = _togglesParent.Find(ColouringRuleTypeName + "_Toggle");
+        ApplyColourDependentVisualStateForRule(ColouringRuleTypeName, prerequisiteMet);
+        ApplyColourDependentVisualStateForRule(ForcingChainRuleTypeName, prerequisiteMet);
+    }
+
+    /**
+     * Apply two-colour prerequisite visual state to one rule row.
+     *
+     * @param ruleTypeName Rule type name.
+     * @param prerequisiteMet Whether at least two colours are enabled.
+     */
+    private void ApplyColourDependentVisualStateForRule(string ruleTypeName, bool prerequisiteMet)
+    {
+        var rowTransform = _togglesParent.Find(ruleTypeName + "_Toggle");
         if (rowTransform == null)
         {
             return;
@@ -856,7 +869,7 @@ public class RuleTogglePanel : MonoBehaviour
                 if (toggle.graphic != null)
                 {
                     toggle.graphic.gameObject.SetActive(true);
-                    bool enabled = IsRuleEnabled(ColouringRuleTypeName);
+                    bool enabled = IsRuleEnabled(ruleTypeName);
                     toggle.graphic.color = new Color(1f, 1f, 1f, enabled ? 1f : 0f);
                 }
             }
@@ -879,7 +892,7 @@ public class RuleTogglePanel : MonoBehaviour
         if (toggle != null)
         {
             toggle.interactable = true;
-            bool enabled = IsRuleEnabled(ColouringRuleTypeName);
+            bool enabled = IsRuleEnabled(ruleTypeName);
             toggle.SetIsOnWithoutNotify(enabled);
             if (toggle.graphic != null)
             {
@@ -898,6 +911,18 @@ public class RuleTogglePanel : MonoBehaviour
             label.color = Color.white;
             label.text = label.text.Replace(ColouringRuleRequirementSuffix, string.Empty);
         }
+    }
+
+    /**
+     * Determine whether a rule requires at least two enabled colours.
+     *
+     * @param ruleTypeName Rule type name.
+     * @returns True for colour-dependent chain rules.
+     */
+    private static bool IsColourDependentRuleTypeName(string ruleTypeName)
+    {
+        return string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
+            || string.Equals(ruleTypeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
     }
 
     /**

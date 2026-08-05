@@ -65,6 +65,7 @@ namespace Sudoku.UI
         private bool _showColouringAutoDisableWarning;
 
         private const string ColouringRuleTypeName = nameof(ColouringRule);
+        private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
 
         // Panel layout constants.
         private const float PanelW  = 500f;
@@ -570,7 +571,7 @@ namespace Sudoku.UI
             if (_showColouringAutoDisableWarning)
             {
                 GUILayout.Space(8f);
-                GUILayout.Label("  Disabling this colour will auto-disable Colouring rule (requires at least 2 colours).", _ruleNameStyle);
+                GUILayout.Label("  Disabling this colour will auto-disable colour-dependent chain rules (requires at least 2 colours).", _ruleNameStyle);
                 GUILayout.Space(4f);
 
                 GUILayout.BeginHorizontal();
@@ -638,9 +639,16 @@ namespace Sudoku.UI
             {
                 _registry?.SetEnabled(ColouringRuleTypeName, false);
                 _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
-                RefreshApplyRulesPanel();
-                RefreshCreateModeStatusPanels();
             }
+
+            if (IsRuleEnabledByTypeName(ForcingChainRuleTypeName))
+            {
+                _registry?.SetEnabled(ForcingChainRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ForcingChainRuleTypeName, false);
+            }
+
+            RefreshApplyRulesPanel();
+            RefreshCreateModeStatusPanels();
 
             SetColourEnabled(_pendingColourDisable, false);
             CancelPendingColourDisable();
@@ -671,15 +679,27 @@ namespace Sudoku.UI
                 return;
             }
 
-            if (!IsRuleEnabledByTypeName(ColouringRuleTypeName))
+            bool changed = false;
+
+            if (IsRuleEnabledByTypeName(ColouringRuleTypeName))
             {
-                return;
+                _registry.SetEnabled(ColouringRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
+                changed = true;
             }
 
-            _registry.SetEnabled(ColouringRuleTypeName, false);
-            _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
-            RefreshApplyRulesPanel();
-            RefreshCreateModeStatusPanels();
+            if (IsRuleEnabledByTypeName(ForcingChainRuleTypeName))
+            {
+                _registry.SetEnabled(ForcingChainRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ForcingChainRuleTypeName, false);
+                changed = true;
+            }
+
+            if (changed)
+            {
+                RefreshApplyRulesPanel();
+                RefreshCreateModeStatusPanels();
+            }
         }
 
         /**
@@ -689,7 +709,8 @@ namespace Sudoku.UI
          */
         private bool RequiresColouringRuleAutoDisableWarning()
         {
-            return ColourSettings.GetEnabledColourCount() == 2 && IsRuleEnabledByTypeName(ColouringRuleTypeName);
+            return ColourSettings.GetEnabledColourCount() == 2
+                && (IsRuleEnabledByTypeName(ColouringRuleTypeName) || IsRuleEnabledByTypeName(ForcingChainRuleTypeName));
         }
 
         /**
@@ -726,7 +747,8 @@ namespace Sudoku.UI
          */
         private static bool IsColouringRuleTypeName(string typeName)
         {
-            return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal);
+            return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
+                || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
         }
 
         /**
