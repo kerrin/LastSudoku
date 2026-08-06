@@ -102,6 +102,12 @@ namespace Sudoku.Solver.Rules
         public List<UsedCell> UsedCells = new List<UsedCell>();
 
         /**
+         * Directional evidence links used during deduction. These are visualization-only
+         * and do not mutate board-level directional links when applying the rule.
+         */
+        public List<DirectionalCellLink> UsedDirectionalLinks = new List<DirectionalCellLink>();
+
+        /**
          * Enact only candidate removals recorded in `Changes` on the provided board.
          * Values recorded in `NewValue` are ignored.
          */

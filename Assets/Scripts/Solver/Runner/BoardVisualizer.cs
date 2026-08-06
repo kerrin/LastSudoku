@@ -833,6 +833,7 @@ namespace Sudoku.Solver
             HandlesEndGUI();
 
                 DrawDirectionalLinksOverlay();
+                DrawRuleEvidenceDirectionalLinks(resultToShow);
 
                 if (_radialMenu != null && _radialMenu.IsOpen)
                 {
@@ -1623,12 +1624,49 @@ namespace Sudoku.Solver
             }
         }
 
+        /**
+         * Draw directional links attached to the current rule preview/applied result.
+         *
+         * @param result Rule result currently used for board evidence rendering.
+         */
+        private void DrawRuleEvidenceDirectionalLinks(RuleResult result)
+        {
+            if (result == null || result.UsedDirectionalLinks == null || result.UsedDirectionalLinks.Count == 0)
+            {
+                return;
+            }
+
+            for (int i = 0; i < result.UsedDirectionalLinks.Count; i++)
+            {
+                var link = result.UsedDirectionalLinks[i];
+                if (link == null || link.Start == null || link.End == null)
+                {
+                    continue;
+                }
+
+                if (!TryGetDirectionalEndpointPosition(link.Start, out var startPos)
+                    || !TryGetDirectionalEndpointPosition(link.End, out var endPos))
+                {
+                    continue;
+                }
+
+                // Slightly thinner and translucent than user-authored links so both layers can coexist.
+                DrawDirectionalArrow(startPos, endPos, link.Kind, alphaMultiplier: 0.82f, widthMultiplier: 0.82f);
+            }
+        }
+
         private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind)
         {
-            float width = Mathf.Max(1f, GetComputedCellSize() * 0.026f);
+            DrawDirectionalArrow(start, end, kind, alphaMultiplier: 1f, widthMultiplier: 1f);
+        }
+
+        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind, float alphaMultiplier, float widthMultiplier)
+        {
+            float width = Mathf.Max(1f, GetComputedCellSize() * 0.026f * Mathf.Max(0.1f, widthMultiplier));
             Color color = kind == DirectionalLinkKind.Strong
                 ? new Color(0.96f, 0.28f, 0.28f, 1f)
                 : new Color(0.14f, 0.82f, 0.28f, 1f);
+            color.a *= Mathf.Clamp01(alphaMultiplier);
 
             var direction = (end - start);
             float length = direction.magnitude;

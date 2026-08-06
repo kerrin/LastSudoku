@@ -125,6 +125,11 @@ namespace Sudoku.Solver.Rules
                 }
             }
 
+            if (source.UsedDirectionalLinks != null)
+            {
+                clone.UsedDirectionalLinks = DirectionalCellLink.CloneList(source.UsedDirectionalLinks) ?? new List<DirectionalCellLink>();
+            }
+
             return clone;
         }
     }
