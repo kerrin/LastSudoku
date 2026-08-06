@@ -24,6 +24,7 @@ namespace Sudoku.Models
         /** Accumulated solve time in seconds, persisted so the timer continues after loading. */
         public double ElapsedSeconds;
         public List<SolvedPuzzleCellExport> Cells = new List<SolvedPuzzleCellExport>();
+        public List<SolvedPuzzleDirectionalLinkExport> DirectionalLinks = new List<SolvedPuzzleDirectionalLinkExport>();
         public List<SolvedPuzzleChangeLogEntryExport> ChangeLog = new List<SolvedPuzzleChangeLogEntryExport>();
 
         /** Parameterless constructor required for XML deserialization. */
@@ -168,11 +169,63 @@ namespace Sudoku.Models
                         changeExport.AddedCandidates.AddRange(change.AddedCandidates);
                     }
 
+                    if (change.OldDirectionalLinks != null)
+                    {
+                        changeExport.OldDirectionalLinks = ConvertDirectionalLinks(change.OldDirectionalLinks);
+                    }
+
+                    if (change.NewDirectionalLinks != null)
+                    {
+                        changeExport.NewDirectionalLinks = ConvertDirectionalLinks(change.NewDirectionalLinks);
+                    }
+
                     export.ChangeLog.Add(changeExport);
                 }
             }
 
+            if (board.DirectionalLinks != null)
+            {
+                export.DirectionalLinks = ConvertDirectionalLinks(board.DirectionalLinks);
+            }
+
             return export;
+        }
+
+        /**
+         * Convert runtime directional links into an XML-safe export payload.
+         *
+         * @param links Runtime directional links.
+         * @returns Export payload list.
+         */
+        private static List<SolvedPuzzleDirectionalLinkExport> ConvertDirectionalLinks(List<DirectionalCellLink> links)
+        {
+            var converted = new List<SolvedPuzzleDirectionalLinkExport>();
+            if (links == null)
+            {
+                return converted;
+            }
+
+            for (int i = 0; i < links.Count; i++)
+            {
+                var link = links[i];
+                if (link == null || link.Start == null || link.End == null)
+                {
+                    continue;
+                }
+
+                converted.Add(new SolvedPuzzleDirectionalLinkExport
+                {
+                    Kind = (int)link.Kind,
+                    StartRow = link.Start.Row,
+                    StartColumn = link.Start.Column,
+                    StartDigit = link.Start.Digit,
+                    EndRow = link.End.Row,
+                    EndColumn = link.End.Column,
+                    EndDigit = link.End.Digit,
+                });
+            }
+
+            return converted;
         }
     }
 
@@ -203,6 +256,21 @@ namespace Sudoku.Models
     }
 
     /**
+     * Serializable directional link export for solve-mode annotations.
+     */
+    [Serializable]
+    public class SolvedPuzzleDirectionalLinkExport
+    {
+        public int Kind;
+        public int StartRow;
+        public int StartColumn;
+        public int StartDigit;
+        public int EndRow;
+        public int EndColumn;
+        public int EndDigit;
+    }
+
+    /**
      * Serializable snapshot for one changelog entry in the solved-state export.
      */
     [Serializable]
@@ -217,6 +285,8 @@ namespace Sudoku.Models
         public bool ValueOnlySet;
         public List<int> RemovedCandidates = new List<int>();
         public List<int> AddedCandidates = new List<int>();
+        public List<SolvedPuzzleDirectionalLinkExport> OldDirectionalLinks = new List<SolvedPuzzleDirectionalLinkExport>();
+        public List<SolvedPuzzleDirectionalLinkExport> NewDirectionalLinks = new List<SolvedPuzzleDirectionalLinkExport>();
         public int GroupId;
         public string SourceRuleName;
         public string SourceRuleDescription;

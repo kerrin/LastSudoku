@@ -209,6 +209,126 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
+        public void ApplyAddDirectionalLink_RecordsLinkAndSupportsUndoRedo()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+
+            var execution = ManualCellEditCore.ApplyAddDirectionalLink(
+                board,
+                startRow: 0,
+                startColumn: 0,
+                startDigit: 1,
+                endRow: 0,
+                endColumn: 1,
+                endDigit: 1,
+                kind: DirectionalLinkKind.Strong);
+
+            Assert.IsTrue(execution.Applied);
+            Assert.IsNotNull(board.DirectionalLinks);
+            Assert.AreEqual(1, board.DirectionalLinks.Count);
+            Assert.AreEqual(DirectionalLinkKind.Strong, board.DirectionalLinks[0].Kind);
+            Assert.AreEqual(0, board.DirectionalLinks[0].Start.Row);
+            Assert.AreEqual(1, board.DirectionalLinks[0].End.Column);
+
+            Assert.IsTrue(board.UndoLast());
+            Assert.IsNotNull(board.DirectionalLinks);
+            Assert.AreEqual(0, board.DirectionalLinks.Count);
+
+            Assert.IsTrue(board.RedoNext());
+            Assert.AreEqual(1, board.DirectionalLinks.Count);
+            Assert.AreEqual(DirectionalLinkKind.Strong, board.DirectionalLinks[0].Kind);
+        }
+
+        [Test]
+        public void ApplyAddDirectionalLink_RejectsSameCellEndpoints()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+
+            var execution = ManualCellEditCore.ApplyAddDirectionalLink(
+                board,
+                startRow: 2,
+                startColumn: 2,
+                startDigit: 4,
+                endRow: 2,
+                endColumn: 2,
+                endDigit: 7,
+                kind: DirectionalLinkKind.Weak);
+
+            Assert.IsFalse(execution.Applied);
+            Assert.IsNotNull(execution.Description);
+            StringAssert.Contains("different start and end cells", execution.Description);
+            Assert.IsTrue(board.DirectionalLinks == null || board.DirectionalLinks.Count == 0);
+        }
+
+        [Test]
+        public void ApplyRemoveDirectionalLink_RemovesExistingLink_AndSupportsUndoRedo()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var addExecution = ManualCellEditCore.ApplyAddDirectionalLink(
+                board,
+                startRow: 4,
+                startColumn: 4,
+                startDigit: 8,
+                endRow: 5,
+                endColumn: 4,
+                endDigit: 8,
+                kind: DirectionalLinkKind.Weak);
+            Assert.IsTrue(addExecution.Applied);
+            Assert.AreEqual(1, board.DirectionalLinks.Count);
+
+            var removeExecution = ManualCellEditCore.ApplyRemoveDirectionalLink(
+                board,
+                startRow: 4,
+                startColumn: 4,
+                startDigit: 8,
+                endRow: 5,
+                endColumn: 4,
+                endDigit: 8,
+                kind: DirectionalLinkKind.Weak);
+
+            Assert.IsTrue(removeExecution.Applied);
+            Assert.AreEqual(0, board.DirectionalLinks.Count);
+
+            Assert.IsTrue(board.UndoLast());
+            Assert.AreEqual(1, board.DirectionalLinks.Count);
+            Assert.AreEqual(DirectionalLinkKind.Weak, board.DirectionalLinks[0].Kind);
+
+            Assert.IsTrue(board.RedoNext());
+            Assert.AreEqual(0, board.DirectionalLinks.Count);
+        }
+
+        [Test]
+        public void ApplyAddDirectionalLink_RejectsDuplicateLink()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+
+            var first = ManualCellEditCore.ApplyAddDirectionalLink(
+                board,
+                startRow: 1,
+                startColumn: 1,
+                startDigit: 3,
+                endRow: 1,
+                endColumn: 2,
+                endDigit: 3,
+                kind: DirectionalLinkKind.Strong);
+            Assert.IsTrue(first.Applied);
+
+            var second = ManualCellEditCore.ApplyAddDirectionalLink(
+                board,
+                startRow: 1,
+                startColumn: 1,
+                startDigit: 3,
+                endRow: 1,
+                endColumn: 2,
+                endDigit: 3,
+                kind: DirectionalLinkKind.Strong);
+
+            Assert.IsFalse(second.Applied);
+            StringAssert.Contains("already exists", second.Description);
+            Assert.AreEqual(1, board.DirectionalLinks.Count);
+        }
+
+        [Test]
         public void ResolveSmartAction_ReturnsNoOpSkeleton()
         {
             var board = TestHelpers.CreateEmptyBoard();

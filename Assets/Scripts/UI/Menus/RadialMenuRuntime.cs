@@ -119,6 +119,7 @@ namespace Sudoku.UI.Menus
 
         public bool IsOpen { get; private set; }
         public bool ValueOnlyMode { get; set; }
+        public bool LinkSelectionMode { get; set; }
         public RadialMenuSegmentId HoveredSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public RadialMenuSegmentId SelectedSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public Vector2 OpenScreenPosition { get; private set; }
@@ -401,7 +402,7 @@ namespace Sudoku.UI.Menus
 
         public string GetLabel(RadialMenuSegmentId segmentId)
         {
-            if (IsDigitSegment(segmentId) && _currentCellValue.HasValue)
+            if (!LinkSelectionMode && IsDigitSegment(segmentId) && _currentCellValue.HasValue)
             {
                 int? digit = SegmentIdToDigit(segmentId);
                 if (digit.HasValue && digit.Value == _currentCellValue.Value)
@@ -640,7 +641,7 @@ namespace Sudoku.UI.Menus
             float endAngle = centerAngle - 18f + 2f;
 
             DrawDigitWedgeBand(segmentId, ResolvePrimaryDigitAction(segmentId), GetLabel(segmentId), 0, enabled, startAngle, endAngle);
-            if (!ValueOnlyMode)
+            if (!ValueOnlyMode && !LinkSelectionMode)
             {
                 DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
                 DrawDigitWedgeBand(segmentId, RadialDigitActionType.RemoveCandidate, "-", 2, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.RemoveCandidate), startAngle, endAngle);
@@ -769,6 +770,7 @@ namespace Sudoku.UI.Menus
         private RadialDigitActionType ResolveDigitActionType(Vector2 screenPosition, RadialMenuSegmentId segmentId)
         {
             if (!IsDigitSegment(segmentId)) return RadialDigitActionType.DefaultDigit;
+            if (LinkSelectionMode) return RadialDigitActionType.DefaultDigit;
             if (ValueOnlyMode) return ResolvePrimaryDigitAction(segmentId);
             if (_isGivenCell) return RadialDigitActionType.DefaultDigit;
 
@@ -844,7 +846,7 @@ namespace Sudoku.UI.Menus
             segmentId = RadialMenuSegmentId.None;
             actionType = RadialDigitActionType.DefaultDigit;
 
-            if (ValueOnlyMode)
+            if (ValueOnlyMode || LinkSelectionMode)
             {
                 return false;
             }
@@ -1345,6 +1347,11 @@ namespace Sudoku.UI.Menus
 
         private RadialDigitActionType ResolvePrimaryDigitAction(RadialMenuSegmentId segmentId)
         {
+            if (LinkSelectionMode)
+            {
+                return RadialDigitActionType.DefaultDigit;
+            }
+
             if (_currentCellValue.HasValue)
             {
                 int? digit = SegmentIdToDigit(segmentId);
@@ -1448,6 +1455,27 @@ namespace Sudoku.UI.Menus
 
         private bool IsSegmentEnabled(RadialMenuSegmentId segmentId)
         {
+            if (LinkSelectionMode)
+            {
+                if (!IsDigitSegment(segmentId))
+                {
+                    return false;
+                }
+
+                int? digit = SegmentIdToDigit(segmentId);
+                if (!digit.HasValue)
+                {
+                    return false;
+                }
+
+                if (_currentCellValue.HasValue)
+                {
+                    return _currentCellValue.Value == digit.Value;
+                }
+
+                return _digitCandidatePresent[digit.Value];
+            }
+
             if (segmentId == RadialMenuSegmentId.TopNoAction)
             {
                 if (ValueOnlyMode)

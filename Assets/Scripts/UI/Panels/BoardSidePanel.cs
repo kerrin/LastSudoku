@@ -45,6 +45,8 @@ public class BoardSidePanel : MonoBehaviour
     private int _lastBoardSize = -1;
     private bool _preserveSceneLayout = true;
     private RectTransform _colourClearPanelRect;
+    private RectTransform _directionalLinkPanelRect;
+    private const float DirectionalLinkPanelWidth = 48f;
 
     private void Awake()
     {
@@ -115,6 +117,7 @@ public class BoardSidePanel : MonoBehaviour
         EnsurePanel();
         SyncApplyRulePanelVisibility();
         UpdateColourClearPanelLayout();
+        UpdateDirectionalLinkModePanelLayout();
         UpdatePanelGeometry();
     }
 
@@ -159,6 +162,7 @@ public class BoardSidePanel : MonoBehaviour
 
         if (shouldUpdate && !_preserveSceneLayout) UpdatePanelGeometry();
         UpdateColourClearPanelLayout();
+        UpdateDirectionalLinkModePanelLayout();
     }
 
     private void EnsurePanel()
@@ -196,6 +200,7 @@ public class BoardSidePanel : MonoBehaviour
         EnsureRuleListPanelAttached();
         EnsureCreateModeStatusPanelAttached();
         EnsureColourClearPanelAttached();
+        EnsureDirectionalLinkModePanelAttached();
     }
 
     /**
@@ -336,7 +341,22 @@ public class BoardSidePanel : MonoBehaviour
             }
         }
 
+        var directionalPanels = _panelRect.GetComponentsInChildren<DirectionalLinkModePanel>(true);
+        for (int i = 0; i < directionalPanels.Length; i++)
+        {
+            var p = directionalPanels[i];
+            if (p == null) continue;
+            p.Runner = runner;
+            p.BoardVisualizer = BoardVisualizer;
+            bool showDirectionalPanel = !isCreation;
+            if (p.gameObject.activeSelf != showDirectionalPanel)
+            {
+                p.gameObject.SetActive(showDirectionalPanel);
+            }
+        }
+
         UpdateColourClearPanelLayout();
+        UpdateDirectionalLinkModePanelLayout();
     }
 
     /**
@@ -539,6 +559,115 @@ public class BoardSidePanel : MonoBehaviour
         if (_colourClearPanelRect.GetSiblingIndex() != desiredIndex)
         {
             _colourClearPanelRect.SetSiblingIndex(desiredIndex);
+        }
+    }
+
+    /**
+     * Create and wire up the DirectionalLinkModePanel if it does not already exist.
+     */
+    private void EnsureDirectionalLinkModePanelAttached()
+    {
+        if (_panelRect == null || RulesArea == null)
+        {
+            return;
+        }
+
+        var existing = _panelRect.GetComponentInChildren<DirectionalLinkModePanel>(true);
+        if (existing != null)
+        {
+            existing.Runner = GetRunner();
+            existing.BoardVisualizer = BoardVisualizer;
+            var existingRect = existing.transform as RectTransform;
+            if (existingRect != null)
+            {
+                existingRect.SetParent(_panelRect, false);
+                _directionalLinkPanelRect = existingRect;
+            }
+
+            EnsureDirectionalLinkModePanelLayoutComponents(_directionalLinkPanelRect);
+            UpdateDirectionalLinkModePanelLayout();
+            return;
+        }
+
+        var panelGO = new GameObject("DirectionalLinkModePanel", typeof(RectTransform));
+        panelGO.transform.SetParent(_panelRect, false);
+
+        var rt = panelGO.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = Vector2.zero;
+        rt.sizeDelta = new Vector2(DirectionalLinkPanelWidth, 0f);
+
+        EnsureDirectionalLinkModePanelLayoutComponents(rt);
+
+        var panel = panelGO.AddComponent<DirectionalLinkModePanel>();
+        panel.Runner = GetRunner();
+        panel.BoardVisualizer = BoardVisualizer;
+        _directionalLinkPanelRect = rt;
+        UpdateDirectionalLinkModePanelLayout();
+        panelGO.SetActive(false);
+    }
+
+    private void EnsureDirectionalLinkModePanelLayoutComponents(RectTransform directionalPanelRect)
+    {
+        if (directionalPanelRect == null)
+        {
+            return;
+        }
+
+        var csf = directionalPanelRect.GetComponent<UnityEngine.UI.ContentSizeFitter>();
+        if (csf == null)
+        {
+            csf = directionalPanelRect.gameObject.AddComponent<UnityEngine.UI.ContentSizeFitter>();
+        }
+
+        csf.horizontalFit = UnityEngine.UI.ContentSizeFitter.FitMode.Unconstrained;
+        csf.verticalFit = UnityEngine.UI.ContentSizeFitter.FitMode.PreferredSize;
+    }
+
+    private void UpdateDirectionalLinkModePanelLayout()
+    {
+        if (_panelRect == null || RulesArea == null)
+        {
+            return;
+        }
+
+        if (_directionalLinkPanelRect == null)
+        {
+            var panel = _panelRect.GetComponentInChildren<DirectionalLinkModePanel>(true);
+            _directionalLinkPanelRect = panel != null ? panel.transform as RectTransform : null;
+            if (_directionalLinkPanelRect == null)
+            {
+                return;
+            }
+        }
+
+        if (_directionalLinkPanelRect.parent != _panelRect)
+        {
+            _directionalLinkPanelRect.SetParent(_panelRect, false);
+        }
+
+        _directionalLinkPanelRect.anchorMin = new Vector2(0f, 1f);
+        _directionalLinkPanelRect.anchorMax = new Vector2(0f, 1f);
+        _directionalLinkPanelRect.pivot = new Vector2(0f, 1f);
+
+        float anchorFromRules = RulesArea.anchoredPosition.y - RulesArea.rect.height - 6f;
+        float anchorFromColour = float.MinValue;
+        if (_colourClearPanelRect != null)
+        {
+            anchorFromColour = _colourClearPanelRect.anchoredPosition.y - _colourClearPanelRect.rect.height - 6f;
+        }
+
+        float yOffset = Mathf.Min(anchorFromRules, anchorFromColour == float.MinValue ? anchorFromRules : anchorFromColour);
+        _directionalLinkPanelRect.anchoredPosition = new Vector2(0f, yOffset);
+        _directionalLinkPanelRect.sizeDelta = new Vector2(DirectionalLinkPanelWidth, _directionalLinkPanelRect.sizeDelta.y);
+
+        int desiredIndex = _panelRect.childCount - 1;
+
+        if (_directionalLinkPanelRect.GetSiblingIndex() != desiredIndex)
+        {
+            _directionalLinkPanelRect.SetSiblingIndex(desiredIndex);
         }
     }
 }

@@ -44,6 +44,12 @@ namespace Sudoku.Solver.Rules
         /** Snapshot of the cell's per-digit colour annotations after the change. */
         public Dictionary<int, HashSet<HighlightColor>> NewDigitColors;
 
+        /** Snapshot of board-level directional links before the change. */
+        public List<DirectionalCellLink> OldDirectionalLinks;
+
+        /** Snapshot of board-level directional links after the change. */
+        public List<DirectionalCellLink> NewDirectionalLinks;
+
         /** Group identifier used to associate multiple CellChange entries produced
          *  by a single rule application so undo/redo can operate atomically. */
         public int GroupId;
@@ -188,6 +194,19 @@ namespace Sudoku.Solver.Rules
                 else if (cell.DigitColors == null)
                 {
                     cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
+                }
+
+                if (change.NewDirectionalLinks != null)
+                {
+                    board.DirectionalLinks = DirectionalCellLink.CloneList(change.NewDirectionalLinks) ?? new List<DirectionalCellLink>();
+                }
+                else if (change.OldDirectionalLinks != null)
+                {
+                    board.DirectionalLinks = DirectionalCellLink.CloneList(change.OldDirectionalLinks) ?? new List<DirectionalCellLink>();
+                }
+                else if (board.DirectionalLinks == null)
+                {
+                    board.DirectionalLinks = new List<DirectionalCellLink>();
                 }
             }
 

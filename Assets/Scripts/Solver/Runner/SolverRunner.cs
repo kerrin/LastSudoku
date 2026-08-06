@@ -949,6 +949,118 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Apply a manual directional-link add action and return the full execution outcome.
+         *
+         * @param startRow Start endpoint row.
+         * @param startColumn Start endpoint column.
+         * @param startDigit Start endpoint digit.
+         * @param endRow End endpoint row.
+         * @param endColumn End endpoint column.
+         * @param endDigit End endpoint digit.
+         * @param kind Link kind (strong/weak).
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualAddDirectionalLink(
+            int startRow,
+            int startColumn,
+            int startDigit,
+            int endRow,
+            int endColumn,
+            int endDigit,
+            DirectionalLinkKind kind)
+        {
+            if (_board == null) LoadBoardFromRows();
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode does not support directional links.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode does not support directional links."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyAddDirectionalLink(
+                    _board,
+                    startRow,
+                    startColumn,
+                    startDigit,
+                    endRow,
+                    endColumn,
+                    endDigit,
+                    kind);
+            }
+
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            FinalizeManualExecution(execution);
+            return execution;
+        }
+
+        /**
+         * Apply a manual directional-link remove action and return the full execution outcome.
+         *
+         * @param startRow Start endpoint row.
+         * @param startColumn Start endpoint column.
+         * @param startDigit Start endpoint digit.
+         * @param endRow End endpoint row.
+         * @param endColumn End endpoint column.
+         * @param endDigit End endpoint digit.
+         * @param kind Link kind (strong/weak).
+         * @returns Full execution result including no-op descriptions.
+         */
+        public ManualEditExecutionResult ExecuteManualRemoveDirectionalLink(
+            int startRow,
+            int startColumn,
+            int startDigit,
+            int endRow,
+            int endColumn,
+            int endDigit,
+            DirectionalLinkKind kind)
+        {
+            if (_board == null) LoadBoardFromRows();
+            ManualEditExecutionResult execution;
+            if (IsPuzzleCreationMode)
+            {
+                execution = new ManualEditExecutionResult
+                {
+                    Applied = false,
+                    Description = "Puzzle creation mode does not support directional links.",
+                    RuleResult = new RuleResult
+                    {
+                        Apply = false,
+                        Description = "Puzzle creation mode does not support directional links."
+                    }
+                };
+            }
+            else
+            {
+                execution = ManualCellEditCore.ApplyRemoveDirectionalLink(
+                    _board,
+                    startRow,
+                    startColumn,
+                    startDigit,
+                    endRow,
+                    endColumn,
+                    endDigit,
+                    kind);
+            }
+
+            LastAppliedRule = null;
+            LastRuleResult = execution.RuleResult;
+            PreviewRuleResult = null;
+            FinalizeManualExecution(execution);
+            return execution;
+        }
+
+        /**
          * Apply manual RemoveCandidate action to the board and record one atomic changelog group.
          *
          * @param row Zero-based row index.

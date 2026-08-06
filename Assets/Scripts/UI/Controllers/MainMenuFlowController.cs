@@ -1222,6 +1222,8 @@ namespace Sudoku.UI.Controllers
                 }
             }
 
+            board.DirectionalLinks = ConvertDirectionalLinkExports(solvedState.DirectionalLinks, board);
+
             var restoredChangeLog = new List<Solver.Rules.CellChange>();
             if (solvedState.ChangeLog != null)
             {
@@ -1251,7 +1253,9 @@ namespace Sudoku.UI.Controllers
                         SourceRuleName = source.SourceRuleName,
                         SourceRuleDescription = source.SourceRuleDescription,
                         RemovedCandidates = source.RemovedCandidates != null ? new List<int>(source.RemovedCandidates) : new List<int>(),
-                        AddedCandidates = source.AddedCandidates != null ? new List<int>(source.AddedCandidates) : new List<int>()
+                        AddedCandidates = source.AddedCandidates != null ? new List<int>(source.AddedCandidates) : new List<int>(),
+                        OldDirectionalLinks = ConvertDirectionalLinkExports(source.OldDirectionalLinks, board),
+                        NewDirectionalLinks = ConvertDirectionalLinkExports(source.NewDirectionalLinks, board)
                     };
 
                     restoredChangeLog.Add(change);
@@ -1288,6 +1292,90 @@ namespace Sudoku.UI.Controllers
 
             _lastObservedBoardFingerprint = ComputeBoardFingerprint(board);
             Debug.Log("MainMenuFlowController: Loaded solved-state puzzle from XML save.");
+        }
+
+        /**
+         * Convert solved-state directional-link exports into runtime model links.
+         *
+         * @param exports Serialized directional-link list from XML.
+         * @param board Current board used for range validation.
+         * @returns Restored directional-link list.
+         */
+        private static List<DirectionalCellLink> ConvertDirectionalLinkExports(List<SolvedPuzzleDirectionalLinkExport> exports, Board board)
+        {
+            var restored = new List<DirectionalCellLink>();
+            if (exports == null || board == null)
+            {
+                return restored;
+            }
+
+            for (int i = 0; i < exports.Count; i++)
+            {
+                var source = exports[i];
+                if (source == null)
+                {
+                    continue;
+                }
+
+                if (!Enum.IsDefined(typeof(DirectionalLinkKind), source.Kind))
+                {
+                    continue;
+                }
+
+                if (!IsDirectionalEndpointInBounds(board, source.StartRow, source.StartColumn, source.StartDigit)
+                    || !IsDirectionalEndpointInBounds(board, source.EndRow, source.EndColumn, source.EndDigit))
+                {
+                    continue;
+                }
+
+                if (source.StartRow == source.EndRow && source.StartColumn == source.EndColumn)
+                {
+                    continue;
+                }
+
+                restored.Add(new DirectionalCellLink
+                {
+                    Kind = (DirectionalLinkKind)source.Kind,
+                    Start = new DirectionalLinkEndpoint
+                    {
+                        Row = source.StartRow,
+                        Column = source.StartColumn,
+                        Digit = source.StartDigit,
+                    },
+                    End = new DirectionalLinkEndpoint
+                    {
+                        Row = source.EndRow,
+                        Column = source.EndColumn,
+                        Digit = source.EndDigit,
+                    }
+                });
+            }
+
+            return restored;
+        }
+
+        /**
+         * Validate one directional endpoint against board bounds and digit range.
+         *
+         * @param board Board used for range validation.
+         * @param row Endpoint row.
+         * @param column Endpoint column.
+         * @param digit Endpoint digit.
+         * @returns True when endpoint coordinates and digit are in range.
+         */
+        private static bool IsDirectionalEndpointInBounds(Board board, int row, int column, int digit)
+        {
+            if (board == null)
+            {
+                return false;
+            }
+
+            return row >= 0
+                && column >= 0
+                && row < board.Size
+                && column < board.Size
+                && digit >= 1
+                && digit <= board.Size;
         }
 
         /**

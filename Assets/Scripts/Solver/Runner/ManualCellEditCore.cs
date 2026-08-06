@@ -507,6 +507,178 @@ namespace Sudoku.Solver
         }
 
         /**
+         * Add a directional link between two endpoint digits and record it as one changelog group.
+         *
+         * @param board Source board.
+         * @param startRow Start endpoint row.
+         * @param startColumn Start endpoint column.
+         * @param startDigit Start endpoint digit.
+         * @param endRow End endpoint row.
+         * @param endColumn End endpoint column.
+         * @param endDigit End endpoint digit.
+         * @param kind Link kind (strong/weak).
+         * @returns Operation outcome and optional applied RuleResult.
+         */
+        public static ManualEditExecutionResult ApplyAddDirectionalLink(
+            Board board,
+            int startRow,
+            int startColumn,
+            int startDigit,
+            int endRow,
+            int endColumn,
+            int endDigit,
+            DirectionalLinkKind kind)
+        {
+            if (!TryGetAnyCell(board, startRow, startColumn, out var startCell, out var startReason))
+            {
+                return CreateNoOp(startReason);
+            }
+
+            if (!TryGetAnyCell(board, endRow, endColumn, out var endCell, out var endReason))
+            {
+                return CreateNoOp(endReason);
+            }
+
+            if (startRow == endRow && startColumn == endColumn)
+            {
+                return CreateNoOp("Directional links require different start and end cells.");
+            }
+
+            if (!IsValidEndpointDigit(board, startCell, startDigit, out var startDigitReason))
+            {
+                return CreateNoOp(startDigitReason);
+            }
+
+            if (!IsValidEndpointDigit(board, endCell, endDigit, out var endDigitReason))
+            {
+                return CreateNoOp(endDigitReason);
+            }
+
+            if (board.DirectionalLinks == null)
+            {
+                board.DirectionalLinks = new List<DirectionalCellLink>();
+            }
+
+            var link = new DirectionalCellLink
+            {
+                Kind = kind,
+                Start = new DirectionalLinkEndpoint { Row = startRow, Column = startColumn, Digit = startDigit },
+                End = new DirectionalLinkEndpoint { Row = endRow, Column = endColumn, Digit = endDigit }
+            };
+
+            if (ContainsDirectionalLink(board.DirectionalLinks, link))
+            {
+                return CreateNoOp("That directional link already exists.");
+            }
+
+            var oldLinks = DirectionalCellLink.CloneList(board.DirectionalLinks) ?? new List<DirectionalCellLink>();
+            var newLinks = DirectionalCellLink.CloneList(oldLinks) ?? new List<DirectionalCellLink>();
+            newLinks.Add(link.Clone());
+
+            var result = new RuleResult
+            {
+                Apply = true,
+                Description = $"Manual add {kind} link r{startRow + 1}c{startColumn + 1}:{startDigit} -> r{endRow + 1}c{endColumn + 1}:{endDigit}"
+            };
+
+            result.Changes.Add(new CellChange
+            {
+                Row = startRow,
+                Column = startColumn,
+                OldDirectionalLinks = oldLinks,
+                NewDirectionalLinks = newLinks
+            });
+
+            return ApplyAndRecord(board, result, "Manual Add Directional Link");
+        }
+
+        /**
+         * Remove a directional link between two endpoint digits and record it as one changelog group.
+         *
+         * @param board Source board.
+         * @param startRow Start endpoint row.
+         * @param startColumn Start endpoint column.
+         * @param startDigit Start endpoint digit.
+         * @param endRow End endpoint row.
+         * @param endColumn End endpoint column.
+         * @param endDigit End endpoint digit.
+         * @param kind Link kind (strong/weak).
+         * @returns Operation outcome and optional applied RuleResult.
+         */
+        public static ManualEditExecutionResult ApplyRemoveDirectionalLink(
+            Board board,
+            int startRow,
+            int startColumn,
+            int startDigit,
+            int endRow,
+            int endColumn,
+            int endDigit,
+            DirectionalLinkKind kind)
+        {
+            if (!TryGetAnyCell(board, startRow, startColumn, out _, out var startReason))
+            {
+                return CreateNoOp(startReason);
+            }
+
+            if (!TryGetAnyCell(board, endRow, endColumn, out _, out var endReason))
+            {
+                return CreateNoOp(endReason);
+            }
+
+            if (board.DirectionalLinks == null || board.DirectionalLinks.Count == 0)
+            {
+                return CreateNoOp("There are no directional links to remove.");
+            }
+
+            var target = new DirectionalCellLink
+            {
+                Kind = kind,
+                Start = new DirectionalLinkEndpoint { Row = startRow, Column = startColumn, Digit = startDigit },
+                End = new DirectionalLinkEndpoint { Row = endRow, Column = endColumn, Digit = endDigit }
+            };
+
+            var oldLinks = DirectionalCellLink.CloneList(board.DirectionalLinks) ?? new List<DirectionalCellLink>();
+            var newLinks = new List<DirectionalCellLink>();
+            bool removed = false;
+
+            for (int i = 0; i < oldLinks.Count; i++)
+            {
+                var current = oldLinks[i];
+                if (!removed && current != null && current.Equals(target))
+                {
+                    removed = true;
+                    continue;
+                }
+
+                if (current != null)
+                {
+                    newLinks.Add(current.Clone());
+                }
+            }
+
+            if (!removed)
+            {
+                return CreateNoOp("Directional link was not found.");
+            }
+
+            var result = new RuleResult
+            {
+                Apply = true,
+                Description = $"Manual remove {kind} link r{startRow + 1}c{startColumn + 1}:{startDigit} -> r{endRow + 1}c{endColumn + 1}:{endDigit}"
+            };
+
+            result.Changes.Add(new CellChange
+            {
+                Row = startRow,
+                Column = startColumn,
+                OldDirectionalLinks = oldLinks,
+                NewDirectionalLinks = newLinks
+            });
+
+            return ApplyAndRecord(board, result, "Manual Remove Directional Link");
+        }
+
+        /**
          * Apply manual candidate-remove edit and record it as one changelog group.
          *
          * @param board Source board.
@@ -595,6 +767,8 @@ namespace Sudoku.Solver
                     AddedCandidates = change.AddedCandidates != null ? new List<int>(change.AddedCandidates) : new List<int>(),
                     OldDigitColors = CellChange.CloneDigitColors(change.OldDigitColors),
                     NewDigitColors = CellChange.CloneDigitColors(change.NewDigitColors),
+                    OldDirectionalLinks = DirectionalCellLink.CloneList(change.OldDirectionalLinks),
+                    NewDirectionalLinks = DirectionalCellLink.CloneList(change.NewDirectionalLinks),
                     GroupId = groupId,
                     SourceRuleName = sourceRuleName,
                     SourceRuleDescription = result.Description
@@ -705,6 +879,70 @@ namespace Sudoku.Solver
             }
 
             return true;
+        }
+
+        /**
+         * Validate that a digit is currently represented in a cell as a value or candidate.
+         *
+         * @param board Source board.
+         * @param cell Cell to inspect.
+         * @param digit Digit to validate.
+         * @param reason Failure reason when validation fails.
+         * @returns True when the endpoint is valid for linking.
+         */
+        private static bool IsValidEndpointDigit(Board board, Cell cell, int digit, out string reason)
+        {
+            reason = string.Empty;
+
+            if (cell == null)
+            {
+                reason = "Target cell is missing.";
+                return false;
+            }
+
+            if (digit < 1 || digit > board.Size)
+            {
+                reason = $"Digit {digit} is outside board range 1..{board.Size}.";
+                return false;
+            }
+
+            bool represented = cell.Value.HasValue
+                ? cell.Value.Value == digit
+                : cell.Candidates != null && cell.Candidates.Contains(digit);
+
+            if (!represented)
+            {
+                reason = $"Digit {digit} is not currently represented in r{cell.Row + 1}c{cell.Column + 1}.";
+                return false;
+            }
+
+            return true;
+        }
+
+        /**
+         * Determine whether a directional link already exists in a link list.
+         *
+         * @param links Link collection to inspect.
+         * @param link Link to locate.
+         * @returns True when an equal link exists.
+         */
+        private static bool ContainsDirectionalLink(List<DirectionalCellLink> links, DirectionalCellLink link)
+        {
+            if (links == null || link == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < links.Count; i++)
+            {
+                var existing = links[i];
+                if (existing != null && existing.Equals(link))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

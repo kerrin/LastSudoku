@@ -29,6 +29,9 @@ namespace Sudoku.Models
         /** Next group id to assign when recording a new set of changes as an atomic group. */
         public int NextChangeGroupId = 1;
 
+        /** User-authored directional links between candidate/value endpoints in solve mode. */
+        public List<DirectionalCellLink> DirectionalLinks = new List<DirectionalCellLink>();
+
         /** A hash of the board state, used to detect changes. */
         public int StateHash = 0;
 
@@ -161,6 +164,30 @@ namespace Sudoku.Models
                                 hash = (hash * 31) + candidate;
                             }
                         }
+                    }
+                }
+
+                if (DirectionalLinks != null && DirectionalLinks.Count > 0)
+                {
+                    var orderedLinks = DirectionalLinks
+                        .Where(link => link != null && link.Start != null && link.End != null)
+                        .OrderBy(link => (int)link.Kind)
+                        .ThenBy(link => link.Start.Row)
+                        .ThenBy(link => link.Start.Column)
+                        .ThenBy(link => link.Start.Digit)
+                        .ThenBy(link => link.End.Row)
+                        .ThenBy(link => link.End.Column)
+                        .ThenBy(link => link.End.Digit);
+
+                    foreach (var link in orderedLinks)
+                    {
+                        hash = (hash * 31) + (int)link.Kind;
+                        hash = (hash * 31) + link.Start.Row;
+                        hash = (hash * 31) + link.Start.Column;
+                        hash = (hash * 31) + link.Start.Digit;
+                        hash = (hash * 31) + link.End.Row;
+                        hash = (hash * 31) + link.End.Column;
+                        hash = (hash * 31) + link.End.Digit;
                     }
                 }
 

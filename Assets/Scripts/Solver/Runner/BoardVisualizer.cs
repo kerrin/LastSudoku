@@ -18,6 +18,13 @@ namespace Sudoku.Solver
     [ExecuteInEditMode]
     public class BoardVisualizer : MonoBehaviour
     {
+        public enum DirectionalLinkToolMode
+        {
+            Off = 0,
+            Strong = 1,
+            Weak = 2,
+        }
+
         public enum NumericRadialActionMode
         {
             SetValue = 0,
@@ -52,6 +59,9 @@ namespace Sudoku.Solver
         [Tooltip("Default operation for digit segments. In ModifierDriven mode: Shift=RemoveCandidate, Ctrl/Cmd=AddCandidate, otherwise SetValue.")]
         public NumericRadialActionMode DigitActionMode = NumericRadialActionMode.ModifierDriven;
 
+        [Tooltip("Solve-mode directional link tool state.")]
+        public DirectionalLinkToolMode LinkToolMode = DirectionalLinkToolMode.Off;
+
         public enum HoldPhase
         {
             Idle = 0,
@@ -80,6 +90,30 @@ namespace Sudoku.Solver
         // last result logged to avoid spamming logs every frame
         private Sudoku.Solver.Rules.RuleResult _lastLoggedResultToShow;
         private bool _lastLoggedPreviewActive = false;
+        private DirectionalLinkEndpoint _pendingDirectionalLinkStart;
+        private Texture2D _linkCursorStrongThinTexture;
+        private Texture2D _linkCursorStrongBoldTexture;
+        private Texture2D _linkCursorWeakThinTexture;
+        private Texture2D _linkCursorWeakBoldTexture;
+        private CursorVisualState _appliedCursorVisualState = CursorVisualState.Default;
+        private DirectionalLinkToolMode _appliedCursorToolMode = DirectionalLinkToolMode.Off;
+
+        private enum CursorVisualState
+        {
+            Default = 0,
+            LinkReady = 1,
+            LinkPending = 2,
+        }
+
+        /**
+         * Current active directional-link tool mode.
+         */
+        public DirectionalLinkToolMode CurrentLinkToolMode => LinkToolMode;
+
+        /**
+         * True when link mode is active and waiting for end endpoint selection.
+         */
+        public bool IsAwaitingDirectionalLinkEnd => _pendingDirectionalLinkStart != null;
 
         private void EnsureStyles(int cellSize)
         {
@@ -333,6 +367,171 @@ namespace Sudoku.Solver
             return Runner != null && Runner.IsPuzzleCreationMode;
         }
 
+        /**
+         * Set the directional-link tool mode and refresh cursor/selection stage.
+         *
+         * @param mode Requested directional-link mode.
+         */
+        public void SetDirectionalLinkToolMode(DirectionalLinkToolMode mode)
+        {
+            LinkToolMode = mode;
+            if (mode == DirectionalLinkToolMode.Off)
+            {
+                _pendingDirectionalLinkStart = null;
+            }
+
+            ApplyCursorForLinkToolState();
+        }
+
+        /**
+         * Force the directional-link tool off and clear any pending endpoint.
+         */
+        public void DisableDirectionalLinkTool()
+        {
+            SetDirectionalLinkToolMode(DirectionalLinkToolMode.Off);
+        }
+
+        private bool IsDirectionalLinkModeActive()
+        {
+            return LinkToolMode == DirectionalLinkToolMode.Strong || LinkToolMode == DirectionalLinkToolMode.Weak;
+        }
+
+        private DirectionalLinkKind ResolveCurrentDirectionalLinkKind()
+        {
+            return LinkToolMode == DirectionalLinkToolMode.Weak
+                ? DirectionalLinkKind.Weak
+                : DirectionalLinkKind.Strong;
+        }
+
+        private void RefreshDirectionalLinkRuntimeState()
+        {
+            if (Runner != null && Runner.IsPuzzleCreationMode && LinkToolMode != DirectionalLinkToolMode.Off)
+            {
+                LinkToolMode = DirectionalLinkToolMode.Off;
+                _pendingDirectionalLinkStart = null;
+            }
+
+            ApplyCursorForLinkToolState();
+        }
+
+        private void ApplyCursorForLinkToolState()
+        {
+            CursorVisualState targetState;
+            if (!Application.isPlaying || !IsDirectionalLinkModeActive())
+            {
+                targetState = CursorVisualState.Default;
+            }
+            else
+            {
+                targetState = _pendingDirectionalLinkStart == null
+                    ? CursorVisualState.LinkReady
+                    : CursorVisualState.LinkPending;
+            }
+
+            if (targetState == _appliedCursorVisualState)
+            {
+                if (targetState == CursorVisualState.Default || _appliedCursorToolMode == LinkToolMode)
+                {
+                    return;
+                }
+            }
+
+            if (targetState == CursorVisualState.Default)
+            {
+                Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+                _appliedCursorVisualState = targetState;
+                _appliedCursorToolMode = DirectionalLinkToolMode.Off;
+                return;
+            }
+
+            EnsureLinkCursorTextures();
+            bool isBold = targetState == CursorVisualState.LinkPending;
+            var texture = LinkToolMode == DirectionalLinkToolMode.Weak
+                ? (isBold ? _linkCursorWeakBoldTexture : _linkCursorWeakThinTexture)
+                : (isBold ? _linkCursorStrongBoldTexture : _linkCursorStrongThinTexture);
+            Cursor.SetCursor(texture, new Vector2(2f, 2f), CursorMode.Auto);
+            _appliedCursorVisualState = targetState;
+            _appliedCursorToolMode = LinkToolMode;
+        }
+
+        private void EnsureLinkCursorTextures()
+        {
+            if (_linkCursorStrongThinTexture == null)
+            {
+                _linkCursorStrongThinTexture = BuildLinkCursorTexture(new Color(0.92f, 0.14f, 0.14f, 1f), 1);
+            }
+
+            if (_linkCursorStrongBoldTexture == null)
+            {
+                _linkCursorStrongBoldTexture = BuildLinkCursorTexture(new Color(0.92f, 0.14f, 0.14f, 1f), 3);
+            }
+
+            if (_linkCursorWeakThinTexture == null)
+            {
+                _linkCursorWeakThinTexture = BuildLinkCursorTexture(new Color(0.14f, 0.82f, 0.28f, 1f), 1);
+            }
+
+            if (_linkCursorWeakBoldTexture == null)
+            {
+                _linkCursorWeakBoldTexture = BuildLinkCursorTexture(new Color(0.14f, 0.82f, 0.28f, 1f), 3);
+            }
+        }
+
+        private static Texture2D BuildLinkCursorTexture(Color strokeColor, int thickness)
+        {
+            const int size = 32;
+            var texture = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                filterMode = FilterMode.Point,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color[size * size];
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                pixels[i] = new Color(0f, 0f, 0f, 0f);
+            }
+
+            // Arrow cursor body pointing to the top-left.
+            DrawCursorLine(pixels, size, 21, 4, 4, 21, strokeColor, thickness);
+            // Arrowhead at the top-left tip.
+            DrawCursorLine(pixels, size, 4, 21, 12, 21, strokeColor, thickness);
+            DrawCursorLine(pixels, size, 4, 21, 4, 13, strokeColor, thickness);
+
+            texture.SetPixels(pixels);
+            texture.Apply();
+            return texture;
+        }
+
+        private static void DrawCursorLine(Color[] pixels, int size, int x0, int y0, int x1, int y1, Color color, int thickness)
+        {
+            int steps = Mathf.Max(Mathf.Abs(x1 - x0), Mathf.Abs(y1 - y0));
+            if (steps <= 0)
+            {
+                return;
+            }
+
+            int half = Mathf.Max(0, thickness / 2);
+
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = i / (float)steps;
+                int x = Mathf.RoundToInt(Mathf.Lerp(x0, x1, t));
+                int y = Mathf.RoundToInt(Mathf.Lerp(y0, y1, t));
+                for (int oy = -half; oy <= half; oy++)
+                {
+                    int py = y + oy;
+                    if (py < 0 || py >= size) continue;
+                    for (int ox = -half; ox <= half; ox++)
+                    {
+                        int px = x + ox;
+                        if (px < 0 || px >= size) continue;
+                        pixels[py * size + px] = color;
+                    }
+                }
+            }
+        }
+
         private void LogHoldDebug(string message)
         {
             if (!EnableHoldDebugLogs) return;
@@ -365,6 +564,7 @@ namespace Sudoku.Solver
             if (!TryGetCellCenter(SelectedHoldRow, SelectedHoldColumn, out var center)) return;
 
             var menu = EnsureRadialMenu();
+            menu.LinkSelectionMode = IsDirectionalLinkModeActive();
             if (Runner != null && Runner.CurrentBoard != null &&
                 SelectedHoldRow >= 0 && SelectedHoldColumn >= 0 &&
                 SelectedHoldRow < Runner.CurrentBoard.Size && SelectedHoldColumn < Runner.CurrentBoard.Size)
@@ -382,7 +582,14 @@ namespace Sudoku.Solver
         private void Update()
         {
             if (!Application.isPlaying) return;
+            RefreshDirectionalLinkRuntimeState();
             PollHoldTimer();
+        }
+
+        private void OnDisable()
+        {
+            Cursor.SetCursor(null, Vector2.zero, CursorMode.Auto);
+            _appliedCursorVisualState = CursorVisualState.Default;
         }
 
         private string GetSmartActionLabel()
@@ -585,6 +792,8 @@ namespace Sudoku.Solver
                         }
                     }
 
+                    ApplyPendingDirectionalStartHighlight(r, c, cellRect, ref usedCandidateHighlightColors);
+
                     // background
                     GUI.Box(cellRect, "");
 
@@ -623,6 +832,8 @@ namespace Sudoku.Solver
             }
             HandlesEndGUI();
 
+                DrawDirectionalLinksOverlay();
+
                 if (_radialMenu != null && _radialMenu.IsOpen)
                 {
                     // Draw after the board in the same IMGUI pass to guarantee front-most layering.
@@ -642,6 +853,69 @@ namespace Sudoku.Solver
             }
         }
 
+        /**
+         * While selecting a directional link, highlight the staged start digit until the end endpoint is chosen.
+         *
+         * @param row Current rendered row.
+         * @param column Current rendered column.
+         * @param cellRect Current rendered cell rectangle.
+         * @param candidateHighlightColors Candidate highlight map for the rendered cell.
+         */
+        private void ApplyPendingDirectionalStartHighlight(
+            int row,
+            int column,
+            Rect cellRect,
+            ref System.Collections.Generic.Dictionary<int, Color> candidateHighlightColors)
+        {
+            if (!IsDirectionalLinkModeActive() || _pendingDirectionalLinkStart == null)
+            {
+                return;
+            }
+
+            if (_pendingDirectionalLinkStart.Row != row || _pendingDirectionalLinkStart.Column != column)
+            {
+                return;
+            }
+
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.Cells == null)
+            {
+                return;
+            }
+
+            var cell = Runner.CurrentBoard.Cells[row, column];
+            if (cell == null)
+            {
+                return;
+            }
+
+            Color pendingColor = LinkToolMode == DirectionalLinkToolMode.Weak
+                ? new Color(0.14f, 0.82f, 0.28f, 0.6f)
+                : new Color(0.96f, 0.28f, 0.28f, 0.6f);
+
+            if (cell.Value.HasValue)
+            {
+                if (cell.Value.Value == _pendingDirectionalLinkStart.Digit)
+                {
+                    DrawHighlightBorder(cellRect, pendingColor);
+                }
+
+                return;
+            }
+
+            if (cell.Candidates == null || !cell.Candidates.Contains(_pendingDirectionalLinkStart.Digit))
+            {
+                return;
+            }
+
+            if (candidateHighlightColors == null)
+            {
+                candidateHighlightColors = new System.Collections.Generic.Dictionary<int, Color>();
+            }
+
+            // Force the staged candidate to stay visible as the active start endpoint.
+            candidateHighlightColors[_pendingDirectionalLinkStart.Digit] = pendingColor;
+        }
+
         private void HandlePointerInput()
         {
             if (!IsBoardInteractionAvailable())
@@ -652,6 +926,16 @@ namespace Sudoku.Solver
 
             var evt = Event.current;
             if (evt == null) return;
+
+            if (IsDirectionalLinkModeActive() && evt.type == EventType.MouseDown && evt.button == 1)
+            {
+                if (TryRemoveDirectionalLinkNearPointer(evt.mousePosition, out var deleteOutcome))
+                {
+                    LastRadialOutcomeMessage = deleteOutcome;
+                    evt.Use();
+                    return;
+                }
+            }
 
             if (_radialMenu != null && _radialMenu.IsOpen)
             {
@@ -768,6 +1052,17 @@ namespace Sudoku.Solver
                 LastRadialOutcomeMessage = "No action selected.";
                 Runner.PublishManualNoOpOutcome(LastRadialOutcomeMessage);
                 LogHoldDebug($"Radial action no-op: {LastRadialOutcomeMessage}");
+                return;
+            }
+
+            if (IsDirectionalLinkModeActive())
+            {
+                LastRadialOutcomeMessage = ApplyDirectionalLinkSelection(selection);
+                if (!string.IsNullOrWhiteSpace(LastRadialOutcomeMessage))
+                {
+                    LogHoldDebug($"Radial directional-link action completed: outcome='{LastRadialOutcomeMessage}'");
+                }
+
                 return;
             }
 
@@ -1033,6 +1328,363 @@ namespace Sudoku.Solver
                 : "No colour annotation change applied.";
         }
 
+        /**
+         * Apply one radial selection step for the directional-link workflow.
+         *
+         * @param selection Final radial selection captured on release.
+         * @returns Human-readable status text.
+         */
+        private string ApplyDirectionalLinkSelection(RadialMenuSelection selection)
+        {
+            if (Runner == null || Runner.CurrentBoard == null)
+            {
+                return "Board interaction is unavailable.";
+            }
+
+            if (selection == null || !selection.Digit.HasValue)
+            {
+                return "Select a digit to place a directional link endpoint.";
+            }
+
+            int digit = selection.Digit.Value;
+            if (SelectedHoldRow < 0 || SelectedHoldColumn < 0)
+            {
+                return "No selected cell for directional link.";
+            }
+
+            if (_pendingDirectionalLinkStart == null)
+            {
+                _pendingDirectionalLinkStart = new DirectionalLinkEndpoint
+                {
+                    Row = SelectedHoldRow,
+                    Column = SelectedHoldColumn,
+                    Digit = digit,
+                };
+
+                ApplyCursorForLinkToolState();
+                return $"Directional link start set at r{SelectedHoldRow + 1}c{SelectedHoldColumn + 1}:{digit}. Select an end endpoint.";
+            }
+
+            var kind = ResolveCurrentDirectionalLinkKind();
+            bool linkExists = ContainsDirectionalLink(
+                _pendingDirectionalLinkStart.Row,
+                _pendingDirectionalLinkStart.Column,
+                _pendingDirectionalLinkStart.Digit,
+                SelectedHoldRow,
+                SelectedHoldColumn,
+                digit,
+                kind);
+
+            var execution = linkExists
+                ? Runner.ExecuteManualRemoveDirectionalLink(
+                    _pendingDirectionalLinkStart.Row,
+                    _pendingDirectionalLinkStart.Column,
+                    _pendingDirectionalLinkStart.Digit,
+                    SelectedHoldRow,
+                    SelectedHoldColumn,
+                    digit,
+                    kind)
+                : Runner.ExecuteManualAddDirectionalLink(
+                    _pendingDirectionalLinkStart.Row,
+                    _pendingDirectionalLinkStart.Column,
+                    _pendingDirectionalLinkStart.Digit,
+                    SelectedHoldRow,
+                    SelectedHoldColumn,
+                    digit,
+                    kind);
+
+            if (execution != null && execution.Applied)
+            {
+                _pendingDirectionalLinkStart = null;
+                ApplyCursorForLinkToolState();
+                return execution.Description ?? "Directional link added.";
+            }
+
+            string failedMessage = execution != null && !string.IsNullOrWhiteSpace(execution.Description)
+                ? execution.Description
+                : "No directional link change applied.";
+            return failedMessage;
+        }
+
+        private bool ContainsDirectionalLink(
+            int startRow,
+            int startColumn,
+            int startDigit,
+            int endRow,
+            int endColumn,
+            int endDigit,
+            DirectionalLinkKind kind)
+        {
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.DirectionalLinks == null)
+            {
+                return false;
+            }
+
+            var links = Runner.CurrentBoard.DirectionalLinks;
+            for (int i = 0; i < links.Count; i++)
+            {
+                var existing = links[i];
+                if (existing == null || existing.Start == null || existing.End == null)
+                {
+                    continue;
+                }
+
+                if (existing.Kind != kind)
+                {
+                    continue;
+                }
+
+                if (existing.Start.Row == startRow
+                    && existing.Start.Column == startColumn
+                    && existing.Start.Digit == startDigit
+                    && existing.End.Row == endRow
+                    && existing.End.Column == endColumn
+                    && existing.End.Digit == endDigit)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool TryRemoveDirectionalLinkNearPointer(Vector2 pointerPosition, out string outcome)
+        {
+            outcome = string.Empty;
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.DirectionalLinks == null)
+            {
+                return false;
+            }
+
+            if (!TryFindClosestDirectionalLink(pointerPosition, 12f, out var link))
+            {
+                return false;
+            }
+
+            var execution = Runner.ExecuteManualRemoveDirectionalLink(
+                link.Start.Row,
+                link.Start.Column,
+                link.Start.Digit,
+                link.End.Row,
+                link.End.Column,
+                link.End.Digit,
+                link.Kind);
+
+            if (execution != null && execution.Applied)
+            {
+                outcome = execution.Description ?? "Directional link removed.";
+                return true;
+            }
+
+            outcome = execution != null ? execution.Description : "Directional link was not removed.";
+            return !string.IsNullOrWhiteSpace(outcome);
+        }
+
+        private bool TryFindClosestDirectionalLink(Vector2 pointerPosition, float maxDistance, out DirectionalCellLink nearest)
+        {
+            nearest = null;
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.DirectionalLinks == null)
+            {
+                return false;
+            }
+
+            float bestDistance = maxDistance;
+            var links = Runner.CurrentBoard.DirectionalLinks;
+            for (int i = 0; i < links.Count; i++)
+            {
+                var link = links[i];
+                if (link == null || link.Start == null || link.End == null)
+                {
+                    continue;
+                }
+
+                if (!TryGetDirectionalEndpointPosition(link.Start, out var startPos)
+                    || !TryGetDirectionalEndpointPosition(link.End, out var endPos))
+                {
+                    continue;
+                }
+
+                float distance = DistancePointToSegment(pointerPosition, startPos, endPos);
+                if (distance <= bestDistance)
+                {
+                    bestDistance = distance;
+                    nearest = link;
+                }
+            }
+
+            return nearest != null;
+        }
+
+        private static float DistancePointToSegment(Vector2 point, Vector2 a, Vector2 b)
+        {
+            var ab = b - a;
+            float magnitudeSq = ab.sqrMagnitude;
+            if (magnitudeSq <= 0.0001f)
+            {
+                return Vector2.Distance(point, a);
+            }
+
+            float t = Vector2.Dot(point - a, ab) / magnitudeSq;
+            t = Mathf.Clamp01(t);
+            var projection = a + ab * t;
+            return Vector2.Distance(point, projection);
+        }
+
+        private bool TryGetDirectionalEndpointPosition(DirectionalLinkEndpoint endpoint, out Vector2 position)
+        {
+            position = default;
+            if (endpoint == null)
+            {
+                return false;
+            }
+
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.Cells == null)
+            {
+                return false;
+            }
+
+            int size = Runner.CurrentBoard.Size;
+            if (endpoint.Row < 0 || endpoint.Column < 0 || endpoint.Row >= size || endpoint.Column >= size)
+            {
+                return false;
+            }
+
+            if (!TryGetBoardRect(out var boardRect))
+            {
+                return false;
+            }
+
+            int cellSize = GetComputedCellSize();
+            if (cellSize <= 0)
+            {
+                return false;
+            }
+
+            var cell = Runner.CurrentBoard.Cells[endpoint.Row, endpoint.Column];
+            if (cell == null)
+            {
+                return false;
+            }
+
+            var cellRect = new Rect(
+                boardRect.x + endpoint.Column * cellSize,
+                boardRect.y + endpoint.Row * cellSize,
+                cellSize,
+                cellSize);
+
+            if (cell.Value.HasValue)
+            {
+                if (cell.Value.Value != endpoint.Digit)
+                {
+                    return false;
+                }
+
+                position = new Vector2(cellRect.center.x, cellRect.center.y);
+                return true;
+            }
+
+            if (cell.Candidates == null || !cell.Candidates.Contains(endpoint.Digit))
+            {
+                return false;
+            }
+
+            int idx = endpoint.Digit - 1;
+            int rr = idx / 3;
+            int cc = idx % 3;
+            float cs = cellRect.width / 3f;
+            var candidateRect = new Rect(cellRect.x + cc * cs + 2f, cellRect.y + rr * cs + 2f, cs - 4f, cs - 4f);
+            position = new Vector2(candidateRect.center.x, candidateRect.center.y);
+            return true;
+        }
+
+        private void DrawDirectionalLinksOverlay()
+        {
+            if (Runner == null || Runner.CurrentBoard == null || Runner.CurrentBoard.DirectionalLinks == null)
+            {
+                return;
+            }
+
+            var links = Runner.CurrentBoard.DirectionalLinks;
+            for (int i = 0; i < links.Count; i++)
+            {
+                var link = links[i];
+                if (link == null || link.Start == null || link.End == null)
+                {
+                    continue;
+                }
+
+                if (!TryGetDirectionalEndpointPosition(link.Start, out var startPos)
+                    || !TryGetDirectionalEndpointPosition(link.End, out var endPos))
+                {
+                    continue;
+                }
+
+                DrawDirectionalArrow(startPos, endPos, link.Kind);
+            }
+        }
+
+        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind)
+        {
+            float width = Mathf.Max(1f, GetComputedCellSize() * 0.026f);
+            Color color = kind == DirectionalLinkKind.Strong
+                ? new Color(0.96f, 0.28f, 0.28f, 1f)
+                : new Color(0.14f, 0.82f, 0.28f, 1f);
+
+            var direction = (end - start);
+            float length = direction.magnitude;
+            if (length <= 0.001f)
+            {
+                return;
+            }
+
+            var normalized = direction / length;
+            float headLength = Mathf.Max(7f, GetComputedCellSize() * 0.17f);
+            var lineEnd = end - normalized * headLength;
+
+            if (kind == DirectionalLinkKind.Strong)
+            {
+                DrawLineColored(start, lineEnd, width, color);
+            }
+            else
+            {
+                DrawDottedLine(start, lineEnd, width, color);
+            }
+
+            float sideAngle = 25f * Mathf.Deg2Rad;
+            var left = new Vector2(
+                normalized.x * Mathf.Cos(sideAngle) - normalized.y * Mathf.Sin(sideAngle),
+                normalized.x * Mathf.Sin(sideAngle) + normalized.y * Mathf.Cos(sideAngle));
+            var right = new Vector2(
+                normalized.x * Mathf.Cos(-sideAngle) - normalized.y * Mathf.Sin(-sideAngle),
+                normalized.x * Mathf.Sin(-sideAngle) + normalized.y * Mathf.Cos(-sideAngle));
+
+            DrawLineColored(end, end - left * headLength, width, color);
+            DrawLineColored(end, end - right * headLength, width, color);
+        }
+
+        private void DrawDottedLine(Vector2 start, Vector2 end, float width, Color color)
+        {
+            var direction = end - start;
+            float length = direction.magnitude;
+            if (length <= 0.001f)
+            {
+                return;
+            }
+
+            var normalized = direction / length;
+            float dashLength = Mathf.Max(4f, GetComputedCellSize() * 0.12f);
+            float gapLength = Mathf.Max(3f, GetComputedCellSize() * 0.09f);
+            float progress = 0f;
+            while (progress < length)
+            {
+                float segmentEnd = Mathf.Min(progress + dashLength, length);
+                var a = start + normalized * progress;
+                var b = start + normalized * segmentEnd;
+                DrawLineColored(a, b, width, color);
+                progress += dashLength + gapLength;
+            }
+        }
+
         private void PollHoldTimer()
         {
             if (CurrentHoldPhase != HoldPhase.Holding) return;
@@ -1263,14 +1915,36 @@ namespace Sudoku.Solver
             if (_lineTex == null)
             {
                 _lineTex = new Texture2D(1, 1);
-                _lineTex.SetPixel(0, 0, Color.black);
+                _lineTex.SetPixel(0, 0, Color.white);
                 _lineTex.Apply();
             }
             var angle = Mathf.Atan2(b.y - a.y, b.x - a.x) * Mathf.Rad2Deg;
             var length = Vector2.Distance(a, b);
+            var previous = GUI.color;
+            GUI.color = Color.black;
             GUIUtility.RotateAroundPivot(angle, a);
             GUI.DrawTexture(new Rect(a.x, a.y - width / 2f, length, width), _lineTex);
             GUIUtility.RotateAroundPivot(-angle, a);
+            GUI.color = previous;
+        }
+
+        private void DrawLineColored(Vector2 a, Vector2 b, float width, Color color)
+        {
+            if (_lineTex == null)
+            {
+                _lineTex = new Texture2D(1, 1);
+                _lineTex.SetPixel(0, 0, Color.white);
+                _lineTex.Apply();
+            }
+
+            var angle = Mathf.Atan2(b.y - a.y, b.x - a.x) * Mathf.Rad2Deg;
+            var length = Vector2.Distance(a, b);
+            var previous = GUI.color;
+            GUI.color = color;
+            GUIUtility.RotateAroundPivot(angle, a);
+            GUI.DrawTexture(new Rect(a.x, a.y - width / 2f, length, width), _lineTex);
+            GUIUtility.RotateAroundPivot(-angle, a);
+            GUI.color = previous;
         }
 
         private Texture2D _highlightTex;

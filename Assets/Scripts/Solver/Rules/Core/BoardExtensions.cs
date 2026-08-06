@@ -348,6 +348,15 @@ namespace Sudoku.Solver.Rules
                     {
                         cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
                     }
+
+                    if (ch.OldDirectionalLinks != null)
+                    {
+                        board.DirectionalLinks = DirectionalCellLink.CloneList(ch.OldDirectionalLinks) ?? new List<DirectionalCellLink>();
+                    }
+                    else if (ch.NewDirectionalLinks != null)
+                    {
+                        board.DirectionalLinks = new List<DirectionalCellLink>();
+                    }
                 }
 
                 board.ChangeLogIndex = start;
@@ -415,6 +424,15 @@ namespace Sudoku.Solver.Rules
                     else if (ch.OldDigitColors != null)
                     {
                         cell.DigitColors = new Dictionary<int, HashSet<HighlightColor>>();
+                    }
+
+                    if (ch.NewDirectionalLinks != null)
+                    {
+                        board.DirectionalLinks = DirectionalCellLink.CloneList(ch.NewDirectionalLinks) ?? new List<DirectionalCellLink>();
+                    }
+                    else if (ch.OldDirectionalLinks != null)
+                    {
+                        board.DirectionalLinks = new List<DirectionalCellLink>();
                     }
                 }
 
