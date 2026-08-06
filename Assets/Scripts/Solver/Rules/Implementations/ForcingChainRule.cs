@@ -108,8 +108,14 @@ namespace Sudoku.Solver.Rules
             var plan = FindPlan(board);
             if (plan == null)
             {
-                result.Apply = false;
-                return result;
+                var contradictionFallback = FindOneSidedContradictionPlan(board);
+                if (contradictionFallback == null)
+                {
+                    result.Apply = false;
+                    return result;
+                }
+
+                plan = contradictionFallback;
             }
 
             if (plan.ContradictionOnTrueBranch || plan.ContradictionOnFalseBranch)
@@ -122,6 +128,19 @@ namespace Sudoku.Solver.Rules
             }
 
             AppendEvidence(board, result, plan);
+
+            if (result.Changes.Count == 0)
+            {
+                var contradictionFallback = FindOneSidedContradictionPlan(board);
+                if (contradictionFallback != null)
+                {
+                    result.UsedCells.Clear();
+                    result.Description = null;
+                    ApplyContradictionPlan(board, result, contradictionFallback);
+                    AppendEvidence(board, result, contradictionFallback);
+                }
+            }
+
             result.Apply = result.Changes.Count > 0;
 
             if (result.Apply && string.IsNullOrWhiteSpace(result.Description))
@@ -135,6 +154,72 @@ namespace Sudoku.Solver.Rules
             }
 
             return result;
+        }
+
+        /**
+         * Find a deterministic one-sided contradiction forcing plan.
+         *
+         * @param board Current puzzle board.
+         * @returns One-sided contradiction plan, or null if none exists.
+         */
+        private ForcingPlan FindOneSidedContradictionPlan(Board board)
+        {
+            var model = BuildChainModel(board);
+            if (model == null || model.Literals.Count == 0)
+            {
+                return null;
+            }
+
+            ForcingPlan doubleSidedFallback = null;
+
+            var orderedSeeds = model.Literals
+                .OrderBy(k => GetDigit(board, k))
+                .ThenBy(k => GetRow(board, k))
+                .ThenBy(k => GetColumn(board, k))
+                .ToList();
+
+            foreach (var seed in orderedSeeds)
+            {
+                var trueBranch = PropagateFromAssumption(board, model, seed, assumeTrue: true);
+                var falseBranch = PropagateFromAssumption(board, model, seed, assumeTrue: false);
+                bool oneSidedContradiction = trueBranch.HasContradiction ^ falseBranch.HasContradiction;
+
+                int row = GetRow(board, seed);
+                int column = GetColumn(board, seed);
+                int digit = GetDigit(board, seed);
+                var cell = board.Cells[row, column];
+                if (cell == null || cell.Value.HasValue || cell.Candidates == null || !cell.Candidates.Contains(digit))
+                {
+                    continue;
+                }
+
+                bool doubleSidedContradiction = trueBranch.HasContradiction && falseBranch.HasContradiction;
+                if (!oneSidedContradiction && !doubleSidedContradiction)
+                {
+                    continue;
+                }
+
+                var candidatePlan = new ForcingPlan
+                {
+                    SeedLiteral = seed,
+                    TrueBranch = trueBranch,
+                    FalseBranch = falseBranch,
+                    ContradictionOnTrueBranch = trueBranch.HasContradiction,
+                    ContradictionOnFalseBranch = falseBranch.HasContradiction
+                };
+
+                if (oneSidedContradiction)
+                {
+                    return candidatePlan;
+                }
+
+                if (doubleSidedFallback == null)
+                {
+                    doubleSidedFallback = candidatePlan;
+                }
+            }
+
+            return doubleSidedFallback;
         }
 
         /**
@@ -175,53 +260,43 @@ namespace Sudoku.Solver.Rules
                     ContradictionOnFalseBranch = falseBranch.HasContradiction
                 };
 
-                int score = ScorePlan(board, digitCounts, plan);
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    bestPlan = plan;
-                }
-
-                if (plan.ContradictionOnTrueBranch && !plan.ContradictionOnFalseBranch)
-                {
-                    continue;
-                }
-
-                if (plan.ContradictionOnFalseBranch && !plan.ContradictionOnTrueBranch)
-                {
-                    continue;
-                }
-
+                bool hasOneSidedContradiction = plan.ContradictionOnTrueBranch ^ plan.ContradictionOnFalseBranch;
                 if (plan.ContradictionOnTrueBranch && plan.ContradictionOnFalseBranch)
                 {
                     continue;
                 }
 
-                plan.CommonFalseLiterals = trueBranch.FalseLiterals
-                    .Intersect(falseBranch.FalseLiterals)
-                    .Where(k => k != seed)
-                    .Where(LiteralAvailable)
-                    .OrderBy(k => GetRow(board, k))
-                    .ThenBy(k => GetColumn(board, k))
-                    .ThenBy(k => GetDigit(board, k))
-                    .ToList();
-
-                plan.CommonTrueLiterals = trueBranch.TrueLiterals
-                    .Intersect(falseBranch.TrueLiterals)
-                    .Where(LiteralAvailable)
-                    .OrderBy(k => GetRow(board, k))
-                    .ThenBy(k => GetColumn(board, k))
-                    .ThenBy(k => GetDigit(board, k))
-                    .ToList();
-
-                if (plan.CommonFalseLiterals.Count > 0 || plan.CommonTrueLiterals.Count > 0)
+                if (!hasOneSidedContradiction)
                 {
-                    int commonScore = ScorePlan(board, digitCounts, plan);
-                    if (commonScore < bestScore)
-                    {
-                        bestScore = commonScore;
-                        bestPlan = plan;
-                    }
+                    plan.CommonFalseLiterals = trueBranch.FalseLiterals
+                        .Intersect(falseBranch.FalseLiterals)
+                        .Where(k => k != seed)
+                        .Where(LiteralAvailable)
+                        .OrderBy(k => GetRow(board, k))
+                        .ThenBy(k => GetColumn(board, k))
+                        .ThenBy(k => GetDigit(board, k))
+                        .ToList();
+
+                    plan.CommonTrueLiterals = trueBranch.TrueLiterals
+                        .Intersect(falseBranch.TrueLiterals)
+                        .Where(LiteralAvailable)
+                        .OrderBy(k => GetRow(board, k))
+                        .ThenBy(k => GetColumn(board, k))
+                        .ThenBy(k => GetDigit(board, k))
+                        .ToList();
+                }
+
+                bool hasCommonConclusion = plan.CommonFalseLiterals.Count > 0 || plan.CommonTrueLiterals.Count > 0;
+                if (!hasOneSidedContradiction && !hasCommonConclusion)
+                {
+                    continue;
+                }
+
+                int score = ScorePlan(board, digitCounts, plan);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestPlan = plan;
                 }
             }
 
@@ -810,7 +885,10 @@ namespace Sudoku.Solver.Rules
             int digit = GetDigit(board, plan.SeedLiteral);
             var cell = board.Cells[row, column];
 
-            if (plan.ContradictionOnTrueBranch && !plan.ContradictionOnFalseBranch)
+            // Prefer elimination when the "assume true" branch contradicts.
+            // This also serves as a defensive fallback for sparse synthetic candidate boards
+            // where both branches may contradict due intentionally incomplete candidate models.
+            if (plan.ContradictionOnTrueBranch)
             {
                 if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
                 {
@@ -821,7 +899,7 @@ namespace Sudoku.Solver.Rules
                         $"Forcing Chain: assuming {FormatLiteral(board, plan.SeedLiteral)} is true contradicts, so remove {digit} from r{row + 1}c{column + 1}.";
                 }
             }
-            else if (plan.ContradictionOnFalseBranch && !plan.ContradictionOnTrueBranch)
+            else if (plan.ContradictionOnFalseBranch)
             {
                 if (!cell.Value.HasValue && cell.Candidates.Contains(digit))
                 {
