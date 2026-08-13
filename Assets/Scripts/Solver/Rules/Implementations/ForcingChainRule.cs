@@ -50,7 +50,7 @@ namespace Sudoku.Solver.Rules
             public List<int> Candidates = new List<int>();
             public Dictionary<int, int> CandidateIndexByKey = new Dictionary<int, int>();
             /** All links Strong and weak between candidates */
-            public Dictionary<int, List<int>> WeakConflictByKey = new Dictionary<int, List<int>>();
+            public Dictionary<int, List<int>> WeakLinksByKey = new Dictionary<int, List<int>>();
             /** Only strong links between candidates */
             public Dictionary<int, List<int>> StrongLinksByKey = new Dictionary<int, List<int>>();
             public Dictionary<int, List<int>> CellGroupsByIndex = new Dictionary<int, List<int>>();
@@ -258,7 +258,7 @@ namespace Sudoku.Solver.Rules
             }
 
             var digitCounts = BuildDigitCounts(board);
-            var orderedSeeds = model.Candidates
+            var orderedCandidates = model.Candidates
                 .OrderBy(k => digitCounts.TryGetValue(GetDigit(board, k), out var count) ? count : int.MaxValue)
                 .ThenBy(k => GetRow(board, k))
                 .ThenBy(k => GetColumn(board, k))
@@ -267,7 +267,7 @@ namespace Sudoku.Solver.Rules
             ForcingPlan bestPlan = null;
             int bestScore = int.MaxValue;
 
-            foreach (var seed in orderedSeeds)
+            foreach (var seed in orderedCandidates)
             {
                 var trueBranch = PropagateFromAssumption(board, model, seed, assumeTrue: true, enableUnitCompletion: false);
                 var falseBranch = PropagateFromAssumption(board, model, seed, assumeTrue: false, enableUnitCompletion: false);
@@ -546,13 +546,13 @@ namespace Sudoku.Solver.Rules
                 }
             }
 
-            // Weak conflicts: keep the full propagation graph so the rule can find
+            // Weak links: keep the full propagation graph so the rule can find
             // forcing chains, but only real conjugate-pair edges are exposed as
             // visible weak links in the preview. The rest remain internal conflict
             // steps used by the solver.
             foreach (var candidate in model.Candidates)
             {
-                var conflicts = new HashSet<int>();
+                var weakLinks = new HashSet<int>();
                 int row = GetRow(board, candidate);
                 int column = GetColumn(board, candidate);
                 int digit = GetDigit(board, candidate);
@@ -564,7 +564,7 @@ namespace Sudoku.Solver.Rules
                     foreach (int other in cell.Candidates)
                     {
                         if (other == digit) continue;
-                        conflicts.Add(MakeCandidateKey(board, row, column, other));
+                        weakLinks.Add(MakeCandidateKey(board, row, column, other));
                     }
                 }
 
@@ -573,10 +573,10 @@ namespace Sudoku.Solver.Rules
                 {
                     if (peer == null || peer.Value.HasValue || peer.Candidates == null) continue;
                     if (!peer.Candidates.Contains(digit)) continue;
-                    conflicts.Add(MakeCandidateKey(board, peer.Row, peer.Column, digit));
+                    weakLinks.Add(MakeCandidateKey(board, peer.Row, peer.Column, digit));
                 }
 
-                model.WeakConflictByKey[candidate] = conflicts.OrderBy(k => k).ToList();
+                model.WeakLinksByKey[candidate] = weakLinks.OrderBy(k => k).ToList();
             }
 
             return model;
@@ -634,22 +634,21 @@ namespace Sudoku.Solver.Rules
                     }
                 }
 
-                // Weak conflicts: true candidate excludes all conflicting candidates.
-                if (valueTrue && model.WeakConflictByKey.TryGetValue(candidate, out var conflicts))
+                // Weak links: true candidate excludes all conflicting candidates.
+                if (valueTrue && model.WeakLinksByKey.TryGetValue(candidate, out var weakLinks))
                 {
-                    for (int i = 0; i < conflicts.Count; i++)
+                    for (int i = 0; i < weakLinks.Count; i++)
                     {
-                        var conflict = conflicts[i];
                         TryEnqueueAssignment(
                             board,
                             model,
                             state,
-                            conflict,
+                            weakLinks[i],
                             false,
-                            "Weak conflict",
+                            "Weak link",
                             sourceCandidate: candidate,
                             sourceLinkKind: DirectionalLinkKind.Weak,
-                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, candidate, conflict));
+                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, candidate, weakLinks[i]));
                     }
                 }
 
@@ -1422,6 +1421,7 @@ namespace Sudoku.Solver.Rules
         {
             if (GetDigit(board, fromCandidate) != GetDigit(board, toCandidate))
             {
+                // Only show links between the same digits
                 return false;
             }
 
@@ -1432,25 +1432,29 @@ namespace Sudoku.Solver.Rules
 
             if (fromRow == toRow && fromColumn == toColumn)
             {
+                // Same cells never have a link, it is infered
                 return false;
             }
 
             if (fromRow == toRow)
             {
+                // Only show links when the digit is a conjugate pair (only 2 candidates) in the row
                 return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) == 2;
             }
 
             if (fromColumn == toColumn)
             {
+                // Only show links when the digit is a conjugate pair (only 2 candidates) in the column
                 return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) == 2;
             }
 
-            if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
-            {
-                return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) == 2;
-            }
+            // if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
+            // {
+            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the box
+            //     return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) == 2;
+            // }
 
-            return false;
+            return true;
         }
 
         /**
