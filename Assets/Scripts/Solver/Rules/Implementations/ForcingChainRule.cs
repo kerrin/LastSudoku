@@ -15,8 +15,8 @@ namespace Sudoku.Solver.Rules
      * 1. Contradiction forcing: if one assumption branch is impossible, the
      *    opposite truth value is forced.
      * 2. Common conclusion forcing (discontinuous AIC): if both branches force
-     *    the same literal false, eliminate that candidate; if both force the
-     *    same literal true, place that value.
+     *    the same candidate false, eliminate that candidate; if both force the
+     *    same candidate true, place that value.
      *
      * Strong links are built from:
      * - Bi-value cells (exactly two candidates in one cell).
@@ -48,7 +48,7 @@ namespace Sudoku.Solver.Rules
         {
             public int Size;
             public List<int> Candidates = new List<int>();
-            public Dictionary<int, int> LiteralIndexByKey = new Dictionary<int, int>();
+            public Dictionary<int, int> CandidateIndexByKey = new Dictionary<int, int>();
             /** All links Strong and weak between candidates */
             public Dictionary<int, List<int>> WeakConflictByKey = new Dictionary<int, List<int>>();
             /** Only strong links between candidates */
@@ -63,24 +63,24 @@ namespace Sudoku.Solver.Rules
             public HashSet<int> FalseCandidates = new HashSet<int>();
             public bool HasContradiction;
             public string ContradictionReason;
-            public int? ContradictionLiteral;
-            public int? ContradictionSourceLiteral;
+            public int? ContradictionCandidate;
+            public int? ContradictionSourceCandidate;
             public DirectionalLinkKind? ContradictionSourceLinkKind;
             public Queue<(int key, bool valueTrue)> Pending = new Queue<(int key, bool valueTrue)>();
             public List<int> AssignmentOrder = new List<int>();
-            public Dictionary<int, InferenceCause> InferenceCauseByLiteral = new Dictionary<int, InferenceCause>();
+            public Dictionary<int, InferenceCause> InferenceCauseByCandidate = new Dictionary<int, InferenceCause>();
         }
 
         private sealed class InferenceCause
         {
-            public int FromLiteral;
+            public int FromCandidate;
             public DirectionalLinkKind LinkKind;
             public bool IsPreviewLink;
         }
 
         private sealed class ForcingPlan
         {
-            public int SeedLiteral;
+            public int SeedCandidate;
             public PropagationState TrueBranch;
             public PropagationState FalseBranch;
             public List<int> CommonFalseCandidates = new List<int>();
@@ -222,7 +222,7 @@ namespace Sudoku.Solver.Rules
 
                 var candidatePlan = new ForcingPlan
                 {
-                    SeedLiteral = seed,
+                    SeedCandidate = seed,
                     TrueBranch = trueBranch,
                     FalseBranch = falseBranch,
                     ContradictionOnTrueBranch = trueBranch.HasContradiction,
@@ -274,7 +274,7 @@ namespace Sudoku.Solver.Rules
 
                 var plan = new ForcingPlan
                 {
-                    SeedLiteral = seed,
+                    SeedCandidate = seed,
                     TrueBranch = trueBranch,
                     FalseBranch = falseBranch,
                     ContradictionOnTrueBranch = trueBranch.HasContradiction,
@@ -296,7 +296,7 @@ namespace Sudoku.Solver.Rules
                     .Intersect(falseBranch.FalseCandidates)
                     .Where(k => k != seed)
                     .Where(k => !IsSameCell(board, k, seed))
-                    .Where(LiteralAvailable)
+                    .Where(CandidateAvailable)
                     .OrderBy(k => GetRow(board, k))
                     .ThenBy(k => GetColumn(board, k))
                     .ThenBy(k => GetDigit(board, k))
@@ -305,7 +305,7 @@ namespace Sudoku.Solver.Rules
                 plan.CommonTrueCandidates = trueBranch.TrueCandidates
                     .Intersect(falseBranch.TrueCandidates)
                     .Where(k => !IsSameCell(board, k, seed))
-                    .Where(LiteralAvailable)
+                    .Where(CandidateAvailable)
                     .OrderBy(k => GetRow(board, k))
                     .ThenBy(k => GetColumn(board, k))
                     .ThenBy(k => GetDigit(board, k))
@@ -327,9 +327,9 @@ namespace Sudoku.Solver.Rules
 
             return bestPlan;
 
-            bool LiteralAvailable(int literalKey)
+            bool CandidateAvailable(int candidateKey)
             {
-                return IsLiteralStillCandidate(board, literalKey);
+                return IsCandidateStillCandidate(board, candidateKey);
             }
         }
 
@@ -373,7 +373,7 @@ namespace Sudoku.Solver.Rules
          */
         private static int ScorePlan(Board board, IReadOnlyDictionary<int, int> digitCounts, ForcingPlan plan)
         {
-            int seedDigit = GetDigit(board, plan.SeedLiteral);
+            int seedDigit = GetDigit(board, plan.SeedCandidate);
             int seedCount = digitCounts.TryGetValue(seedDigit, out var c) ? c : int.MaxValue / 4;
 
             bool isCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
@@ -403,14 +403,14 @@ namespace Sudoku.Solver.Rules
          * Build the strong/weak inference graph used by propagation.
          *
          * @param board Current puzzle board.
-         * @returns Chain model containing literals, links, and deduction groups.
+         * @returns Chain model containing candidates, links, and deduction groups.
          */
         private ChainModel BuildChainModel(Board board)
         {
             var model = new ChainModel { Size = board.Size };
             int size = board.Size;
 
-            // Collect active candidate literals from unsolved cells.
+            // Collect active candidate candidates from unsolved cells.
             for (int row = 0; row < size; row++)
             {
                 for (int column = 0; column < size; column++)
@@ -423,8 +423,8 @@ namespace Sudoku.Solver.Rules
 
                     foreach (int digit in cell.Candidates.OrderBy(v => v))
                     {
-                        int key = MakeLiteralKey(board, row, column, digit);
-                        model.LiteralIndexByKey[key] = model.Candidates.Count;
+                        int key = MakeCandidateKey(board, row, column, digit);
+                        model.CandidateIndexByKey[key] = model.Candidates.Count;
                         model.Candidates.Add(key);
                     }
                 }
@@ -449,8 +449,8 @@ namespace Sudoku.Solver.Rules
                     if(cell.Candidates.Count == 2) {
                         // Strong Link
                         var pair = cell.Candidates.OrderBy(v => v).ToList();
-                        int a = MakeLiteralKey(board, row, column, pair[0]);
-                        int b = MakeLiteralKey(board, row, column, pair[1]);
+                        int a = MakeCandidateKey(board, row, column, pair[0]);
+                        int b = MakeCandidateKey(board, row, column, pair[1]);
                         AddLink(model.StrongLinksByKey, a, b);
                     }
                     if (cell.Candidates.Count != 0) {
@@ -459,7 +459,7 @@ namespace Sudoku.Solver.Rules
                         var group = new List<int>();
                         foreach (int digit in cell.Candidates)
                         {
-                            group.Add(MakeLiteralKey(board, row, column, digit));
+                            group.Add(MakeCandidateKey(board, row, column, digit));
                         }
 
                         model.CellGroupsByIndex[cellIndex] = group;
@@ -479,7 +479,7 @@ namespace Sudoku.Solver.Rules
                         if (cell == null || cell.Value.HasValue) continue;
                         if (cell.Candidates != null && cell.Candidates.Contains(digit))
                         {
-                            group.Add(MakeLiteralKey(board, row, column, digit));
+                            group.Add(MakeCandidateKey(board, row, column, digit));
                         }
                     }
 
@@ -504,7 +504,7 @@ namespace Sudoku.Solver.Rules
                         if (cell == null || cell.Value.HasValue) continue;
                         if (cell.Candidates != null && cell.Candidates.Contains(digit))
                         {
-                            group.Add(MakeLiteralKey(board, row, column, digit));
+                            group.Add(MakeCandidateKey(board, row, column, digit));
                         }
                     }
 
@@ -529,7 +529,7 @@ namespace Sudoku.Solver.Rules
                         if (cell == null || cell.Value.HasValue) continue;
                         if (cell.Candidates != null && cell.Candidates.Contains(digit))
                         {
-                            group.Add(MakeLiteralKey(board, cell.Row, cell.Column, digit));
+                            group.Add(MakeCandidateKey(board, cell.Row, cell.Column, digit));
                         }
                     }
 
@@ -550,33 +550,33 @@ namespace Sudoku.Solver.Rules
             // forcing chains, but only real conjugate-pair edges are exposed as
             // visible weak links in the preview. The rest remain internal conflict
             // steps used by the solver.
-            foreach (var literal in model.Candidates)
+            foreach (var candidate in model.Candidates)
             {
                 var conflicts = new HashSet<int>();
-                int row = GetRow(board, literal);
-                int column = GetColumn(board, literal);
-                int digit = GetDigit(board, literal);
+                int row = GetRow(board, candidate);
+                int column = GetColumn(board, candidate);
+                int digit = GetDigit(board, candidate);
                 var cell = board.Cells[row, column];
 
                 if (cell != null && cell.Candidates != null)
                 {
-                    // All other candidates in the same cell conflict with this literal.
+                    // All other candidates in the same cell conflict with this candidate.
                     foreach (int other in cell.Candidates)
                     {
                         if (other == digit) continue;
-                        conflicts.Add(MakeLiteralKey(board, row, column, other));
+                        conflicts.Add(MakeCandidateKey(board, row, column, other));
                     }
                 }
 
-                // All peers in the same row, column, or box that have this digit as a candidate conflict with this literal.
+                // All peers in the same row, column, or box that have this digit as a candidate conflict with this candidate.
                 foreach (var peer in board.GetPeers(board.Cells[row, column]))
                 {
                     if (peer == null || peer.Value.HasValue || peer.Candidates == null) continue;
                     if (!peer.Candidates.Contains(digit)) continue;
-                    conflicts.Add(MakeLiteralKey(board, peer.Row, peer.Column, digit));
+                    conflicts.Add(MakeCandidateKey(board, peer.Row, peer.Column, digit));
                 }
 
-                model.WeakConflictByKey[literal] = conflicts.OrderBy(k => k).ToList();
+                model.WeakConflictByKey[candidate] = conflicts.OrderBy(k => k).ToList();
             }
 
             return model;
@@ -587,19 +587,19 @@ namespace Sudoku.Solver.Rules
          *
          * @param board Current puzzle board.
          * @param model Inference graph model.
-         * @param seedLiteral Assumed literal key.
-         * @param assumeTrue Assumed truth value for the seed literal.
+         * @param seedCandidate Assumed candidate key.
+         * @param assumeTrue Assumed truth value for the seed candidate.
          * @returns Propagation state for the branch.
          */
         private PropagationState PropagateFromAssumption(
             Board board,
             ChainModel model,
-            int seedLiteral,
+            int seedCandidate,
             bool assumeTrue,
             bool enableUnitCompletion)
         {
             var state = new PropagationState();
-            TryEnqueueAssignment(board, model, state, seedLiteral, assumeTrue, "Seed assumption");
+            TryEnqueueAssignment(board, model, state, seedCandidate, assumeTrue, "Seed assumption");
 
             while (state.Pending.Count > 0 && !state.HasContradiction)
             {
@@ -610,15 +610,15 @@ namespace Sudoku.Solver.Rules
                     break;
                 }
 
-                var (literal, valueTrue) = state.Pending.Dequeue();
-                if (!ApplyAssignment(board, model, state, literal, valueTrue))
+                var (candidate, valueTrue) = state.Pending.Dequeue();
+                if (!ApplyAssignment(board, model, state, candidate, valueTrue))
                 {
                     continue;
                 }
 
                 // Strong-link propagation:
                 // false on one endpoint forces true on the other, true forces false.
-                if (model.StrongLinksByKey.TryGetValue(literal, out var links))
+                if (model.StrongLinksByKey.TryGetValue(candidate, out var links))
                 {
                     for (int i = 0; i < links.Count; i++)
                     {
@@ -629,13 +629,13 @@ namespace Sudoku.Solver.Rules
                             links[i],
                             !valueTrue,
                             "Strong link",
-                            sourceLiteral: literal,
+                            sourceCandidate: candidate,
                             sourceLinkKind: DirectionalLinkKind.Strong);
                     }
                 }
 
-                // Weak conflicts: true literal excludes all conflicting literals.
-                if (valueTrue && model.WeakConflictByKey.TryGetValue(literal, out var conflicts))
+                // Weak conflicts: true candidate excludes all conflicting candidates.
+                if (valueTrue && model.WeakConflictByKey.TryGetValue(candidate, out var conflicts))
                 {
                     for (int i = 0; i < conflicts.Count; i++)
                     {
@@ -647,15 +647,15 @@ namespace Sudoku.Solver.Rules
                             conflict,
                             false,
                             "Weak conflict",
-                            sourceLiteral: literal,
+                            sourceCandidate: candidate,
                             sourceLinkKind: DirectionalLinkKind.Weak,
-                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, literal, conflict));
+                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, candidate, conflict));
                     }
                 }
 
                 // Local cell completion is safe and useful for forcing chains:
                 // if all but one candidates in a cell are false, the last one is true.
-                ResolveCellGroup(board, model, state, GetRow(board, literal), GetColumn(board, literal));
+                ResolveCellGroup(board, model, state, GetRow(board, candidate), GetColumn(board, candidate));
 
                 if (enableUnitCompletion)
                 {
@@ -665,9 +665,9 @@ namespace Sudoku.Solver.Rules
                         board,
                         model,
                         state,
-                        GetRow(board, literal),
-                        GetColumn(board, literal),
-                        GetDigit(board, literal));
+                        GetRow(board, candidate),
+                        GetColumn(board, candidate),
+                        GetDigit(board, candidate));
                 }
             }
 
@@ -675,12 +675,12 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Enqueue a literal assignment while preserving contradiction checks.
+         * Enqueue a candidate assignment while preserving contradiction checks.
          *
          * @param board Current puzzle board.
          * @param model Inference graph model.
          * @param state Branch state.
-         * @param literal Literal key.
+         * @param candidate Candidate key.
          * @param valueTrue Assigned truth value.
          * @param reason Human-readable enqueue reason.
          */
@@ -688,10 +688,10 @@ namespace Sudoku.Solver.Rules
             Board board,
             ChainModel model,
             PropagationState state,
-            int literal,
+            int candidate,
             bool valueTrue,
             string reason,
-            int? sourceLiteral = null,
+            int? sourceCandidate = null,
             DirectionalLinkKind? sourceLinkKind = null,
             bool isPreviewLink = true)
         {
@@ -700,53 +700,53 @@ namespace Sudoku.Solver.Rules
                 return;
             }
 
-            if (!model.LiteralIndexByKey.ContainsKey(literal))
+            if (!model.CandidateIndexByKey.ContainsKey(candidate))
             {
                 return;
             }
 
             if (valueTrue)
             {
-                if (state.FalseCandidates.Contains(literal))
+                if (state.FalseCandidates.Contains(candidate))
                 {
                     state.HasContradiction = true;
-                    state.ContradictionLiteral = literal;
-                    state.ContradictionSourceLiteral = sourceLiteral;
+                    state.ContradictionCandidate = candidate;
+                    state.ContradictionSourceCandidate = sourceCandidate;
                     state.ContradictionSourceLinkKind = sourceLinkKind;
-                    state.ContradictionReason = $"Literal {FormatLiteral(board, literal)} became both true and false ({reason}).";
+                    state.ContradictionReason = $"Candidate {FormatCandidate(board, candidate)} became both true and false ({reason}).";
                     return;
                 }
 
-                if (state.TrueCandidates.Contains(literal))
+                if (state.TrueCandidates.Contains(candidate))
                 {
                     return;
                 }
             }
             else
             {
-                if (state.TrueCandidates.Contains(literal))
+                if (state.TrueCandidates.Contains(candidate))
                 {
                     state.HasContradiction = true;
-                    state.ContradictionLiteral = literal;
-                    state.ContradictionSourceLiteral = sourceLiteral;
+                    state.ContradictionCandidate = candidate;
+                    state.ContradictionSourceCandidate = sourceCandidate;
                     state.ContradictionSourceLinkKind = sourceLinkKind;
-                    state.ContradictionReason = $"Literal {FormatLiteral(board, literal)} became both true and false ({reason}).";
+                    state.ContradictionReason = $"Candidate {FormatCandidate(board, candidate)} became both true and false ({reason}).";
                     return;
                 }
 
-                if (state.FalseCandidates.Contains(literal))
+                if (state.FalseCandidates.Contains(candidate))
                 {
                     return;
                 }
             }
 
-            state.Pending.Enqueue((literal, valueTrue));
+            state.Pending.Enqueue((candidate, valueTrue));
 
-            if (sourceLiteral.HasValue && sourceLinkKind.HasValue && !state.InferenceCauseByLiteral.ContainsKey(literal))
+            if (sourceCandidate.HasValue && sourceLinkKind.HasValue && !state.InferenceCauseByCandidate.ContainsKey(candidate))
             {
-                state.InferenceCauseByLiteral[literal] = new InferenceCause
+                state.InferenceCauseByCandidate[candidate] = new InferenceCause
                 {
-                    FromLiteral = sourceLiteral.Value,
+                    FromCandidate = sourceCandidate.Value,
                     LinkKind = sourceLinkKind.Value,
                     IsPreviewLink = isPreviewLink,
                 };
@@ -754,53 +754,53 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Apply one pending literal assignment into branch state.
+         * Apply one pending candidate assignment into branch state.
          *
          * @param board Current puzzle board.
          * @param model Inference graph model.
          * @param state Branch state.
-         * @param literal Literal key.
+         * @param candidate Candidate key.
          * @param valueTrue Assigned truth value.
          * @returns True when the assignment changed state and should propagate.
          */
-        private bool ApplyAssignment(Board board, ChainModel model, PropagationState state, int literal, bool valueTrue)
+        private bool ApplyAssignment(Board board, ChainModel model, PropagationState state, int candidate, bool valueTrue)
         {
             if (valueTrue)
             {
-                if (state.TrueCandidates.Contains(literal))
+                if (state.TrueCandidates.Contains(candidate))
                 {
                     return false;
                 }
 
-                if (state.FalseCandidates.Contains(literal))
+                if (state.FalseCandidates.Contains(candidate))
                 {
                     state.HasContradiction = true;
-                    state.ContradictionLiteral = literal;
-                    state.ContradictionReason = $"Literal {FormatLiteral(board, literal)} became both true and false.";
+                    state.ContradictionCandidate = candidate;
+                    state.ContradictionReason = $"Candidate {FormatCandidate(board, candidate)} became both true and false.";
                     return false;
                 }
 
-                state.TrueCandidates.Add(literal);
+                state.TrueCandidates.Add(candidate);
             }
             else
             {
-                if (state.FalseCandidates.Contains(literal))
+                if (state.FalseCandidates.Contains(candidate))
                 {
                     return false;
                 }
 
-                if (state.TrueCandidates.Contains(literal))
+                if (state.TrueCandidates.Contains(candidate))
                 {
                     state.HasContradiction = true;
-                    state.ContradictionLiteral = literal;
-                    state.ContradictionReason = $"Literal {FormatLiteral(board, literal)} became both true and false.";
+                    state.ContradictionCandidate = candidate;
+                    state.ContradictionReason = $"Candidate {FormatCandidate(board, candidate)} became both true and false.";
                     return false;
                 }
 
-                state.FalseCandidates.Add(literal);
+                state.FalseCandidates.Add(candidate);
             }
 
-            state.AssignmentOrder.Add(literal);
+            state.AssignmentOrder.Add(candidate);
             return true;
         }
 
@@ -823,7 +823,7 @@ namespace Sudoku.Solver.Rules
 
             int trueCount = 0;
             int unknownCount = 0;
-            int unknownLiteral = 0;
+            int unknownCandidate = 0;
 
             for (int i = 0; i < group.Count; i++)
             {
@@ -837,7 +837,7 @@ namespace Sudoku.Solver.Rules
                 if (!state.FalseCandidates.Contains(key))
                 {
                     unknownCount++;
-                    unknownLiteral = key;
+                    unknownCandidate = key;
                 }
             }
 
@@ -857,19 +857,19 @@ namespace Sudoku.Solver.Rules
 
             if (trueCount == 0 && unknownCount == 1)
             {
-                TryEnqueueAssignment(board, model, state, unknownLiteral, true, "Cell completion");
+                TryEnqueueAssignment(board, model, state, unknownCandidate, true, "Cell completion");
             }
         }
 
         /**
-         * Resolve row/column/box digit groups impacted by a literal assignment.
+         * Resolve row/column/box digit groups impacted by a candidate assignment.
          *
          * @param board Current puzzle board.
          * @param model Inference graph model.
          * @param state Branch state.
-         * @param row Literal row.
-         * @param column Literal column.
-         * @param digit Literal digit.
+         * @param row Candidate row.
+         * @param column Candidate column.
+         * @param digit Candidate digit.
          */
         private void ResolveUnitGroups(Board board, ChainModel model, PropagationState state, int row, int column, int digit)
         {
@@ -899,7 +899,7 @@ namespace Sudoku.Solver.Rules
             int trueCount = 0;
             int unknownCount = 0;
             int falseCount = 0;
-            int unknownLiteral = 0;
+            int unknownCandidate = 0;
 
             for (int i = 0; i < group.Count; i++)
             {
@@ -913,7 +913,7 @@ namespace Sudoku.Solver.Rules
                 if (!state.FalseCandidates.Contains(key))
                 {
                     unknownCount++;
-                    unknownLiteral = key;
+                    unknownCandidate = key;
                 }
                 else
                 {
@@ -940,7 +940,7 @@ namespace Sudoku.Solver.Rules
             // boards from dominating forcing-chain test scenarios.
             if (trueCount == 0 && unknownCount == 1 && falseCount > 0)
             {
-                TryEnqueueAssignment(board, model, state, unknownLiteral, true, "Unit completion");
+                TryEnqueueAssignment(board, model, state, unknownCandidate, true, "Unit completion");
             }
         }
 
@@ -953,9 +953,9 @@ namespace Sudoku.Solver.Rules
          */
         private void ApplyContradictionPlan(Board board, RuleResult result, ForcingPlan plan)
         {
-            int row = GetRow(board, plan.SeedLiteral);
-            int column = GetColumn(board, plan.SeedLiteral);
-            int digit = GetDigit(board, plan.SeedLiteral);
+            int row = GetRow(board, plan.SeedCandidate);
+            int column = GetColumn(board, plan.SeedCandidate);
+            int digit = GetDigit(board, plan.SeedCandidate);
             var cell = board.Cells[row, column];
 
             // Prefer elimination when the "assume true" branch contradicts.
@@ -969,7 +969,7 @@ namespace Sudoku.Solver.Rules
                     change.RemovedCandidates.Add(digit);
                     result.Changes.Add(change);
                     result.Description =
-                        $"Forcing Chain: assuming {FormatLiteral(board, plan.SeedLiteral)} is true contradicts, so remove {digit} from r{row + 1}c{column + 1}.";
+                        $"Forcing Chain: assuming {FormatCandidate(board, plan.SeedCandidate)} is true contradicts, so remove {digit} from r{row + 1}c{column + 1}.";
                 }
             }
             else if (plan.ContradictionOnFalseBranch)
@@ -985,7 +985,7 @@ namespace Sudoku.Solver.Rules
                         ForceSetValue = false
                     });
                     result.Description =
-                        $"Forcing Chain: assuming {FormatLiteral(board, plan.SeedLiteral)} is false contradicts, so set r{row + 1}c{column + 1}={digit}.";
+                        $"Forcing Chain: assuming {FormatCandidate(board, plan.SeedCandidate)} is false contradicts, so set r{row + 1}c{column + 1}={digit}.";
                 }
             }
         }
@@ -999,12 +999,12 @@ namespace Sudoku.Solver.Rules
          */
         private void ApplyCommonConclusionPlan(Board board, RuleResult result, ForcingPlan plan)
         {
-            // Prefer a direct placement when both branches force a literal true.
-            foreach (int literal in plan.CommonTrueCandidates)
+            // Prefer a direct placement when both branches force a candidate true.
+            foreach (int candidate in plan.CommonTrueCandidates)
             {
-                int row = GetRow(board, literal);
-                int column = GetColumn(board, literal);
-                int digit = GetDigit(board, literal);
+                int row = GetRow(board, candidate);
+                int column = GetColumn(board, candidate);
+                int digit = GetDigit(board, candidate);
                 var cell = board.Cells[row, column];
                 if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
                 {
@@ -1028,10 +1028,10 @@ namespace Sudoku.Solver.Rules
             int added = 0;
             for (int i = 0; i < plan.CommonFalseCandidates.Count; i++)
             {
-                int literal = plan.CommonFalseCandidates[i];
-                int row = GetRow(board, literal);
-                int column = GetColumn(board, literal);
-                int digit = GetDigit(board, literal);
+                int candidate = plan.CommonFalseCandidates[i];
+                int row = GetRow(board, candidate);
+                int column = GetColumn(board, candidate);
+                int digit = GetDigit(board, candidate);
                 var cell = board.Cells[row, column];
 
                 if (cell.Value.HasValue || !cell.Candidates.Contains(digit))
@@ -1055,7 +1055,7 @@ namespace Sudoku.Solver.Rules
 
             if (added > 0)
             {
-                result.Description = $"Forcing Chain removed candidates from {added} forced-false literal(s).";
+                result.Description = $"Forcing Chain removed candidates from {added} forced-false candidate(s).";
             }
         }
 
@@ -1068,8 +1068,8 @@ namespace Sudoku.Solver.Rules
          */
         private void AppendEvidence(Board board, RuleResult result, ForcingPlan plan)
         {
-            AddUsedCell(result, GetRow(board, plan.SeedLiteral), GetColumn(board, plan.SeedLiteral), GetDigit(board, plan.SeedLiteral), TargetATag);
-            AddUsedCell(result, GetRow(board, plan.SeedLiteral), GetColumn(board, plan.SeedLiteral), GetDigit(board, plan.SeedLiteral), TargetBTag);
+            AddUsedCell(result, GetRow(board, plan.SeedCandidate), GetColumn(board, plan.SeedCandidate), GetDigit(board, plan.SeedCandidate), TargetATag);
+            AddUsedCell(result, GetRow(board, plan.SeedCandidate), GetColumn(board, plan.SeedCandidate), GetDigit(board, plan.SeedCandidate), TargetBTag);
 
             bool emittedPathEvidence = AppendCausalEvidencePaths(board, result, plan);
             if (emittedPathEvidence)
@@ -1079,15 +1079,15 @@ namespace Sudoku.Solver.Rules
 
             // Fallback: preserve old bounded evidence when no causal path can be reconstructed.
             var trueEvidence = plan.TrueBranch.AssignmentOrder.Take(MaxEvidencePerBranch).ToList();
-            foreach (int literal in trueEvidence)
+            foreach (int candidate in trueEvidence)
             {
-                AddUsedCell(result, GetRow(board, literal), GetColumn(board, literal), GetDigit(board, literal), DeductionTag);
+                AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), DeductionTag);
             }
 
             var falseEvidence = plan.FalseBranch.AssignmentOrder.Take(MaxEvidencePerBranch).ToList();
-            foreach (int literal in falseEvidence)
+            foreach (int candidate in falseEvidence)
             {
-                AddUsedCell(result, GetRow(board, literal), GetColumn(board, literal), GetDigit(board, literal), DeductionTag);
+                AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), DeductionTag);
             }
 
             AppendEvidenceLinks(board, result, plan.TrueBranch, trueEvidence);
@@ -1096,7 +1096,7 @@ namespace Sudoku.Solver.Rules
 
         /**
          * Build branch evidence from actual inference parent chains that lead to
-         * the literals changed by the selected deduction.
+         * the candidates changed by the selected deduction.
          *
          * @param board Current puzzle board.
          * @param result Rule result accumulator.
@@ -1115,40 +1115,40 @@ namespace Sudoku.Solver.Rules
 
             if (plan.ContradictionOnTrueBranch)
             {
-                addedAny |= AppendContradictionEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedLiteral);
+                addedAny |= AppendContradictionEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate);
             }
 
             if (plan.ContradictionOnFalseBranch)
             {
-                addedAny |= AppendContradictionEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedLiteral);
+                addedAny |= AppendContradictionEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate);
             }
 
             bool usingCommonConclusions = !plan.ContradictionOnTrueBranch && !plan.ContradictionOnFalseBranch;
             if (usingCommonConclusions)
             {
-                foreach (int literal in changedCandidates)
+                foreach (int candidate in changedCandidates)
                 {
-                    bool expectTrue = plan.CommonTrueCandidates.Contains(literal);
-                    bool expectFalse = plan.CommonFalseCandidates.Contains(literal);
+                    bool expectTrue = plan.CommonTrueCandidates.Contains(candidate);
+                    bool expectFalse = plan.CommonFalseCandidates.Contains(candidate);
 
-                    if (expectTrue && plan.TrueBranch.TrueCandidates.Contains(literal))
+                    if (expectTrue && plan.TrueBranch.TrueCandidates.Contains(candidate))
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedLiteral, literal);
+                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
                     }
 
-                    if (expectTrue && plan.FalseBranch.TrueCandidates.Contains(literal))
+                    if (expectTrue && plan.FalseBranch.TrueCandidates.Contains(candidate))
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedLiteral, literal);
+                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
                     }
 
-                    if (expectFalse && plan.TrueBranch.FalseCandidates.Contains(literal))
+                    if (expectFalse && plan.TrueBranch.FalseCandidates.Contains(candidate))
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedLiteral, literal);
+                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
                     }
 
-                    if (expectFalse && plan.FalseBranch.FalseCandidates.Contains(literal))
+                    if (expectFalse && plan.FalseBranch.FalseCandidates.Contains(candidate))
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedLiteral, literal);
+                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
                     }
                 }
             }
@@ -1162,33 +1162,33 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param result Rule result accumulator.
          * @param branch Branch state containing parent causes.
-         * @param seedLiteral Branch seed literal key.
-         * @param targetLiteral Target literal key reached by inference.
+         * @param seedCandidate Branch seed candidate key.
+         * @param targetCandidate Target candidate key reached by inference.
          * @returns True when a valid path was added.
          */
-        private bool AppendPathEvidenceForBranch(Board board, RuleResult result, PropagationState branch, int seedLiteral, int targetLiteral)
+        private bool AppendPathEvidenceForBranch(Board board, RuleResult result, PropagationState branch, int seedCandidate, int targetCandidate)
         {
             if (branch == null)
             {
                 return false;
             }
 
-            if (!TryBuildPath(branch, seedLiteral, targetLiteral, out var path))
+            if (!TryBuildPath(branch, seedCandidate, targetCandidate, out var path))
             {
                 return false;
             }
 
             for (int i = 0; i < path.Count; i++)
             {
-                int literal = path[i];
-                AddUsedCell(result, GetRow(board, literal), GetColumn(board, literal), GetDigit(board, literal), DeductionTag);
+                int candidate = path[i];
+                AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), DeductionTag);
             }
 
             for (int i = 1; i < path.Count; i++)
             {
-                int toLiteral = path[i];
-                int fromLiteral = path[i - 1];
-                if (!branch.InferenceCauseByLiteral.TryGetValue(toLiteral, out var cause))
+                int toCandidate = path[i];
+                int fromCandidate = path[i - 1];
+                if (!branch.InferenceCauseByCandidate.TryGetValue(toCandidate, out var cause))
                 {
                     continue;
                 }
@@ -1198,7 +1198,7 @@ namespace Sudoku.Solver.Rules
                     continue;
                 }
 
-                AddEvidenceDirectionalLink(result, board, fromLiteral, toLiteral, cause.LinkKind);
+                AddEvidenceDirectionalLink(result, board, fromCandidate, toCandidate, cause.LinkKind);
             }
 
             return true;
@@ -1206,49 +1206,49 @@ namespace Sudoku.Solver.Rules
 
         /**
          * Emit contradiction evidence including the final edge that attempted to
-         * force an already-opposite literal.
+         * force an already-opposite candidate.
          *
          * @param board Current puzzle board.
          * @param result Rule result accumulator.
          * @param branch Contradicting branch state.
-         * @param seedLiteral Seed literal key.
+         * @param seedCandidate Seed candidate key.
          * @returns True when contradiction evidence was added.
          */
-        private bool AppendContradictionEvidenceForBranch(Board board, RuleResult result, PropagationState branch, int seedLiteral)
+        private bool AppendContradictionEvidenceForBranch(Board board, RuleResult result, PropagationState branch, int seedCandidate)
         {
             if (branch == null)
             {
                 return false;
             }
 
-            int contradictionLiteral = branch.ContradictionLiteral ?? seedLiteral;
+            int contradictionCandidate = branch.ContradictionCandidate ?? seedCandidate;
 
-            if (branch.ContradictionSourceLiteral.HasValue && branch.ContradictionSourceLinkKind.HasValue)
+            if (branch.ContradictionSourceCandidate.HasValue && branch.ContradictionSourceLinkKind.HasValue)
             {
-                int sourceLiteral = branch.ContradictionSourceLiteral.Value;
-                bool addedPath = AppendPathEvidenceForBranch(board, result, branch, seedLiteral, sourceLiteral);
-                AddUsedCell(result, GetRow(board, contradictionLiteral), GetColumn(board, contradictionLiteral), GetDigit(board, contradictionLiteral), DeductionTag);
-                AddEvidenceDirectionalLink(result, board, sourceLiteral, contradictionLiteral, branch.ContradictionSourceLinkKind.Value);
-                return addedPath || sourceLiteral == seedLiteral || contradictionLiteral == sourceLiteral;
+                int sourceCandidate = branch.ContradictionSourceCandidate.Value;
+                bool addedPath = AppendPathEvidenceForBranch(board, result, branch, seedCandidate, sourceCandidate);
+                AddUsedCell(result, GetRow(board, contradictionCandidate), GetColumn(board, contradictionCandidate), GetDigit(board, contradictionCandidate), DeductionTag);
+                AddEvidenceDirectionalLink(result, board, sourceCandidate, contradictionCandidate, branch.ContradictionSourceLinkKind.Value);
+                return addedPath || sourceCandidate == seedCandidate || contradictionCandidate == sourceCandidate;
             }
 
-            return AppendPathEvidenceForBranch(board, result, branch, seedLiteral, contradictionLiteral);
+            return AppendPathEvidenceForBranch(board, result, branch, seedCandidate, contradictionCandidate);
         }
 
         /**
          * Reconstruct one parent-linked path from seed to target.
          *
          * @param branch Branch propagation state.
-         * @param seedLiteral Seed literal key.
-         * @param targetLiteral Target literal key.
+         * @param seedCandidate Seed candidate key.
+         * @param targetCandidate Target candidate key.
          * @param path Output path from seed to target.
          * @returns True when a full path was reconstructed.
          */
-        private static bool TryBuildPath(PropagationState branch, int seedLiteral, int targetLiteral, out List<int> path)
+        private static bool TryBuildPath(PropagationState branch, int seedCandidate, int targetCandidate, out List<int> path)
         {
             path = new List<int>();
             var visited = new HashSet<int>();
-            int current = targetLiteral;
+            int current = targetCandidate;
 
             while (true)
             {
@@ -1259,35 +1259,35 @@ namespace Sudoku.Solver.Rules
                 }
 
                 path.Add(current);
-                if (current == seedLiteral)
+                if (current == seedCandidate)
                 {
                     path.Reverse();
                     return true;
                 }
 
-                if (!branch.InferenceCauseByLiteral.TryGetValue(current, out var cause))
+                if (!branch.InferenceCauseByCandidate.TryGetValue(current, out var cause))
                 {
                     path.Clear();
                     return false;
                 }
 
-                current = cause.FromLiteral;
+                current = cause.FromCandidate;
             }
         }
 
         /**
-         * Map concrete rule changes back to literal keys for evidence targeting.
+         * Map concrete rule changes back to candidate keys for evidence targeting.
          *
          * @param board Current puzzle board.
          * @param result Rule result containing changes.
-         * @returns Ordered set of changed literal keys.
+         * @returns Ordered set of changed candidate keys.
          */
         private static List<int> CollectChangedCandidates(Board board, RuleResult result)
         {
-            var literals = new HashSet<int>();
+            var candidates = new HashSet<int>();
             if (result == null || result.Changes == null)
             {
-                return literals.ToList();
+                return candidates.ToList();
             }
 
             for (int i = 0; i < result.Changes.Count; i++)
@@ -1300,7 +1300,7 @@ namespace Sudoku.Solver.Rules
 
                 if (change.NewValue.HasValue)
                 {
-                    literals.Add(MakeLiteralKey(board, change.Row, change.Column, change.NewValue.Value));
+                    candidates.Add(MakeCandidateKey(board, change.Row, change.Column, change.NewValue.Value));
                 }
 
                 if (change.RemovedCandidates == null)
@@ -1310,11 +1310,11 @@ namespace Sudoku.Solver.Rules
 
                 for (int c = 0; c < change.RemovedCandidates.Count; c++)
                 {
-                    literals.Add(MakeLiteralKey(board, change.Row, change.Column, change.RemovedCandidates[c]));
+                    candidates.Add(MakeCandidateKey(board, change.Row, change.Column, change.RemovedCandidates[c]));
                 }
             }
 
-            return literals
+            return candidates
                 .OrderBy(k => GetRow(board, k))
                 .ThenBy(k => GetColumn(board, k))
                 .ThenBy(k => GetDigit(board, k))
@@ -1327,7 +1327,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param result Rule result accumulator.
          * @param branch Branch propagation state.
-         * @param evidenceCandidates Ordered evidence literals shown in the preview.
+         * @param evidenceCandidates Ordered evidence candidates shown in the preview.
          */
         private void AppendEvidenceLinks(Board board, RuleResult result, PropagationState branch, List<int> evidenceCandidates)
         {
@@ -1339,13 +1339,13 @@ namespace Sudoku.Solver.Rules
             var evidenceSet = new HashSet<int>(evidenceCandidates);
             for (int i = 0; i < evidenceCandidates.Count; i++)
             {
-                int targetLiteral = evidenceCandidates[i];
-                if (!branch.InferenceCauseByLiteral.TryGetValue(targetLiteral, out var cause))
+                int targetCandidate = evidenceCandidates[i];
+                if (!branch.InferenceCauseByCandidate.TryGetValue(targetCandidate, out var cause))
                 {
                     continue;
                 }
 
-                if (!evidenceSet.Contains(cause.FromLiteral))
+                if (!evidenceSet.Contains(cause.FromCandidate))
                 {
                     continue;
                 }
@@ -1355,7 +1355,7 @@ namespace Sudoku.Solver.Rules
                     continue;
                 }
 
-                AddEvidenceDirectionalLink(result, board, cause.FromLiteral, targetLiteral, cause.LinkKind);
+                AddEvidenceDirectionalLink(result, board, cause.FromCandidate, targetCandidate, cause.LinkKind);
             }
         }
 
@@ -1364,14 +1364,14 @@ namespace Sudoku.Solver.Rules
          *
          * @param result Rule result accumulator.
          * @param board Current puzzle board.
-         * @param fromLiteral Source literal key.
-         * @param toLiteral Target literal key.
+         * @param fromCandidate Source candidate key.
+         * @param toCandidate Target candidate key.
          * @param kind Strong or weak link kind.
          */
-        private static void AddEvidenceDirectionalLink(RuleResult result, Board board, int fromLiteral, int toLiteral, DirectionalLinkKind kind)
+        private static void AddEvidenceDirectionalLink(RuleResult result, Board board, int fromCandidate, int toCandidate, DirectionalLinkKind kind)
         {
-            if (GetRow(board, fromLiteral) == GetRow(board, toLiteral) 
-                && GetColumn(board, fromLiteral) == GetColumn(board, toLiteral))
+            if (GetRow(board, fromCandidate) == GetRow(board, toCandidate) 
+                && GetColumn(board, fromCandidate) == GetColumn(board, toCandidate))
             {
                 return;
             }
@@ -1386,15 +1386,15 @@ namespace Sudoku.Solver.Rules
                 Kind = kind,
                 Start = new DirectionalLinkEndpoint
                 {
-                    Row = GetRow(board, fromLiteral),
-                    Column = GetColumn(board, fromLiteral),
-                    Digit = GetDigit(board, fromLiteral),
+                    Row = GetRow(board, fromCandidate),
+                    Column = GetColumn(board, fromCandidate),
+                    Digit = GetDigit(board, fromCandidate),
                 },
                 End = new DirectionalLinkEndpoint
                 {
-                    Row = GetRow(board, toLiteral),
-                    Column = GetColumn(board, toLiteral),
-                    Digit = GetDigit(board, toLiteral),
+                    Row = GetRow(board, toCandidate),
+                    Column = GetColumn(board, toCandidate),
+                    Digit = GetDigit(board, toCandidate),
                 }
             };
 
@@ -1414,21 +1414,21 @@ namespace Sudoku.Solver.Rules
          * Determine whether a weak conflict should be rendered as a visible weak link.
          *
          * @param board Current puzzle board.
-         * @param fromLiteral Source literal.
-         * @param toLiteral Target literal.
+         * @param fromCandidate Source candidate.
+         * @param toCandidate Target candidate.
          * @returns True when the conflict is a conjugate pair in a row/column/box.
          */
-        private static bool ShouldExposeWeakConflictAsLink(Board board, int fromLiteral, int toLiteral)
+        private static bool ShouldExposeWeakConflictAsLink(Board board, int fromCandidate, int toCandidate)
         {
-            if (GetDigit(board, fromLiteral) != GetDigit(board, toLiteral))
+            if (GetDigit(board, fromCandidate) != GetDigit(board, toCandidate))
             {
                 return false;
             }
 
-            int fromRow = GetRow(board, fromLiteral);
-            int fromColumn = GetColumn(board, fromLiteral);
-            int toRow = GetRow(board, toLiteral);
-            int toColumn = GetColumn(board, toLiteral);
+            int fromRow = GetRow(board, fromCandidate);
+            int fromColumn = GetColumn(board, fromCandidate);
+            int toRow = GetRow(board, toCandidate);
+            int toColumn = GetColumn(board, toCandidate);
 
             if (fromRow == toRow && fromColumn == toColumn)
             {
@@ -1437,17 +1437,17 @@ namespace Sudoku.Solver.Rules
 
             if (fromRow == toRow)
             {
-                return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromLiteral)) == 2;
+                return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) == 2;
             }
 
             if (fromColumn == toColumn)
             {
-                return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromLiteral)) == 2;
+                return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) == 2;
             }
 
             if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
             {
-                return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromLiteral)) == 2;
+                return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) == 2;
             }
 
             return false;
@@ -1479,11 +1479,11 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Add a bidirectional strong link between two literals.
+         * Add a bidirectional strong link between two candidates.
          *
          * @param links Strong-link adjacency map.
-         * @param a First literal key.
-         * @param b Second literal key.
+         * @param a First candidate key.
+         * @param b Second candidate key.
          */
         private static void AddLink(Dictionary<int, List<int>> links, int a, int b)
         {
@@ -1513,11 +1513,11 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Add a bidirectional weak conflict between two literals.
+         * Add a bidirectional weak conflict between two candidates.
          *
          * @param links Weak-conflict adjacency map.
-         * @param a First literal key.
-         * @param b Second literal key.
+         * @param a First candidate key.
+         * @param b Second candidate key.
          */
         private static void AddWeakConflictPair(Dictionary<int, List<int>> links, int a, int b)
         {
@@ -1547,28 +1547,28 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Determine whether a literal is still available on the board.
+         * Determine whether a candidate is still available on the board.
          *
          * @param board Current puzzle board.
-         * @param literal Literal key.
+         * @param candidate Candidate key.
          * @returns True when the corresponding candidate is still present.
          */
-        private static bool IsLiteralStillCandidate(Board board, int literal)
+        private static bool IsCandidateStillCandidate(Board board, int candidate)
         {
-            int row = GetRow(board, literal);
-            int column = GetColumn(board, literal);
-            int digit = GetDigit(board, literal);
+            int row = GetRow(board, candidate);
+            int column = GetColumn(board, candidate);
+            int digit = GetDigit(board, candidate);
             var cell = board.Cells[row, column];
             return cell != null && !cell.Value.HasValue && cell.Candidates != null && cell.Candidates.Contains(digit);
         }
 
         /**
-         * Determine whether two literal keys belong to the same cell.
+         * Determine whether two candidate keys belong to the same cell.
          *
          * @param board Current puzzle board.
-         * @param a First literal key.
-         * @param b Second literal key.
-         * @returns True when both literals refer to the same row/column cell.
+         * @param a First candidate key.
+         * @param b Second candidate key.
+         * @returns True when both candidates refer to the same row/column cell.
          */
         private static bool IsSameCell(Board board, int a, int b)
         {
@@ -1580,28 +1580,28 @@ namespace Sudoku.Solver.Rules
          * Determine whether a weak preview edge is a valid conjugate-pair conflict.
          *
          * @param board Current puzzle board.
-         * @param fromLiteral Source literal.
-         * @param toLiteral Target literal.
+         * @param fromCandidate Source candidate.
+         * @param toCandidate Target candidate.
          * @returns True when the weak edge is supported by a unit with exactly two candidates.
          */
-        private static bool IsValidWeakPreviewLink(Board board, int fromLiteral, int toLiteral)
+        private static bool IsValidWeakPreviewLink(Board board, int fromCandidate, int toCandidate)
         {
-            if (GetDigit(board, fromLiteral) != GetDigit(board, toLiteral))
+            if (GetDigit(board, fromCandidate) != GetDigit(board, toCandidate))
             {
                 return false;
             }
 
-            int fromRow = GetRow(board, fromLiteral);
-            int fromColumn = GetColumn(board, fromLiteral);
-            int toRow = GetRow(board, toLiteral);
-            int toColumn = GetColumn(board, toLiteral);
+            int fromRow = GetRow(board, fromCandidate);
+            int fromColumn = GetColumn(board, fromCandidate);
+            int toRow = GetRow(board, toCandidate);
+            int toColumn = GetColumn(board, toCandidate);
 
             if (fromRow == toRow && fromColumn == toColumn)
             {
                 return false;
             }
 
-            int digit = GetDigit(board, fromLiteral);
+            int digit = GetDigit(board, fromCandidate);
 
             if (fromRow == toRow)
             {
@@ -1666,70 +1666,70 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Format a literal as rNcM=d for explanations.
+         * Format a candidate as rNcM=d for explanations.
          *
          * @param board Current puzzle board.
-         * @param literal Literal key.
-         * @returns Human-readable literal text.
+         * @param candidate Candidate key.
+         * @returns Human-readable candidate text.
          */
-        private static string FormatLiteral(Board board, int literal)
+        private static string FormatCandidate(Board board, int candidate)
         {
-            return $"r{GetRow(board, literal) + 1}c{GetColumn(board, literal) + 1}={GetDigit(board, literal)}";
+            return $"r{GetRow(board, candidate) + 1}c{GetColumn(board, candidate) + 1}={GetDigit(board, candidate)}";
         }
 
         /**
-         * Encode one candidate literal key.
+         * Encode one candidate candidate key.
          *
          * @param board Current puzzle board.
          * @param row Row index.
          * @param column Column index.
          * @param digit Candidate digit.
-         * @returns Encoded literal key.
+         * @returns Encoded candidate key.
          */
-        private static int MakeLiteralKey(Board board, int row, int column, int digit)
+        private static int MakeCandidateKey(Board board, int row, int column, int digit)
         {
             int size = board.Size;
             return ((row * size) + column) * (size + 1) + digit;
         }
 
         /**
-         * Decode literal row index.
+         * Decode candidate row index.
          *
          * @param board Current puzzle board.
-         * @param literal Encoded literal key.
+         * @param candidate Encoded candidate key.
          * @returns Row index.
          */
-        private static int GetRow(Board board, int literal)
+        private static int GetRow(Board board, int candidate)
         {
             int size = board.Size;
-            int packedCell = literal / (size + 1);
+            int packedCell = candidate / (size + 1);
             return packedCell / size;
         }
 
         /**
-         * Decode literal column index.
+         * Decode candidate column index.
          *
          * @param board Current puzzle board.
-         * @param literal Encoded literal key.
+         * @param candidate Encoded candidate key.
          * @returns Column index.
          */
-        private static int GetColumn(Board board, int literal)
+        private static int GetColumn(Board board, int candidate)
         {
             int size = board.Size;
-            int packedCell = literal / (size + 1);
+            int packedCell = candidate / (size + 1);
             return packedCell % size;
         }
 
         /**
-         * Decode literal digit.
+         * Decode candidate digit.
          *
          * @param board Current puzzle board.
-         * @param literal Encoded literal key.
+         * @param candidate Encoded candidate key.
          * @returns Candidate digit.
          */
-        private static int GetDigit(Board board, int literal)
+        private static int GetDigit(Board board, int candidate)
         {
-            return literal % (board.Size + 1);
+            return candidate % (board.Size + 1);
         }
 
         /**
