@@ -30,6 +30,12 @@ namespace Sudoku.Solver.Rules
      */
     public class ForcingChainRule : CachedRuleBase
     {
+        private enum UnitType
+        {
+            Row = 0,
+            Column = 1,
+            Box = 2
+        }
         private const string TargetATag = "TargetA";
         private const string TargetBTag = "TargetB";
         private const string DeductionTag = "Deduction";
@@ -41,18 +47,20 @@ namespace Sudoku.Solver.Rules
         private sealed class ChainModel
         {
             public int Size;
-            public List<int> Literals = new List<int>();
+            public List<int> Candidates = new List<int>();
             public Dictionary<int, int> LiteralIndexByKey = new Dictionary<int, int>();
-            public Dictionary<int, List<int>> StrongLinksByKey = new Dictionary<int, List<int>>();
+            /** All links Strong and weak between candidates */
             public Dictionary<int, List<int>> WeakConflictByKey = new Dictionary<int, List<int>>();
+            /** Only strong links between candidates */
+            public Dictionary<int, List<int>> StrongLinksByKey = new Dictionary<int, List<int>>();
             public Dictionary<int, List<int>> CellGroupsByIndex = new Dictionary<int, List<int>>();
             public Dictionary<int, List<int>> UnitDigitGroupsByIndex = new Dictionary<int, List<int>>();
         }
 
         private sealed class PropagationState
         {
-            public HashSet<int> TrueLiterals = new HashSet<int>();
-            public HashSet<int> FalseLiterals = new HashSet<int>();
+            public HashSet<int> TrueCandidates = new HashSet<int>();
+            public HashSet<int> FalseCandidates = new HashSet<int>();
             public bool HasContradiction;
             public string ContradictionReason;
             public int? ContradictionLiteral;
@@ -75,8 +83,8 @@ namespace Sudoku.Solver.Rules
             public int SeedLiteral;
             public PropagationState TrueBranch;
             public PropagationState FalseBranch;
-            public List<int> CommonFalseLiterals = new List<int>();
-            public List<int> CommonTrueLiterals = new List<int>();
+            public List<int> CommonFalseCandidates = new List<int>();
+            public List<int> CommonTrueCandidates = new List<int>();
             public bool ContradictionOnTrueBranch;
             public bool ContradictionOnFalseBranch;
         }
@@ -178,14 +186,14 @@ namespace Sudoku.Solver.Rules
         private ForcingPlan FindOneSidedContradictionPlan(Board board)
         {
             var model = BuildChainModel(board);
-            if (model == null || model.Literals.Count == 0)
+            if (model == null || model.Candidates.Count == 0)
             {
                 return null;
             }
 
             ForcingPlan doubleSidedFallback = null;
 
-            var orderedSeeds = model.Literals
+            var orderedSeeds = model.Candidates
                 .OrderBy(k => GetDigit(board, k))
                 .ThenBy(k => GetRow(board, k))
                 .ThenBy(k => GetColumn(board, k))
@@ -244,13 +252,13 @@ namespace Sudoku.Solver.Rules
         private ForcingPlan FindPlan(Board board)
         {
             var model = BuildChainModel(board);
-            if (model == null || model.Literals.Count == 0)
+            if (model == null || model.Candidates.Count == 0)
             {
                 return null;
             }
 
             var digitCounts = BuildDigitCounts(board);
-            var orderedSeeds = model.Literals
+            var orderedSeeds = model.Candidates
                 .OrderBy(k => digitCounts.TryGetValue(GetDigit(board, k), out var count) ? count : int.MaxValue)
                 .ThenBy(k => GetRow(board, k))
                 .ThenBy(k => GetColumn(board, k))
@@ -284,8 +292,8 @@ namespace Sudoku.Solver.Rules
                     continue;
                 }
 
-                plan.CommonFalseLiterals = trueBranch.FalseLiterals
-                    .Intersect(falseBranch.FalseLiterals)
+                plan.CommonFalseCandidates = trueBranch.FalseCandidates
+                    .Intersect(falseBranch.FalseCandidates)
                     .Where(k => k != seed)
                     .Where(k => !IsSameCell(board, k, seed))
                     .Where(LiteralAvailable)
@@ -294,8 +302,8 @@ namespace Sudoku.Solver.Rules
                     .ThenBy(k => GetDigit(board, k))
                     .ToList();
 
-                plan.CommonTrueLiterals = trueBranch.TrueLiterals
-                    .Intersect(falseBranch.TrueLiterals)
+                plan.CommonTrueCandidates = trueBranch.TrueCandidates
+                    .Intersect(falseBranch.TrueCandidates)
                     .Where(k => !IsSameCell(board, k, seed))
                     .Where(LiteralAvailable)
                     .OrderBy(k => GetRow(board, k))
@@ -303,7 +311,7 @@ namespace Sudoku.Solver.Rules
                     .ThenBy(k => GetDigit(board, k))
                     .ToList();
 
-                bool hasCommonConclusion = plan.CommonFalseLiterals.Count > 0 || plan.CommonTrueLiterals.Count > 0;
+                bool hasCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
                 if (!hasCommonConclusion)
                 {
                     continue;
@@ -368,9 +376,9 @@ namespace Sudoku.Solver.Rules
             int seedDigit = GetDigit(board, plan.SeedLiteral);
             int seedCount = digitCounts.TryGetValue(seedDigit, out var c) ? c : int.MaxValue / 4;
 
-            bool isCommonConclusion = plan.CommonFalseLiterals.Count > 0 || plan.CommonTrueLiterals.Count > 0;
-            bool isPlacement = plan.CommonTrueLiterals.Count > 0;
-            int deductionCount = plan.CommonTrueLiterals.Count > 0 ? plan.CommonTrueLiterals.Count : plan.CommonFalseLiterals.Count;
+            bool isCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
+            bool isPlacement = plan.CommonTrueCandidates.Count > 0;
+            int deductionCount = plan.CommonTrueCandidates.Count > 0 ? plan.CommonTrueCandidates.Count : plan.CommonFalseCandidates.Count;
             int trueBranchSize = plan.TrueBranch != null ? plan.TrueBranch.AssignmentOrder.Count : int.MaxValue / 4;
             int falseBranchSize = plan.FalseBranch != null ? plan.FalseBranch.AssignmentOrder.Count : int.MaxValue / 4;
             int branchSize = Math.Min(trueBranchSize, falseBranchSize);
@@ -416,13 +424,13 @@ namespace Sudoku.Solver.Rules
                     foreach (int digit in cell.Candidates.OrderBy(v => v))
                     {
                         int key = MakeLiteralKey(board, row, column, digit);
-                        model.LiteralIndexByKey[key] = model.Literals.Count;
-                        model.Literals.Add(key);
+                        model.LiteralIndexByKey[key] = model.Candidates.Count;
+                        model.Candidates.Add(key);
                     }
                 }
             }
 
-            if (model.Literals.Count == 0)
+            if (model.Candidates.Count == 0)
             {
                 return model;
             }
@@ -433,19 +441,29 @@ namespace Sudoku.Solver.Rules
                 for (int column = 0; column < size; column++)
                 {
                     var cell = board.Cells[row, column];
-                    if (cell == null || cell.Value.HasValue || cell.Candidates == null || cell.Candidates.Count == 0)
+                    if (cell == null || cell.Value.HasValue || cell.Candidates == null)
                     {
                         continue;
                     }
 
-                    int cellIndex = row * size + column;
-                    var group = new List<int>();
-                    foreach (int digit in cell.Candidates)
-                    {
-                        group.Add(MakeLiteralKey(board, row, column, digit));
+                    if(cell.Candidates.Count == 2) {
+                        // Strong Link
+                        var pair = cell.Candidates.OrderBy(v => v).ToList();
+                        int a = MakeLiteralKey(board, row, column, pair[0]);
+                        int b = MakeLiteralKey(board, row, column, pair[1]);
+                        AddLink(model.StrongLinksByKey, a, b);
                     }
+                    if (cell.Candidates.Count != 0) {
+                        // Group all candidates in the same cell for local completion propagation.
+                        int cellIndex = row * size + column;
+                        var group = new List<int>();
+                        foreach (int digit in cell.Candidates)
+                        {
+                            group.Add(MakeLiteralKey(board, row, column, digit));
+                        }
 
-                    model.CellGroupsByIndex[cellIndex] = group;
+                        model.CellGroupsByIndex[cellIndex] = group;
+                    }
                 }
             }
 
@@ -453,6 +471,7 @@ namespace Sudoku.Solver.Rules
             {
                 for (int row = 0; row < size; row++)
                 {
+                    // Build unit-digit groups for hidden/naked single propagation.
                     var group = new List<int>();
                     for (int column = 0; column < size; column++)
                     {
@@ -466,13 +485,18 @@ namespace Sudoku.Solver.Rules
 
                     if (group.Count > 0)
                     {
-                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: 0, unitIndex: row, digit);
+                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: UnitType.Row, unitIndex: row, digit);
                         model.UnitDigitGroupsByIndex[groupIndex] = group;
+                        // If there are exactly two candidates for this digit in the row (conjugate pair), add a Strong Link between them.
+                        if (group.Count == 2)
+                        {
+                            AddLink(model.StrongLinksByKey, group[0], group[1]);
+                        }
                     }
                 }
 
                 for (int column = 0; column < size; column++)
-                {
+                {// Build unit-digit groups for hidden/naked single propagation in column.
                     var group = new List<int>();
                     for (int row = 0; row < size; row++)
                     {
@@ -486,13 +510,19 @@ namespace Sudoku.Solver.Rules
 
                     if (group.Count > 0)
                     {
-                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: 1, unitIndex: column, digit);
+                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: UnitType.Column, unitIndex: column, digit);
                         model.UnitDigitGroupsByIndex[groupIndex] = group;
+                        // If there are exactly two candidates for this digit in the column (conjugate pair), add a Strong Link between them.
+                        if (group.Count == 2)
+                        {
+                            AddLink(model.StrongLinksByKey, group[0], group[1]);
+                        }
                     }
                 }
 
                 for (int box = 0; box < size; box++)
                 {
+                    // Build unit-digit groups for hidden/naked single propagation in box.
                     var group = new List<int>();
                     foreach (var cell in board.GetBox(box))
                     {
@@ -505,8 +535,13 @@ namespace Sudoku.Solver.Rules
 
                     if (group.Count > 0)
                     {
-                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: 2, unitIndex: box, digit);
+                        int groupIndex = MakeUnitDigitGroupIndex(board, unitType: UnitType.Box, unitIndex: box, digit);
                         model.UnitDigitGroupsByIndex[groupIndex] = group;
+                        // If there are exactly two candidates for this digit in the box (conjugate pair), add a Strong Link between them.
+                        if (group.Count == 2)
+                        {
+                            AddLink(model.StrongLinksByKey, group[0], group[1]);
+                        }
                     }
                 }
             }
@@ -515,7 +550,7 @@ namespace Sudoku.Solver.Rules
             // forcing chains, but only real conjugate-pair edges are exposed as
             // visible weak links in the preview. The rest remain internal conflict
             // steps used by the solver.
-            foreach (var literal in model.Literals)
+            foreach (var literal in model.Candidates)
             {
                 var conflicts = new HashSet<int>();
                 int row = GetRow(board, literal);
@@ -525,6 +560,7 @@ namespace Sudoku.Solver.Rules
 
                 if (cell != null && cell.Candidates != null)
                 {
+                    // All other candidates in the same cell conflict with this literal.
                     foreach (int other in cell.Candidates)
                     {
                         if (other == digit) continue;
@@ -532,6 +568,7 @@ namespace Sudoku.Solver.Rules
                     }
                 }
 
+                // All peers in the same row, column, or box that have this digit as a candidate conflict with this literal.
                 foreach (var peer in board.GetPeers(board.Cells[row, column]))
                 {
                     if (peer == null || peer.Value.HasValue || peer.Candidates == null) continue;
@@ -540,64 +577,6 @@ namespace Sudoku.Solver.Rules
                 }
 
                 model.WeakConflictByKey[literal] = conflicts.OrderBy(k => k).ToList();
-            }
-
-            // Strong links from bi-value cells.
-            for (int row = 0; row < size; row++)
-            {
-                for (int column = 0; column < size; column++)
-                {
-                    var cell = board.Cells[row, column];
-                    if (cell == null || cell.Value.HasValue || cell.Candidates == null || cell.Candidates.Count != 2)
-                    {
-                        continue;
-                    }
-
-                    var pair = cell.Candidates.OrderBy(v => v).ToList();
-                    int a = MakeLiteralKey(board, row, column, pair[0]);
-                    int b = MakeLiteralKey(board, row, column, pair[1]);
-                    AddStrongLink(model.StrongLinksByKey, a, b);
-                }
-            }
-
-            // Strong links from conjugate pairs in each unit.
-            for (int digit = 1; digit <= size; digit++)
-            {
-                for (int row = 0; row < size; row++)
-                {
-                    var members = model.UnitDigitGroupsByIndex.TryGetValue(MakeUnitDigitGroupIndex(board, 0, row, digit), out var rowGroup)
-                        ? rowGroup
-                        : null;
-                    if (members != null && members.Count == 2)
-                    {
-                        AddStrongLink(model.StrongLinksByKey, members[0], members[1]);
-                        AddWeakConflictPair(model.WeakConflictByKey, members[0], members[1]);
-                    }
-                }
-
-                for (int column = 0; column < size; column++)
-                {
-                    var members = model.UnitDigitGroupsByIndex.TryGetValue(MakeUnitDigitGroupIndex(board, 1, column, digit), out var colGroup)
-                        ? colGroup
-                        : null;
-                    if (members != null && members.Count == 2)
-                    {
-                        AddStrongLink(model.StrongLinksByKey, members[0], members[1]);
-                        AddWeakConflictPair(model.WeakConflictByKey, members[0], members[1]);
-                    }
-                }
-
-                for (int box = 0; box < size; box++)
-                {
-                    var members = model.UnitDigitGroupsByIndex.TryGetValue(MakeUnitDigitGroupIndex(board, 2, box, digit), out var boxGroup)
-                        ? boxGroup
-                        : null;
-                    if (members != null && members.Count == 2)
-                    {
-                        AddStrongLink(model.StrongLinksByKey, members[0], members[1]);
-                        AddWeakConflictPair(model.WeakConflictByKey, members[0], members[1]);
-                    }
-                }
             }
 
             return model;
@@ -728,7 +707,7 @@ namespace Sudoku.Solver.Rules
 
             if (valueTrue)
             {
-                if (state.FalseLiterals.Contains(literal))
+                if (state.FalseCandidates.Contains(literal))
                 {
                     state.HasContradiction = true;
                     state.ContradictionLiteral = literal;
@@ -738,14 +717,14 @@ namespace Sudoku.Solver.Rules
                     return;
                 }
 
-                if (state.TrueLiterals.Contains(literal))
+                if (state.TrueCandidates.Contains(literal))
                 {
                     return;
                 }
             }
             else
             {
-                if (state.TrueLiterals.Contains(literal))
+                if (state.TrueCandidates.Contains(literal))
                 {
                     state.HasContradiction = true;
                     state.ContradictionLiteral = literal;
@@ -755,7 +734,7 @@ namespace Sudoku.Solver.Rules
                     return;
                 }
 
-                if (state.FalseLiterals.Contains(literal))
+                if (state.FalseCandidates.Contains(literal))
                 {
                     return;
                 }
@@ -788,12 +767,12 @@ namespace Sudoku.Solver.Rules
         {
             if (valueTrue)
             {
-                if (state.TrueLiterals.Contains(literal))
+                if (state.TrueCandidates.Contains(literal))
                 {
                     return false;
                 }
 
-                if (state.FalseLiterals.Contains(literal))
+                if (state.FalseCandidates.Contains(literal))
                 {
                     state.HasContradiction = true;
                     state.ContradictionLiteral = literal;
@@ -801,16 +780,16 @@ namespace Sudoku.Solver.Rules
                     return false;
                 }
 
-                state.TrueLiterals.Add(literal);
+                state.TrueCandidates.Add(literal);
             }
             else
             {
-                if (state.FalseLiterals.Contains(literal))
+                if (state.FalseCandidates.Contains(literal))
                 {
                     return false;
                 }
 
-                if (state.TrueLiterals.Contains(literal))
+                if (state.TrueCandidates.Contains(literal))
                 {
                     state.HasContradiction = true;
                     state.ContradictionLiteral = literal;
@@ -818,7 +797,7 @@ namespace Sudoku.Solver.Rules
                     return false;
                 }
 
-                state.FalseLiterals.Add(literal);
+                state.FalseCandidates.Add(literal);
             }
 
             state.AssignmentOrder.Add(literal);
@@ -849,13 +828,13 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < group.Count; i++)
             {
                 int key = group[i];
-                if (state.TrueLiterals.Contains(key))
+                if (state.TrueCandidates.Contains(key))
                 {
                     trueCount++;
                     continue;
                 }
 
-                if (!state.FalseLiterals.Contains(key))
+                if (!state.FalseCandidates.Contains(key))
                 {
                     unknownCount++;
                     unknownLiteral = key;
@@ -896,9 +875,9 @@ namespace Sudoku.Solver.Rules
         {
             int box = board.Cells[row, column].Box;
 
-            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, 0, row, digit), $"Row {row + 1}");
-            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, 1, column, digit), $"Column {column + 1}");
-            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, 2, box, digit), $"Box {box + 1}");
+            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, UnitType.Row, row, digit), $"Row {row + 1}");
+            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, UnitType.Column, column, digit), $"Column {column + 1}");
+            ResolveUnitGroup(board, model, state, MakeUnitDigitGroupIndex(board, UnitType.Box, box, digit), $"Box {box + 1}");
         }
 
         /**
@@ -925,13 +904,13 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < group.Count; i++)
             {
                 int key = group[i];
-                if (state.TrueLiterals.Contains(key))
+                if (state.TrueCandidates.Contains(key))
                 {
                     trueCount++;
                     continue;
                 }
 
-                if (!state.FalseLiterals.Contains(key))
+                if (!state.FalseCandidates.Contains(key))
                 {
                     unknownCount++;
                     unknownLiteral = key;
@@ -1021,7 +1000,7 @@ namespace Sudoku.Solver.Rules
         private void ApplyCommonConclusionPlan(Board board, RuleResult result, ForcingPlan plan)
         {
             // Prefer a direct placement when both branches force a literal true.
-            foreach (int literal in plan.CommonTrueLiterals)
+            foreach (int literal in plan.CommonTrueCandidates)
             {
                 int row = GetRow(board, literal);
                 int column = GetColumn(board, literal);
@@ -1047,9 +1026,9 @@ namespace Sudoku.Solver.Rules
 
             // Otherwise remove candidates forced false in both branches.
             int added = 0;
-            for (int i = 0; i < plan.CommonFalseLiterals.Count; i++)
+            for (int i = 0; i < plan.CommonFalseCandidates.Count; i++)
             {
-                int literal = plan.CommonFalseLiterals[i];
+                int literal = plan.CommonFalseCandidates[i];
                 int row = GetRow(board, literal);
                 int column = GetColumn(board, literal);
                 int digit = GetDigit(board, literal);
@@ -1126,8 +1105,8 @@ namespace Sudoku.Solver.Rules
          */
         private bool AppendCausalEvidencePaths(Board board, RuleResult result, ForcingPlan plan)
         {
-            var changedLiterals = CollectChangedLiterals(board, result);
-            if (changedLiterals.Count == 0)
+            var changedCandidates = CollectChangedCandidates(board, result);
+            if (changedCandidates.Count == 0)
             {
                 return false;
             }
@@ -1147,27 +1126,27 @@ namespace Sudoku.Solver.Rules
             bool usingCommonConclusions = !plan.ContradictionOnTrueBranch && !plan.ContradictionOnFalseBranch;
             if (usingCommonConclusions)
             {
-                foreach (int literal in changedLiterals)
+                foreach (int literal in changedCandidates)
                 {
-                    bool expectTrue = plan.CommonTrueLiterals.Contains(literal);
-                    bool expectFalse = plan.CommonFalseLiterals.Contains(literal);
+                    bool expectTrue = plan.CommonTrueCandidates.Contains(literal);
+                    bool expectFalse = plan.CommonFalseCandidates.Contains(literal);
 
-                    if (expectTrue && plan.TrueBranch.TrueLiterals.Contains(literal))
+                    if (expectTrue && plan.TrueBranch.TrueCandidates.Contains(literal))
                     {
                         addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedLiteral, literal);
                     }
 
-                    if (expectTrue && plan.FalseBranch.TrueLiterals.Contains(literal))
+                    if (expectTrue && plan.FalseBranch.TrueCandidates.Contains(literal))
                     {
                         addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedLiteral, literal);
                     }
 
-                    if (expectFalse && plan.TrueBranch.FalseLiterals.Contains(literal))
+                    if (expectFalse && plan.TrueBranch.FalseCandidates.Contains(literal))
                     {
                         addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedLiteral, literal);
                     }
 
-                    if (expectFalse && plan.FalseBranch.FalseLiterals.Contains(literal))
+                    if (expectFalse && plan.FalseBranch.FalseCandidates.Contains(literal))
                     {
                         addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedLiteral, literal);
                     }
@@ -1303,7 +1282,7 @@ namespace Sudoku.Solver.Rules
          * @param result Rule result containing changes.
          * @returns Ordered set of changed literal keys.
          */
-        private static List<int> CollectChangedLiterals(Board board, RuleResult result)
+        private static List<int> CollectChangedCandidates(Board board, RuleResult result)
         {
             var literals = new HashSet<int>();
             if (result == null || result.Changes == null)
@@ -1348,19 +1327,19 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param result Rule result accumulator.
          * @param branch Branch propagation state.
-         * @param evidenceLiterals Ordered evidence literals shown in the preview.
+         * @param evidenceCandidates Ordered evidence literals shown in the preview.
          */
-        private void AppendEvidenceLinks(Board board, RuleResult result, PropagationState branch, List<int> evidenceLiterals)
+        private void AppendEvidenceLinks(Board board, RuleResult result, PropagationState branch, List<int> evidenceCandidates)
         {
-            if (result == null || branch == null || evidenceLiterals == null || evidenceLiterals.Count == 0)
+            if (result == null || branch == null || evidenceCandidates == null || evidenceCandidates.Count == 0)
             {
                 return;
             }
 
-            var evidenceSet = new HashSet<int>(evidenceLiterals);
-            for (int i = 0; i < evidenceLiterals.Count; i++)
+            var evidenceSet = new HashSet<int>(evidenceCandidates);
+            for (int i = 0; i < evidenceCandidates.Count; i++)
             {
-                int targetLiteral = evidenceLiterals[i];
+                int targetLiteral = evidenceCandidates[i];
                 if (!branch.InferenceCauseByLiteral.TryGetValue(targetLiteral, out var cause))
                 {
                     continue;
@@ -1506,7 +1485,7 @@ namespace Sudoku.Solver.Rules
          * @param a First literal key.
          * @param b Second literal key.
          */
-        private static void AddStrongLink(Dictionary<int, List<int>> links, int a, int b)
+        private static void AddLink(Dictionary<int, List<int>> links, int a, int b)
         {
             if (a == b) return;
 
@@ -1762,9 +1741,9 @@ namespace Sudoku.Solver.Rules
          * @param digit Candidate digit.
          * @returns Group index key.
          */
-        private static int MakeUnitDigitGroupIndex(Board board, int unitType, int unitIndex, int digit)
+        private static int MakeUnitDigitGroupIndex(Board board, UnitType unitType, int unitIndex, int digit)
         {
-            return (((unitType * board.Size) + unitIndex) * (board.Size + 1)) + digit;
+            return ((((int)unitType) * board.Size) + unitIndex) * (board.Size + 1) + digit;
         }
 
     }
