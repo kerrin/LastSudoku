@@ -43,7 +43,8 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(registry.Rules.Any(r => r is HiddenQuadRule));
             Assert.IsTrue(registry.Rules.Any(r => r is WWingRule));
             Assert.IsTrue(registry.Rules.Any(r => r is XYZWingRule));
-            Assert.IsTrue(registry.Rules.Any(r => r is ForcingChainRule));
+            Assert.IsTrue(registry.Rules.Any(r => r is ForcingChainCellRule));
+            Assert.IsTrue(registry.Rules.Any(r => r is ForcingChainUnitRule));
         }
 
         /** When the board has no candidates or values, <c>ApplyAll</c> should return an empty result set. */

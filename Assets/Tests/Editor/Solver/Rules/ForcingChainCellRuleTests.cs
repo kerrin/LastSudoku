@@ -6,7 +6,7 @@ using Sudoku.UI.Config;
 
 namespace Sudoku.Tests.Editor
 {
-    public class ForcingChainRuleTests
+    public class ForcingChainCellRuleTests
     {
         private bool _originalGreen;
         private bool _originalAmber;
@@ -37,10 +37,10 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ForcingChainRule_Example1_ContradictionBranch_RemovesAssumptionCandidate()
+        public void ForcingChainCellRule_Example1_ContradictionBranch_RemovesAssumptionCandidate()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ForcingChainRule();
+            var rule = new ForcingChainCellRule();
 
             ClearAllCandidates(board);
 
@@ -59,10 +59,10 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ForcingChainRule_Example2_CommonFalseConclusion_RemovesTargetCandidate()
+        public void ForcingChainCellRule_Example2_CommonFalseConclusion_RemovesTargetCandidate()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ForcingChainRule();
+            var rule = new ForcingChainCellRule();
 
             ClearAllCandidates(board);
 
@@ -85,10 +85,10 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ForcingChainRule_Example3_CommonTrueConclusion_PlacesValue()
+        public void ForcingChainCellRule_Example3_CommonTrueConclusion_PlacesValue()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ForcingChainRule();
+            var rule = new ForcingChainCellRule();
 
             ClearAllCandidates(board);
 
@@ -110,10 +110,10 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
-        public void ForcingChainRule_Example4_ColourPrerequisiteDisabled_DoesNotApply()
+        public void ForcingChainCellRule_Example4_ColourPrerequisiteDisabled_DoesNotApply()
         {
             var board = TestHelpers.CreateEmptyBoard();
-            var rule = new ForcingChainRule();
+            var rule = new ForcingChainCellRule();
 
             ClearAllCandidates(board);
             AddCandidates(board, 0, 0, 1, 2);

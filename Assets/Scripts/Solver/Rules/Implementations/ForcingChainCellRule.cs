@@ -19,9 +19,10 @@ namespace Sudoku.Solver.Rules
      * - True digits to all seen matching digits in the same cell or unit (row/column/box), where there are multiple candidates of the digit seen.
      *
      * Forcing chains can occur when:
-     * - Chains start from all candidates in a single cell
-     * - Chains start from a single digit's candidates in a single row/column/box
+     * 1. Chains start from all candidates in a single cell
+     * 2. Chains start from a single digit's candidates in a single row/column/box
      * and all chains combine to produce a common conclusion (candidate placement or removal).
+     * This class implements 1
      *
      * This bounded implementation targets human-tractable chains and intentionally
      * avoids exhaustive SAT-level search.
@@ -29,7 +30,7 @@ namespace Sudoku.Solver.Rules
      * This rule should only be applied if colouring is enabled and has at least
      * two colours enabled.
      */
-    public class ForcingChainRule : CachedRuleBase
+    public class ForcingChainCellRule : CachedRuleBase
     {
         private enum UnitType
         {
@@ -90,7 +91,7 @@ namespace Sudoku.Solver.Rules
             public bool ContradictionOnFalseBranch;
         }
 
-        public override string Name => "Forcing Chain";
+        public override string Name => "Forcing Chain (Cell)";
 
         public override Difficulty Difficulty => Difficulty.Expert;
 
@@ -107,7 +108,7 @@ namespace Sudoku.Solver.Rules
             if (board.Size <= 0) return false;
             if (ColourSettings.GetEnabledColourCount() < 2) return false;
 
-            return FindPlan(board) != null || FindOneSidedContradictionPlan(board) != null;
+            return FindPlan(board) != null;
         }
 
         /**
@@ -129,14 +130,8 @@ namespace Sudoku.Solver.Rules
             var plan = FindPlan(board);
             if (plan == null)
             {
-                var contradictionFallback = FindOneSidedContradictionPlan(board);
-                if (contradictionFallback == null)
-                {
-                    result.Apply = false;
-                    return result;
-                }
-
-                plan = contradictionFallback;
+                result.Apply = false;
+                return result;
             }
 
             if (plan.ContradictionOnTrueBranch || plan.ContradictionOnFalseBranch)
@@ -149,19 +144,6 @@ namespace Sudoku.Solver.Rules
             }
 
             AppendEvidence(board, result, plan);
-
-            if (result.Changes.Count == 0)
-            {
-                var contradictionFallback = FindOneSidedContradictionPlan(board);
-                if (contradictionFallback != null)
-                {
-                    result.UsedCells.Clear();
-                    result.UsedDirectionalLinks.Clear();
-                    result.Description = null;
-                    ApplyContradictionPlan(board, result, contradictionFallback);
-                    AppendEvidence(board, result, contradictionFallback);
-                }
-            }
 
             result.Apply = result.Changes.Count > 0;
 
@@ -176,72 +158,6 @@ namespace Sudoku.Solver.Rules
             }
 
             return result;
-        }
-
-        /**
-         * Find a deterministic one-sided contradiction forcing plan.
-         *
-         * @param board Current puzzle board.
-         * @returns One-sided contradiction plan, or null if none exists.
-         */
-        private ForcingPlan FindOneSidedContradictionPlan(Board board)
-        {
-            var model = BuildChainModel(board);
-            if (model == null || model.Candidates.Count == 0)
-            {
-                return null;
-            }
-
-            ForcingPlan doubleSidedFallback = null;
-
-            var orderedSeeds = model.Candidates
-                .OrderBy(k => GetDigit(board, k))
-                .ThenBy(k => GetRow(board, k))
-                .ThenBy(k => GetColumn(board, k))
-                .ToList();
-
-            foreach (var seed in orderedSeeds)
-            {
-                var trueBranch = PropagateFromAssumption(board, model, seed, assumeTrue: true, enableUnitCompletion: true);
-                var falseBranch = PropagateFromAssumption(board, model, seed, assumeTrue: false, enableUnitCompletion: true);
-                bool oneSidedContradiction = trueBranch.HasContradiction ^ falseBranch.HasContradiction;
-
-                int row = GetRow(board, seed);
-                int column = GetColumn(board, seed);
-                int digit = GetDigit(board, seed);
-                var cell = board.Cells[row, column];
-                if (cell == null || cell.Value.HasValue || cell.Candidates == null || !cell.Candidates.Contains(digit))
-                {
-                    continue;
-                }
-
-                bool doubleSidedContradiction = trueBranch.HasContradiction && falseBranch.HasContradiction;
-                if (!oneSidedContradiction && !doubleSidedContradiction)
-                {
-                    continue;
-                }
-
-                var candidatePlan = new ForcingPlan
-                {
-                    SeedCandidate = seed,
-                    TrueBranch = trueBranch,
-                    FalseBranch = falseBranch,
-                    ContradictionOnTrueBranch = trueBranch.HasContradiction,
-                    ContradictionOnFalseBranch = falseBranch.HasContradiction
-                };
-
-                if (oneSidedContradiction)
-                {
-                    return candidatePlan;
-                }
-
-                if (doubleSidedFallback == null)
-                {
-                    doubleSidedFallback = candidatePlan;
-                }
-            }
-
-            return doubleSidedFallback;
         }
 
         /**
@@ -268,70 +184,131 @@ namespace Sudoku.Solver.Rules
             ForcingPlan bestPlan = null;
             int bestScore = int.MaxValue;
 
-            foreach (var seed in orderedCandidates)
+            // Check all cells with candidates
+            // For each cell check all candidates as true assumptions, and check if:
+            // - Any result in contradictions, and force them to false
+            // - There are any common conclusions between the true branches, and force those conclusions (which may be true or false)
+            foreach (Cell cell in board.Cells)
             {
-                var trueBranch = PropagateFromAssumption(board, model, seed, assumeTrue: true, enableUnitCompletion: false);
-                var falseBranch = PropagateFromAssumption(board, model, seed, assumeTrue: false, enableUnitCompletion: false);
-
-                var plan = new ForcingPlan
-                {
-                    SeedCandidate = seed,
-                    TrueBranch = trueBranch,
-                    FalseBranch = falseBranch,
-                    ContradictionOnTrueBranch = trueBranch.HasContradiction,
-                    ContradictionOnFalseBranch = falseBranch.HasContradiction
-                };
-
-                bool hasOneSidedContradiction = plan.ContradictionOnTrueBranch ^ plan.ContradictionOnFalseBranch;
-                if (plan.ContradictionOnTrueBranch && plan.ContradictionOnFalseBranch)
+                if (cell == null || cell.Value.HasValue || cell.Candidates == null || cell.Candidates.Count == 0)
                 {
                     continue;
                 }
 
-                if (hasOneSidedContradiction)
+                var plansForCell = new List<ForcingPlan>();
+                foreach (int digit in cell.Candidates.OrderBy(v => v))
                 {
-                    continue;
+                    int seed = MakeCandidateKey(board, cell.Row, cell.Column, digit);
+                    if (!model.CandidateIndexByKey.ContainsKey(seed))
+                    {
+                        continue;
+                    }
+
+                    var plan = EvaluateSeedCandidate(board, model, seed);
+                    if (plan != null)
+                    {
+                        // Store the plan to check with other digit plans in the same cell for common conclusions.
+                        plansForCell.Add(plan);
+                    }
                 }
+                var combinedPlan = CombinePlansForCell(plansForCell);
+                var score = ScorePlan(board, digitCounts, combinedPlan);
 
-                plan.CommonFalseCandidates = trueBranch.FalseCandidates
-                    .Intersect(falseBranch.FalseCandidates)
-                    .Where(k => k != seed)
-                    .Where(k => !IsSameCell(board, k, seed))
-                    .Where(CandidateAvailable)
-                    .OrderBy(k => GetRow(board, k))
-                    .ThenBy(k => GetColumn(board, k))
-                    .ThenBy(k => GetDigit(board, k))
-                    .ToList();
-
-                plan.CommonTrueCandidates = trueBranch.TrueCandidates
-                    .Intersect(falseBranch.TrueCandidates)
-                    .Where(k => !IsSameCell(board, k, seed))
-                    .Where(CandidateAvailable)
-                    .OrderBy(k => GetRow(board, k))
-                    .ThenBy(k => GetColumn(board, k))
-                    .ThenBy(k => GetDigit(board, k))
-                    .ToList();
-
-                bool hasCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
-                if (!hasCommonConclusion)
-                {
-                    continue;
-                }
-
-                int score = ScorePlan(board, digitCounts, plan);
+                // Check if the score is better than the best score so far, and if so, store it as the best plan.
                 if (score < bestScore)
                 {
                     bestScore = score;
-                    bestPlan = plan;
+                    bestPlan = combinedPlan;
                 }
             }
 
             return bestPlan;
+        }
 
-            bool CandidateAvailable(int candidateKey)
+        /**
+         * Evaluate a seed candidate by propagating true and false assumptions.
+         *
+         * @param board Current puzzle board.
+         * @param model Chain model containing candidate links.
+         * @param seedCandidate Candidate key to evaluate.
+         * @returns Forcing plan if deductions are found; otherwise, null.
+         */
+        private ForcingPlan EvaluateSeedCandidate(Board board, ChainModel model, int seedCandidate)
+        {
+            var trueBranch = PropagateFromAssumption(board, model, seedCandidate, assumeTrue: true, enableUnitCompletion: true);
+            var falseBranch = PropagateFromAssumption(board, model, seedCandidate, assumeTrue: false, enableUnitCompletion: true);
+
+            if (!trueBranch.HasContradiction && !falseBranch.HasContradiction)
             {
-                return IsCandidateStillCandidate(board, candidateKey);
+                // Find common conclusions between the two branches.
+                var commonFalse = trueBranch.FalseCandidates.Intersect(falseBranch.FalseCandidates).ToList();
+                var commonTrue = trueBranch.TrueCandidates.Intersect(falseBranch.TrueCandidates).ToList();
+
+                if (commonFalse.Count == 0 && commonTrue.Count == 0)
+                {
+                    return null;
+                }
+
+                return new ForcingPlan
+                {
+                    SeedCandidate = seedCandidate,
+                    TrueBranch = trueBranch,
+                    FalseBranch = falseBranch,
+                    CommonFalseCandidates = commonFalse,
+                    CommonTrueCandidates = commonTrue,
+                    ContradictionOnTrueBranch = false,
+                    ContradictionOnFalseBranch = false
+                };
             }
+            else
+            {
+                return new ForcingPlan
+                {
+                    SeedCandidate = seedCandidate,
+                    TrueBranch = trueBranch,
+                    FalseBranch = falseBranch,
+                    CommonFalseCandidates = new List<int>(),
+                    CommonTrueCandidates = new List<int>(),
+                    ContradictionOnTrueBranch = trueBranch.HasContradiction,
+                    ContradictionOnFalseBranch = falseBranch.HasContradiction
+                };
+            }
+        }
+
+        /**
+         * Combine the plans and check for common conclusions, and score them to find the best one.
+         * 
+         * @param plans List of forcing plans for candidates in the same cell.
+         * @returns Combined forcing plan.
+         */
+        private ForcingPlan CombinePlansForCell(List<ForcingPlan> plans)
+        {
+            if (plans == null || plans.Count == 0)
+            {
+                return null;
+            }
+
+            var combinedPlan = new ForcingPlan
+            {
+                SeedCandidate = plans[0].SeedCandidate,
+                TrueBranch = plans[0].TrueBranch,
+                FalseBranch = plans[0].FalseBranch,
+                CommonFalseCandidates = new List<int>(plans[0].CommonFalseCandidates),
+                CommonTrueCandidates = new List<int>(plans[0].CommonTrueCandidates),
+                ContradictionOnTrueBranch = plans[0].ContradictionOnTrueBranch,
+                ContradictionOnFalseBranch = plans[0].ContradictionOnFalseBranch
+            };
+
+            for (int i = 1; i < plans.Count; i++)
+            {
+                var plan = plans[i];
+                combinedPlan.CommonFalseCandidates = combinedPlan.CommonFalseCandidates.Intersect(plan.CommonFalseCandidates).ToList();
+                combinedPlan.CommonTrueCandidates = combinedPlan.CommonTrueCandidates.Intersect(plan.CommonTrueCandidates).ToList();
+                combinedPlan.ContradictionOnTrueBranch |= plan.ContradictionOnTrueBranch;
+                combinedPlan.ContradictionOnFalseBranch |= plan.ContradictionOnFalseBranch;
+            }
+
+            return combinedPlan;
         }
 
         /**
