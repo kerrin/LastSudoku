@@ -9,18 +9,19 @@ namespace Sudoku.Solver.Rules
 {
     /**
      * Forcing Chains (AIC family) derive conclusions by following alternating
-     * strong/weak inferences from an assumption and checking both branches.
-     *
-     * Canonical outcomes covered here:
-     * 1. Contradiction forcing: if one assumption branch is impossible, the
-     *    opposite truth value is forced.
-     * 2. Common conclusion forcing (discontinuous AIC): if both branches force
-     *    the same candidate false, eliminate that candidate; if both force the
-     *    same candidate true, place that value.
+     * strong/weak inferences.
      *
      * Strong links are built from:
      * - Bi-value cells (exactly two candidates in one cell).
      * - Conjugate pairs (exactly two candidates for a digit in one row/column/box).
+     * 
+     * Weak links are built from:
+     * - True digits to all seen matching digits in the same cell or unit (row/column/box), where there are multiple candidates of the digit seen.
+     *
+     * Forcing chains can occur when:
+     * - Chains start from all candidates in a single cell
+     * - Chains start from a single digit's candidates in a single row/column/box
+     * and all chains combine to produce a common conclusion (candidate placement or removal).
      *
      * This bounded implementation targets human-tractable chains and intentionally
      * avoids exhaustive SAT-level search.
@@ -68,7 +69,7 @@ namespace Sudoku.Solver.Rules
             public DirectionalLinkKind? ContradictionSourceLinkKind;
             public Queue<(int key, bool valueTrue)> Pending = new Queue<(int key, bool valueTrue)>();
             public List<int> AssignmentOrder = new List<int>();
-            public Dictionary<int, InferenceCause> InferenceCauseByCandidate = new Dictionary<int, InferenceCause>();
+            public Dictionary<int, List<InferenceCause>> InferenceCausesByCandidate = new Dictionary<int, List<InferenceCause>>();
         }
 
         private sealed class InferenceCause
@@ -637,6 +638,7 @@ namespace Sudoku.Solver.Rules
                 // Weak links: true candidate excludes all conflicting candidates.
                 if (valueTrue && model.WeakLinksByKey.TryGetValue(candidate, out var weakLinks))
                 {
+                    // Only true candidates propagate weak links; false candidates do not.
                     for (int i = 0; i < weakLinks.Count; i++)
                     {
                         TryEnqueueAssignment(
@@ -648,7 +650,7 @@ namespace Sudoku.Solver.Rules
                             "Weak link",
                             sourceCandidate: candidate,
                             sourceLinkKind: DirectionalLinkKind.Weak,
-                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, candidate, weakLinks[i]));
+                            isPreviewLink: ShouldExposeWeakConflictAsLink(board, candidate, weakLinks[i]) && !IsStrongLink(model, candidate, weakLinks[i]));
                     }
                 }
 
@@ -671,6 +673,22 @@ namespace Sudoku.Solver.Rules
             }
 
             return state;
+        }
+
+        /**
+         * Determine whether a candidate pair is already connected by a strong link.
+         *
+         * @param model Inference graph model.
+         * @param fromCandidate Source candidate.
+         * @param toCandidate Target candidate.
+         * @returns True when the pair is a strong-link edge.
+         */
+        private static bool IsStrongLink(ChainModel model, int fromCandidate, int toCandidate)
+        {
+            return model != null
+                && model.StrongLinksByKey.TryGetValue(fromCandidate, out var linked)
+                && linked != null
+                && linked.Contains(toCandidate);
         }
 
         /**
@@ -718,6 +736,7 @@ namespace Sudoku.Solver.Rules
 
                 if (state.TrueCandidates.Contains(candidate))
                 {
+                    RecordInferenceCause(state, candidate, sourceCandidate.Value, sourceLinkKind.Value, isPreviewLink);
                     return;
                 }
             }
@@ -735,21 +754,56 @@ namespace Sudoku.Solver.Rules
 
                 if (state.FalseCandidates.Contains(candidate))
                 {
+                    RecordInferenceCause(state, candidate, sourceCandidate.Value, sourceLinkKind.Value, isPreviewLink);
                     return;
                 }
             }
 
-            state.Pending.Enqueue((candidate, valueTrue));
-
-            if (sourceCandidate.HasValue && sourceLinkKind.HasValue && !state.InferenceCauseByCandidate.ContainsKey(candidate))
+            if(!state.Pending.Contains((candidate, valueTrue)))
             {
-                state.InferenceCauseByCandidate[candidate] = new InferenceCause
+                state.Pending.Enqueue((candidate, valueTrue));
+
+                if (sourceCandidate.HasValue && sourceLinkKind.HasValue)
                 {
-                    FromCandidate = sourceCandidate.Value,
-                    LinkKind = sourceLinkKind.Value,
-                    IsPreviewLink = isPreviewLink,
-                };
+                    RecordInferenceCause(state, candidate, sourceCandidate.Value, sourceLinkKind.Value, isPreviewLink);
+                }
             }
+        }
+
+        /**
+         * Record one causal edge for a candidate, optionally as preview-only.
+         *
+         * @param state Branch state.
+         * @param candidate Target candidate.
+         * @param fromCandidate Source candidate.
+         * @param linkKind Strong or weak link kind.
+         * @param isPreviewLink True when the edge should be rendered in the preview.
+         */
+        private static void RecordInferenceCause(PropagationState state, int candidate, int fromCandidate, DirectionalLinkKind linkKind, bool isPreviewLink)
+        {
+            if (state == null)
+            {
+                return;
+            }
+
+            if (!state.InferenceCausesByCandidate.TryGetValue(candidate, out var causes))
+            {
+                causes = new List<InferenceCause>();
+                state.InferenceCausesByCandidate[candidate] = causes;
+            }
+
+            bool alreadyStored = causes.Exists(c => c.FromCandidate == fromCandidate && c.LinkKind == linkKind && c.IsPreviewLink == isPreviewLink);
+            if (alreadyStored)
+            {
+                return;
+            }
+
+            causes.Add(new InferenceCause
+            {
+                FromCandidate = fromCandidate,
+                LinkKind = linkKind,
+                IsPreviewLink = isPreviewLink,
+            });
         }
 
         /**
@@ -842,13 +896,15 @@ namespace Sudoku.Solver.Rules
 
             if (trueCount > 1)
             {
+                // Too many trues in the cell, so the branch is impossible.
                 state.HasContradiction = true;
-                state.ContradictionReason = $"Cell r{row + 1}c{column + 1} has multiple forced digits.";
+                state.ContradictionReason = $"Cell r{row + 1}c{column + 1} has multiple true forced digits.";
                 return;
             }
 
             if (trueCount == 0 && unknownCount == 0)
             {
+                // Resulted in no possible candidates for the cell, so the branch is impossible.
                 state.HasContradiction = true;
                 state.ContradictionReason = $"Cell r{row + 1}c{column + 1} has no valid candidates.";
                 return;
@@ -856,6 +912,7 @@ namespace Sudoku.Solver.Rules
 
             if (trueCount == 0 && unknownCount == 1)
             {
+                // Only one candidate left in the cell, so it must be true.
                 TryEnqueueAssignment(board, model, state, unknownCandidate, true, "Cell completion");
             }
         }
@@ -1130,24 +1187,30 @@ namespace Sudoku.Solver.Rules
                     bool expectTrue = plan.CommonTrueCandidates.Contains(candidate);
                     bool expectFalse = plan.CommonFalseCandidates.Contains(candidate);
 
-                    if (expectTrue && plan.TrueBranch.TrueCandidates.Contains(candidate))
+                    if (expectTrue)
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
+                        if (plan.TrueBranch.TrueCandidates.Contains(candidate))
+                        {
+                            addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
+                        }
+
+                        if (plan.FalseBranch.TrueCandidates.Contains(candidate))
+                        {
+                            addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
+                        }
                     }
 
-                    if (expectTrue && plan.FalseBranch.TrueCandidates.Contains(candidate))
+                    if (expectFalse)
                     {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
-                    }
+                        if(plan.TrueBranch.FalseCandidates.Contains(candidate))
+                        {
+                            addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
+                        }
 
-                    if (expectFalse && plan.TrueBranch.FalseCandidates.Contains(candidate))
-                    {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.TrueBranch, plan.SeedCandidate, candidate);
-                    }
-
-                    if (expectFalse && plan.FalseBranch.FalseCandidates.Contains(candidate))
-                    {
-                        addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
+                        if (plan.FalseBranch.FalseCandidates.Contains(candidate))
+                        {
+                            addedAny |= AppendPathEvidenceForBranch(board, result, plan.FalseBranch, plan.SeedCandidate, candidate);
+                        }
                     }
                 }
             }
@@ -1187,20 +1250,66 @@ namespace Sudoku.Solver.Rules
             {
                 int toCandidate = path[i];
                 int fromCandidate = path[i - 1];
-                if (!branch.InferenceCauseByCandidate.TryGetValue(toCandidate, out var cause))
+                var causes = TryGetCauses(branch, toCandidate);
+                if (causes == null)
                 {
                     continue;
                 }
 
-                if (!cause.IsPreviewLink)
+                foreach (var cause in causes)
                 {
-                    continue;
-                }
+                    if (!cause.IsPreviewLink)
+                    {
+                        continue;
+                    }
 
-                AddEvidenceDirectionalLink(result, board, fromCandidate, toCandidate, cause.LinkKind);
+                    AddEvidenceDirectionalLink(result, board, fromCandidate, toCandidate, cause.LinkKind);
+                }
             }
 
             return true;
+        }
+
+        /**
+         * Add directional strong/weak links used by the displayed forcing evidence.
+         *
+         * @param board Current puzzle board.
+         * @param result Rule result accumulator.
+         * @param branch Branch propagation state.
+         * @param evidenceCandidates Ordered evidence candidates shown in the preview.
+         */
+        private void AppendEvidenceLinks(Board board, RuleResult result, PropagationState branch, List<int> evidenceCandidates)
+        {
+            if (result == null || branch == null || evidenceCandidates == null || evidenceCandidates.Count == 0)
+            {
+                return;
+            }
+
+            var evidenceSet = new HashSet<int>(evidenceCandidates);
+            for (int i = 0; i < evidenceCandidates.Count; i++)
+            {
+                int targetCandidate = evidenceCandidates[i];
+                var causes = TryGetCauses(branch, targetCandidate);
+                if (causes == null)
+                {
+                    continue;
+                }
+
+                foreach(var cause in causes)
+                {
+                    if (!evidenceSet.Contains(cause.FromCandidate))
+                    {
+                        continue;
+                    }
+
+                    if (!cause.IsPreviewLink)
+                    {
+                        continue;
+                    }
+
+                    AddEvidenceDirectionalLink(result, board, cause.FromCandidate, targetCandidate, cause.LinkKind);
+                }
+            }
         }
 
         /**
@@ -1249,29 +1358,53 @@ namespace Sudoku.Solver.Rules
             var visited = new HashSet<int>();
             int current = targetCandidate;
 
-            while (true)
-            {
-                if (!visited.Add(current))
-                {
-                    path.Clear();
-                    return false;
-                }
+            return InnerTryBuildPath(visited, branch, seedCandidate, current, path, out path);
+        }
 
-                path.Add(current);
-                if (current == seedCandidate)
+        /**
+         * Recursive function for TryBuildPath, that attempts to build a path from the target candidate to the seed candidate.
+         * If the path cannot be fully reconstructed, finalPath will be cleared..
+         *
+         * @param visited Set of already-visited candidates to avoid cycles.
+         * @param branch Branch propagation state.
+         * @param seedCandidate Seed candidate key.
+         * @param current Current candidate key being processed.
+         * @param path Current path from target to seed.
+         * @param finalPath Output path from seed to target.
+         * @returns True when a full path was reconstructed.
+         */
+        private static bool InnerTryBuildPath(HashSet<int> visited, PropagationState branch, int seedCandidate, int current, List<int> path, out List<int> finalPath)
+        {
+            finalPath = path;
+            if (!visited.Add(current))
+            {
+                finalPath.RemoveAt(finalPath.Count - 1);
+                return false;
+            }
+
+            finalPath.Add(current);
+            if (current == seedCandidate)
+            {
+                finalPath.Reverse();
+                return true;
+            }
+
+            var causes = TryGetCauses(branch, current);
+            if (causes == null)
+            {
+                finalPath.RemoveAt(finalPath.Count - 1);
+                return false;
+            }
+
+            foreach(var cause in causes)
+            {
+                if(InnerTryBuildPath(visited, branch, seedCandidate, cause.FromCandidate, finalPath, out finalPath))
                 {
-                    path.Reverse();
                     return true;
                 }
-
-                if (!branch.InferenceCauseByCandidate.TryGetValue(current, out var cause))
-                {
-                    path.Clear();
-                    return false;
-                }
-
-                current = cause.FromCandidate;
             }
+            finalPath.RemoveAt(finalPath.Count - 1);
+            return false;
         }
 
         /**
@@ -1321,41 +1454,21 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Add directional strong/weak links used by the displayed forcing evidence.
+         * Prefer a previewable cause when multiple causes exist for the same candidate.
          *
-         * @param board Current puzzle board.
-         * @param result Rule result accumulator.
          * @param branch Branch propagation state.
-         * @param evidenceCandidates Ordered evidence candidates shown in the preview.
+         * @param candidate Target candidate.
+         * @param cause Chosen cause, if any.
+         * @returns The causes, or null if none exist.
          */
-        private void AppendEvidenceLinks(Board board, RuleResult result, PropagationState branch, List<int> evidenceCandidates)
+        private static List<InferenceCause> TryGetCauses(PropagationState branch, int candidate)
         {
-            if (result == null || branch == null || evidenceCandidates == null || evidenceCandidates.Count == 0)
+            if (branch == null || !branch.InferenceCausesByCandidate.TryGetValue(candidate, out var causes) || causes == null || causes.Count == 0)
             {
-                return;
+                return null;
             }
 
-            var evidenceSet = new HashSet<int>(evidenceCandidates);
-            for (int i = 0; i < evidenceCandidates.Count; i++)
-            {
-                int targetCandidate = evidenceCandidates[i];
-                if (!branch.InferenceCauseByCandidate.TryGetValue(targetCandidate, out var cause))
-                {
-                    continue;
-                }
-
-                if (!evidenceSet.Contains(cause.FromCandidate))
-                {
-                    continue;
-                }
-
-                if (!cause.IsPreviewLink)
-                {
-                    continue;
-                }
-
-                AddEvidenceDirectionalLink(result, board, cause.FromCandidate, targetCandidate, cause.LinkKind);
-            }
+            return causes;
         }
 
         /**
@@ -1400,7 +1513,26 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < result.UsedDirectionalLinks.Count; i++)
             {
                 var existing = result.UsedDirectionalLinks[i];
-                if (existing != null && existing.Equals(candidate))
+                if (existing == null || existing.Start == null || existing.End == null)
+                {
+                    continue;
+                }
+
+                bool sameDirection = existing.Start.Row == candidate.Start.Row
+                    && existing.Start.Column == candidate.Start.Column
+                    && existing.Start.Digit == candidate.Start.Digit
+                    && existing.End.Row == candidate.End.Row
+                    && existing.End.Column == candidate.End.Column
+                    && existing.End.Digit == candidate.End.Digit;
+
+                bool oppositeDirection = existing.Start.Row == candidate.End.Row
+                    && existing.Start.Column == candidate.End.Column
+                    && existing.Start.Digit == candidate.End.Digit
+                    && existing.End.Row == candidate.Start.Row
+                    && existing.End.Column == candidate.Start.Column
+                    && existing.End.Digit == candidate.Start.Digit;
+
+                if (sameDirection || oppositeDirection)
                 {
                     return;
                 }
@@ -1436,22 +1568,22 @@ namespace Sudoku.Solver.Rules
                 return false;
             }
 
-            if (fromRow == toRow)
-            {
-                // Only show links when the digit is a conjugate pair (only 2 candidates) in the row
-                return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) == 2;
-            }
+            // if (fromRow == toRow)
+            // {
+            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the row
+            //     return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) > 2;
+            // }
 
-            if (fromColumn == toColumn)
-            {
-                // Only show links when the digit is a conjugate pair (only 2 candidates) in the column
-                return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) == 2;
-            }
+            // if (fromColumn == toColumn)
+            // {
+            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the column
+            //     return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) > 2;
+            // }
 
             // if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
             // {
             //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the box
-            //     return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) == 2;
+            //     return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) > 2;
             // }
 
             return true;
@@ -1490,40 +1622,6 @@ namespace Sudoku.Solver.Rules
          * @param b Second candidate key.
          */
         private static void AddLink(Dictionary<int, List<int>> links, int a, int b)
-        {
-            if (a == b) return;
-
-            if (!links.TryGetValue(a, out var listA))
-            {
-                listA = new List<int>();
-                links[a] = listA;
-            }
-
-            if (!listA.Contains(b))
-            {
-                listA.Add(b);
-            }
-
-            if (!links.TryGetValue(b, out var listB))
-            {
-                listB = new List<int>();
-                links[b] = listB;
-            }
-
-            if (!listB.Contains(a))
-            {
-                listB.Add(a);
-            }
-        }
-
-        /**
-         * Add a bidirectional weak conflict between two candidates.
-         *
-         * @param links Weak-conflict adjacency map.
-         * @param a First candidate key.
-         * @param b Second candidate key.
-         */
-        private static void AddWeakConflictPair(Dictionary<int, List<int>> links, int a, int b)
         {
             if (a == b) return;
 
