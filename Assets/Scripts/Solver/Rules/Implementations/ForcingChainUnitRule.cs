@@ -44,7 +44,7 @@ namespace Sudoku.Solver.Rules
         private const string DeductionTag = "Deduction";
 
         private const int MaxAssignmentsPerBranch = 4000;
-        private const int MaxEvidencePerBranch = 100;
+        private const int MaxEvidencePerBranch = 20;
 
         private sealed class ChainModel
         {
@@ -199,6 +199,11 @@ namespace Sudoku.Solver.Rules
                             continue;
                         }
 
+                        if (!IsPlanWithinPreviewEvidenceLimit(plan))
+                        {
+                            continue;
+                        }
+
                         // One-sided contradiction is a valid forcing-chain deduction:
                         // the assumption that makes the branch impossible is rejected,
                         // while the opposite assumption remains consistent. Only a fully
@@ -318,8 +323,8 @@ namespace Sudoku.Solver.Rules
             bool isCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
             bool isPlacement = plan.CommonTrueCandidates.Count > 0;
             int deductionCount = plan.CommonTrueCandidates.Count > 0 ? plan.CommonTrueCandidates.Count : plan.CommonFalseCandidates.Count;
-            int trueBranchSize = plan.TrueBranch != null ? plan.TrueBranch.AssignmentOrder.Count : int.MaxValue / 4;
-            int falseBranchSize = plan.FalseBranch != null ? plan.FalseBranch.AssignmentOrder.Count : int.MaxValue / 4;
+            int trueBranchSize = CountPreviewEvidence(plan.TrueBranch);
+            int falseBranchSize = CountPreviewEvidence(plan.FalseBranch);
             int branchSize = Math.Min(trueBranchSize, falseBranchSize);
 
             int typeScore = 0;
@@ -336,6 +341,41 @@ namespace Sudoku.Solver.Rules
                 + (seedCount * 10000)
                 + (branchSize * 100)
                 + deductionCount;
+        }
+
+        /**
+         * Determine whether the plan's preview evidence fits within the allowed
+         * per-branch display cap. This is used during plan selection so the solver
+         * can discard oversized previews and continue testing other viable plans.
+         *
+         * @param plan Candidate forcing plan.
+         * @returns True when both branches stay within the preview cap.
+         */
+        private static bool IsPlanWithinPreviewEvidenceLimit(ForcingPlan plan)
+        {
+            if (plan == null)
+            {
+                return false;
+            }
+
+            return CountPreviewEvidence(plan.TrueBranch) <= MaxEvidencePerBranch
+                && CountPreviewEvidence(plan.FalseBranch) <= MaxEvidencePerBranch;
+        }
+
+        /**
+         * Count the unique preview deductions exposed by one branch.
+         *
+         * @param branch Branch propagation state.
+         * @returns Number of unique candidate assignments in the branch preview.
+         */
+        private static int CountPreviewEvidence(PropagationState branch)
+        {
+            if (branch == null || branch.AssignmentOrder == null)
+            {
+                return 0;
+            }
+
+            return branch.AssignmentOrder.Distinct().Count();
         }
 
         /**

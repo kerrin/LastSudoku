@@ -1,3 +1,5 @@
+using System;
+using System.Collections;
 using System.Linq;
 using NUnit.Framework;
 using Sudoku.Models;
@@ -191,6 +193,42 @@ namespace Sudoku.Tests.Editor
             var result = rule.CalculateChanges(board);
             Assert.IsFalse(result.Apply);
             Assert.IsEmpty(result.Changes);
+        }
+
+        [Test]
+        public void ForcingChainCellRule_EvidenceLimit_TruncatesPreview()
+        {
+            var asm = typeof(ForcingChainCellRule).Assembly;
+            var planType = asm.GetType("Sudoku.Solver.Rules.ForcingPlan", throwOnError: true);
+            var stateType = asm.GetType("Sudoku.Solver.Rules.PropagationState", throwOnError: true);
+
+            var plan = Activator.CreateInstance(planType);
+            var trueBranch = Activator.CreateInstance(stateType);
+            var falseBranch = Activator.CreateInstance(stateType);
+
+            planType.GetField("SeedCandidate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(plan, 1);
+            planType.GetField("TrueBranch", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(plan, trueBranch);
+            planType.GetField("FalseBranch", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+                .SetValue(plan, falseBranch);
+
+            var assignmentOrderField = stateType.GetField("AssignmentOrder", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+            var trueEvidence = (IList)assignmentOrderField.GetValue(trueBranch);
+            for (int i = 0; i < 101; i++)
+            {
+                trueEvidence.Add(i);
+            }
+
+            var result = new RuleResult();
+            var appendEvidence = typeof(ForcingChainCellRule).GetMethod("AppendEvidence", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.NotNull(appendEvidence);
+
+            var board = TestHelpers.CreateEmptyBoard();
+            var rule = new ForcingChainCellRule();
+            appendEvidence.Invoke(rule, new object[] { board, result, plan });
+
+            Assert.LessOrEqual(result.UsedCells.Count, 100);
         }
 
         /**
