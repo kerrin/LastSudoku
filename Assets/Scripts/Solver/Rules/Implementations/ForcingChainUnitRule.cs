@@ -1658,24 +1658,6 @@ namespace Sudoku.Solver.Rules
                 return false;
             }
 
-            // if (fromRow == toRow)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the row
-            //     return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) > 2;
-            // }
-
-            // if (fromColumn == toColumn)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the column
-            //     return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) > 2;
-            // }
-
-            // if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the box
-            //     return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) > 2;
-            // }
-
             return true;
         }
 
@@ -1828,95 +1810,6 @@ namespace Sudoku.Solver.Rules
         {
             return GetRow(board, a) == GetRow(board, b)
                 && GetColumn(board, a) == GetColumn(board, b);
-        }
-
-        /**
-         * Determine whether a weak preview edge is a valid conjugate-pair conflict.
-         *
-         * @param board Current puzzle board.
-         * @param fromCandidate Source candidate.
-         * @param toCandidate Target candidate.
-         * @returns True when the weak edge is supported by a unit with exactly two candidates.
-         */
-        private static bool IsValidWeakPreviewLink(Board board, int fromCandidate, int toCandidate)
-        {
-            if (GetDigit(board, fromCandidate) != GetDigit(board, toCandidate))
-            {
-                return false;
-            }
-
-            int fromRow = GetRow(board, fromCandidate);
-            int fromColumn = GetColumn(board, fromCandidate);
-            int toRow = GetRow(board, toCandidate);
-            int toColumn = GetColumn(board, toCandidate);
-
-            if (fromRow == toRow && fromColumn == toColumn)
-            {
-                return false;
-            }
-
-            int digit = GetDigit(board, fromCandidate);
-
-            if (fromRow == toRow)
-            {
-                return CountDigitCandidatesInRow(board, fromRow, digit) == 2;
-            }
-
-            if (fromColumn == toColumn)
-            {
-                return CountDigitCandidatesInColumn(board, fromColumn, digit) == 2;
-            }
-
-            if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
-            {
-                return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, digit) == 2;
-            }
-
-            return false;
-        }
-
-        private static int CountDigitCandidatesInRow(Board board, int row, int digit)
-        {
-            int count = 0;
-            for (int column = 0; column < board.Size; column++)
-            {
-                var cell = board.Cells[row, column];
-                if (cell != null && !cell.Value.HasValue && cell.Candidates != null && cell.Candidates.Contains(digit))
-                {
-                    count++;
-                }
-            }
-
-            return count;
-        }
-
-        private static int CountDigitCandidatesInColumn(Board board, int column, int digit)
-        {
-            int count = 0;
-            for (int row = 0; row < board.Size; row++)
-            {
-                var cell = board.Cells[row, column];
-                if (cell != null && !cell.Value.HasValue && cell.Candidates != null && cell.Candidates.Contains(digit))
-                {
-                    count++;
-                }
-            }
-
-            return count;
-        }
-
-        private static int CountDigitCandidatesInBox(Board board, int box, int digit)
-        {
-            int count = 0;
-            foreach (var cell in board.GetBox(box))
-            {
-                if (cell != null && !cell.Value.HasValue && cell.Candidates != null && cell.Candidates.Contains(digit))
-                {
-                    count++;
-                }
-            }
-
-            return count;
         }
 
         /**
