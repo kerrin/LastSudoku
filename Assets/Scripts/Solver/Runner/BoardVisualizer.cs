@@ -664,7 +664,8 @@ namespace Sudoku.Solver
                                                    resultToShow.UsedCells != null &&
                                                    resultToShow.UsedCells.Exists(u =>
                                                        !string.IsNullOrWhiteSpace(u.HighlightTag) &&
-                                                       (string.Equals(u.HighlightTag, "TargetA", OrdinalIgnoreCase) ||
+                                                       (string.Equals(u.HighlightTag, "Seed", OrdinalIgnoreCase) ||
+                                                        string.Equals(u.HighlightTag, "TargetA", OrdinalIgnoreCase) ||
                                                         string.Equals(u.HighlightTag, "TargetB", OrdinalIgnoreCase)));
 
                 // Log when the display source changes or preview toggles (throttled)
@@ -735,6 +736,10 @@ namespace Sudoku.Solver
                                         if (string.Equals(uc.HighlightTag, "Target", OrdinalIgnoreCase))
                                         {
                                             highlightColor = ResolveChainHighlightColor("TargetA");
+                                        }
+                                        else if (string.Equals(uc.HighlightTag, "Seed", OrdinalIgnoreCase))
+                                        {
+                                            highlightColor = new Color(0f, 0.45f, 0f, 0.85f);
                                         }
                                         else if (string.Equals(uc.HighlightTag, "TargetA", OrdinalIgnoreCase))
                                         {

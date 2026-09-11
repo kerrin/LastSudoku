@@ -110,6 +110,60 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
+        public void ForcingChainUnitRule_PathEvidence_AlternatesTargetColoursAlongChain()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var rule = new ForcingChainUnitRule();
+
+            ClearAllCandidates(board);
+            AddCandidates(board, 0, 0, 1, 2);
+            AddCandidates(board, 0, 4, 1, 3);
+            AddCandidates(board, 4, 0, 2, 3);
+            AddCandidates(board, 4, 4, 3, 6, 7);
+            AddCandidates(board, 4, 8, 3, 8);
+            AddCandidates(board, 8, 4, 3, 9);
+
+            var result = rule.CalculateChanges(board);
+            Assert.IsTrue(result.Apply);
+
+            var chainTargets = result.UsedCells
+                .Where(u => u.HighlightTag == "TargetA" || u.HighlightTag == "TargetB")
+                .ToList();
+
+            Assert.IsTrue(chainTargets.Count > 2);
+            Assert.IsTrue(chainTargets.Any(u => !(u.Row == 0 && u.Column == 0)));
+
+            var targetTags = result.UsedCells
+                .Where(u => u.HighlightTag == "TargetA" || u.HighlightTag == "TargetB")
+                .Select(u => u.HighlightTag)
+                .Distinct()
+                .ToList();
+
+            Assert.IsTrue(targetTags.Contains("TargetA"));
+            Assert.IsTrue(targetTags.Contains("TargetB"));
+            Assert.IsTrue(result.UsedCells.Count(u => u.HighlightTag == "TargetA" || u.HighlightTag == "TargetB") > 2);
+        }
+
+        [Test]
+        public void ForcingChainUnitRule_Preview_UsesDedicatedSeedTag()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var rule = new ForcingChainUnitRule();
+
+            ClearAllCandidates(board);
+            AddCandidates(board, 0, 0, 1, 2);
+            AddCandidates(board, 0, 4, 1, 3);
+            AddCandidates(board, 4, 0, 2, 3);
+            AddCandidates(board, 4, 4, 3, 6, 7);
+            AddCandidates(board, 4, 8, 3, 8);
+            AddCandidates(board, 8, 4, 3, 9);
+
+            var result = rule.CalculateChanges(board);
+            Assert.IsTrue(result.Apply);
+            Assert.IsTrue(result.UsedCells.Any(u => u.HighlightTag == "Seed" && u.Row == 0 && u.Column == 0));
+        }
+
+        [Test]
         public void ForcingChainUnitRule_Example4_ColourPrerequisiteDisabled_DoesNotApply()
         {
             var board = TestHelpers.CreateEmptyBoard();
@@ -127,6 +181,20 @@ namespace Sudoku.Tests.Editor
             ColourSettings.BlueEnabled = false;
 
             Assert.IsFalse(rule.CanApply(board));
+            var result = rule.CalculateChanges(board);
+            Assert.IsFalse(result.Apply);
+            Assert.IsEmpty(result.Changes);
+        }
+
+        [Test]
+        public void ForcingChainUnitRule_NoValidUnitPlan_ReturnsNoApply()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            var rule = new ForcingChainUnitRule();
+
+            ClearAllCandidates(board);
+            AddCandidates(board, 0, 0, 1, 2);
+
             var result = rule.CalculateChanges(board);
             Assert.IsFalse(result.Apply);
             Assert.IsEmpty(result.Changes);

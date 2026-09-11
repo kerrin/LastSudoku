@@ -40,9 +40,9 @@ namespace Sudoku.Solver.Rules
         }
         private const string TargetATag = "TargetA";
         private const string TargetBTag = "TargetB";
+        private const string SeedTag = "Seed";
         private const string DeductionTag = "Deduction";
 
-        private const int MaxSeedCount = 729;
         private const int MaxAssignmentsPerBranch = 4000;
         private const int MaxEvidencePerBranch = 8;
 
@@ -57,38 +57,6 @@ namespace Sudoku.Solver.Rules
             public Dictionary<int, List<int>> StrongLinksByKey = new Dictionary<int, List<int>>();
             public Dictionary<int, List<int>> CellGroupsByIndex = new Dictionary<int, List<int>>();
             public Dictionary<int, List<int>> UnitDigitGroupsByIndex = new Dictionary<int, List<int>>();
-        }
-
-        private sealed class PropagationState
-        {
-            public HashSet<int> TrueCandidates = new HashSet<int>();
-            public HashSet<int> FalseCandidates = new HashSet<int>();
-            public bool HasContradiction;
-            public string ContradictionReason;
-            public int? ContradictionCandidate;
-            public int? ContradictionSourceCandidate;
-            public DirectionalLinkKind? ContradictionSourceLinkKind;
-            public Queue<(int key, bool valueTrue)> Pending = new Queue<(int key, bool valueTrue)>();
-            public List<int> AssignmentOrder = new List<int>();
-            public Dictionary<int, List<InferenceCause>> InferenceCausesByCandidate = new Dictionary<int, List<InferenceCause>>();
-        }
-
-        private sealed class InferenceCause
-        {
-            public int FromCandidate;
-            public DirectionalLinkKind LinkKind;
-            public bool IsPreviewLink;
-        }
-
-        private sealed class ForcingPlan
-        {
-            public int SeedCandidate;
-            public PropagationState TrueBranch;
-            public PropagationState FalseBranch;
-            public List<int> CommonFalseCandidates = new List<int>();
-            public List<int> CommonTrueCandidates = new List<int>();
-            public bool ContradictionOnTrueBranch;
-            public bool ContradictionOnFalseBranch;
         }
 
         public override string Name => "Forcing Chain (Cell)";
@@ -145,11 +113,16 @@ namespace Sudoku.Solver.Rules
 
             AppendEvidence(board, result, plan);
 
-            result.Apply = result.Changes.Count > 0;
+            // A valid forcing-chain deduction must still render its evidence even when
+            // the final result is presented as a preview-only state (for example, when
+            // the branch resolves to a contradiction chain without creating a concrete
+            // board mutation yet). The board preview depends on Apply + UsedCells,
+            // not only on whether a CellChange list was created.
+            result.Apply = result.Changes.Count > 0 || result.UsedCells.Count > 0;
 
             if (result.Apply && string.IsNullOrWhiteSpace(result.Description))
             {
-                result.Description = "Forcing Chain produced a deduction.";
+                result.Description = "Forcing Chain (Cell) produced a deduction.";
             }
 
             if (!result.Apply)
@@ -211,8 +184,8 @@ namespace Sudoku.Solver.Rules
                         plansForCell.Add(plan);
                     }
                 }
-                var combinedPlan = CombinePlansForCell(plansForCell);
-                var score = ScorePlan(board, digitCounts, combinedPlan);
+                var combinedPlan = ForcingChainPlanCombiner.Combine(plansForCell);
+                var score = combinedPlan == null ? int.MaxValue : ScorePlan(board, digitCounts, combinedPlan);
 
                 // Check if the score is better than the best score so far, and if so, store it as the best plan.
                 if (score < bestScore)
@@ -281,36 +254,6 @@ namespace Sudoku.Solver.Rules
          * @param plans List of forcing plans for candidates in the same cell.
          * @returns Combined forcing plan.
          */
-        private ForcingPlan CombinePlansForCell(List<ForcingPlan> plans)
-        {
-            if (plans == null || plans.Count == 0)
-            {
-                return null;
-            }
-
-            var combinedPlan = new ForcingPlan
-            {
-                SeedCandidate = plans[0].SeedCandidate,
-                TrueBranch = plans[0].TrueBranch,
-                FalseBranch = plans[0].FalseBranch,
-                CommonFalseCandidates = new List<int>(plans[0].CommonFalseCandidates),
-                CommonTrueCandidates = new List<int>(plans[0].CommonTrueCandidates),
-                ContradictionOnTrueBranch = plans[0].ContradictionOnTrueBranch,
-                ContradictionOnFalseBranch = plans[0].ContradictionOnFalseBranch
-            };
-
-            for (int i = 1; i < plans.Count; i++)
-            {
-                var plan = plans[i];
-                combinedPlan.CommonFalseCandidates = combinedPlan.CommonFalseCandidates.Intersect(plan.CommonFalseCandidates).ToList();
-                combinedPlan.CommonTrueCandidates = combinedPlan.CommonTrueCandidates.Intersect(plan.CommonTrueCandidates).ToList();
-                combinedPlan.ContradictionOnTrueBranch |= plan.ContradictionOnTrueBranch;
-                combinedPlan.ContradictionOnFalseBranch |= plan.ContradictionOnFalseBranch;
-            }
-
-            return combinedPlan;
-        }
-
         /**
          * Build a global candidate count per digit to prefer rarer digits as chain seeds.
          *
@@ -1101,9 +1044,10 @@ namespace Sudoku.Solver.Rules
          */
         private void AppendEvidence(Board board, RuleResult result, ForcingPlan plan)
         {
-            AddUsedCell(result, GetRow(board, plan.SeedCandidate), GetColumn(board, plan.SeedCandidate), GetDigit(board, plan.SeedCandidate), TargetATag);
-            AddUsedCell(result, GetRow(board, plan.SeedCandidate), GetColumn(board, plan.SeedCandidate), GetDigit(board, plan.SeedCandidate), TargetBTag);
-
+            // The seed assumption is the start of the chain, not both ends of it.
+            // Reconstructed branch paths already assign the alternating TargetA / TargetB
+            // tags along the causal sequence; adding both tags to the same seed candidate
+            // creates a conflicting preview and prevents the branch from displaying correctly.
             bool emittedPathEvidence = AppendCausalEvidencePaths(board, result, plan);
             if (emittedPathEvidence)
             {
@@ -1139,12 +1083,63 @@ namespace Sudoku.Solver.Rules
         private bool AppendCausalEvidencePaths(Board board, RuleResult result, ForcingPlan plan)
         {
             var changedCandidates = CollectChangedCandidates(board, result);
+            bool addedAny = false;
+
             if (changedCandidates.Count == 0)
             {
+                var fallbackEvidence = new List<int>();
+                if (plan.TrueBranch != null)
+                {
+                    fallbackEvidence.AddRange(plan.TrueBranch.AssignmentOrder);
+                }
+                if (plan.FalseBranch != null)
+                {
+                    fallbackEvidence.AddRange(plan.FalseBranch.AssignmentOrder);
+                }
+
+                fallbackEvidence = fallbackEvidence
+                    .Distinct()
+                    .Take(MaxEvidencePerBranch)
+                    .ToList();
+
+                if (fallbackEvidence.Count > 0)
+                {
+                    for (int i = 0; i < fallbackEvidence.Count; i++)
+                    {
+                        int candidate = fallbackEvidence[i];
+                        string tag = DeterminePathHighlightTag(fallbackEvidence, i);
+                        AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), tag);
+                    }
+
+                    for (int i = 1; i < fallbackEvidence.Count; i++)
+                    {
+                        int toCandidate = fallbackEvidence[i];
+                        int fromCandidate = fallbackEvidence[i - 1];
+                        var causes = TryGetCauses(plan.TrueBranch, toCandidate) ?? TryGetCauses(plan.FalseBranch, toCandidate);
+                        if (causes == null)
+                        {
+                            continue;
+                        }
+
+                        foreach (var cause in causes)
+                        {
+                            if (!cause.IsPreviewLink)
+                            {
+                                continue;
+                            }
+
+                            if (cause.FromCandidate == fromCandidate)
+                            {
+                                AddEvidenceDirectionalLink(result, board, fromCandidate, toCandidate, cause.LinkKind);
+                            }
+                        }
+                    }
+
+                    return true;
+                }
+
                 return false;
             }
-
-            bool addedAny = false;
 
             if (plan.ContradictionOnTrueBranch)
             {
@@ -1220,7 +1215,8 @@ namespace Sudoku.Solver.Rules
             for (int i = 0; i < path.Count; i++)
             {
                 int candidate = path[i];
-                AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), DeductionTag);
+                string tag = DeterminePathHighlightTag(path, i);
+                AddUsedCell(result, GetRow(board, candidate), GetColumn(board, candidate), GetDigit(board, candidate), tag);
             }
 
             for (int i = 1; i < path.Count; i++)
@@ -1245,6 +1241,28 @@ namespace Sudoku.Solver.Rules
             }
 
             return true;
+        }
+
+        /**
+         * Determine the alternating chain colour tag for a candidate on the reconstructed path.
+         *
+         * @param path Ordered candidate path from seed to target.
+         * @param index Candidate index in the path.
+         * @returns TargetA / TargetB for path nodes after the seed, or Deduction for fallback-only cases.
+         */
+        private static string DeterminePathHighlightTag(List<int> path, int index)
+        {
+            if (path == null || path.Count == 0)
+            {
+                return DeductionTag;
+            }
+
+            if (index == 0)
+            {
+                return SeedTag;
+            }
+
+            return (index % 2 == 1) ? TargetBTag : TargetATag;
         }
 
         /**
@@ -1312,12 +1330,23 @@ namespace Sudoku.Solver.Rules
             {
                 int sourceCandidate = branch.ContradictionSourceCandidate.Value;
                 bool addedPath = AppendPathEvidenceForBranch(board, result, branch, seedCandidate, sourceCandidate);
+                if (!addedPath)
+                {
+                    AddUsedCell(result, GetRow(board, seedCandidate), GetColumn(board, seedCandidate), GetDigit(board, seedCandidate), SeedTag);
+                    AddUsedCell(result, GetRow(board, sourceCandidate), GetColumn(board, sourceCandidate), GetDigit(board, sourceCandidate), TargetBTag);
+                }
                 AddUsedCell(result, GetRow(board, contradictionCandidate), GetColumn(board, contradictionCandidate), GetDigit(board, contradictionCandidate), DeductionTag);
                 AddEvidenceDirectionalLink(result, board, sourceCandidate, contradictionCandidate, branch.ContradictionSourceLinkKind.Value);
                 return addedPath || sourceCandidate == seedCandidate || contradictionCandidate == sourceCandidate;
             }
 
-            return AppendPathEvidenceForBranch(board, result, branch, seedCandidate, contradictionCandidate);
+            bool pathAdded = AppendPathEvidenceForBranch(board, result, branch, seedCandidate, contradictionCandidate);
+            if (!pathAdded)
+            {
+                AddUsedCell(result, GetRow(board, seedCandidate), GetColumn(board, seedCandidate), GetDigit(board, seedCandidate), SeedTag);
+                AddUsedCell(result, GetRow(board, contradictionCandidate), GetColumn(board, contradictionCandidate), GetDigit(board, contradictionCandidate), TargetBTag);
+            }
+            return pathAdded;
         }
 
         /**
@@ -1353,34 +1382,43 @@ namespace Sudoku.Solver.Rules
         private static bool InnerTryBuildPath(HashSet<int> visited, PropagationState branch, int seedCandidate, int current, List<int> path, out List<int> finalPath)
         {
             finalPath = path;
-            if (!visited.Add(current))
-            {
-                finalPath.RemoveAt(finalPath.Count - 1);
-                return false;
-            }
-
-            finalPath.Add(current);
             if (current == seedCandidate)
             {
+                finalPath.Add(current);
                 finalPath.Reverse();
                 return true;
             }
 
-            var causes = TryGetCauses(branch, current);
-            if (causes == null)
+            if (!visited.Add(current))
             {
-                finalPath.RemoveAt(finalPath.Count - 1);
                 return false;
             }
 
-            foreach(var cause in causes)
+            finalPath.Add(current);
+            var causes = TryGetCauses(branch, current);
+            if (causes == null)
             {
-                if(InnerTryBuildPath(visited, branch, seedCandidate, cause.FromCandidate, finalPath, out finalPath))
+                if (finalPath.Count > 0 && finalPath[finalPath.Count - 1] == current)
+                {
+                    finalPath.RemoveAt(finalPath.Count - 1);
+                }
+                visited.Remove(current);
+                return false;
+            }
+
+            foreach (var cause in causes)
+            {
+                if (InnerTryBuildPath(visited, branch, seedCandidate, cause.FromCandidate, finalPath, out finalPath))
                 {
                     return true;
                 }
             }
-            finalPath.RemoveAt(finalPath.Count - 1);
+
+            if (finalPath.Count > 0 && finalPath[finalPath.Count - 1] == current)
+            {
+                finalPath.RemoveAt(finalPath.Count - 1);
+            }
+            visited.Remove(current);
             return false;
         }
 
@@ -1577,18 +1615,65 @@ namespace Sudoku.Solver.Rules
          */
         private static void AddUsedCell(RuleResult result, int row, int column, int digit, string tag)
         {
-            if (result.UsedCells.Exists(u => u.Row == row && u.Column == column && u.Candidate == digit && string.Equals(u.HighlightTag, tag, StringComparison.Ordinal)))
+            if (string.IsNullOrWhiteSpace(tag))
             {
                 return;
             }
 
-            result.UsedCells.Add(new UsedCell
+            var existing = result.UsedCells.FirstOrDefault(u => u.Row == row && u.Column == column && u.Candidate == digit);
+            if (existing == null)
             {
-                Row = row,
-                Column = column,
-                Candidate = digit,
-                HighlightTag = tag
-            });
+                result.UsedCells.Add(new UsedCell
+                {
+                    Row = row,
+                    Column = column,
+                    Candidate = digit,
+                    HighlightTag = tag
+                });
+                return;
+            }
+
+            if (string.Equals(existing.HighlightTag, tag, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            int existingPriority = GetHighlightTagPriority(existing.HighlightTag);
+            int newPriority = GetHighlightTagPriority(tag);
+            if (newPriority > existingPriority)
+            {
+                existing.HighlightTag = tag;
+            }
+        }
+
+        /**
+         * Higher values indicate a more important visualization tag when the same
+         * cell/candidate would otherwise be registered with conflicting chain colours.
+         */
+        private static int GetHighlightTagPriority(string tag)
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                return 0;
+            }
+
+            if (string.Equals(tag, SeedTag, StringComparison.OrdinalIgnoreCase))
+            {
+                return 4;
+            }
+
+            if (string.Equals(tag, TargetATag, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(tag, TargetBTag, StringComparison.OrdinalIgnoreCase))
+            {
+                return 3;
+            }
+
+            if (string.Equals(tag, DeductionTag, StringComparison.OrdinalIgnoreCase))
+            {
+                return 2;
+            }
+
+            return 1;
         }
 
         /**
@@ -1639,6 +1724,21 @@ namespace Sudoku.Solver.Rules
             int digit = GetDigit(board, candidate);
             var cell = board.Cells[row, column];
             return cell != null && !cell.Value.HasValue && cell.Candidates != null && cell.Candidates.Contains(digit);
+        }
+
+        /**
+         * A contradiction-only branch counts as a real forcing chain only when it
+         * actually propagates beyond the seed candidate. A branch that contradicts
+         * on the initial seed without any additional inference is a false positive.
+         */
+        private static bool IsMeaningfulContradictionBranch(PropagationState branch, int seedCandidate)
+        {
+            if (branch == null || branch.AssignmentOrder == null || branch.AssignmentOrder.Count <= 1)
+            {
+                return false;
+            }
+
+            return branch.ContradictionCandidate == null || branch.ContradictionCandidate != seedCandidate || branch.AssignmentOrder.Count > 1;
         }
 
         /**
