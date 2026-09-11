@@ -126,6 +126,7 @@ namespace Sudoku.UI.Menus
         public Vector2 DisplayScreenPosition { get; private set; }
         public Vector2 DisplayGuiPosition { get; private set; }
         public string CenterLabel { get; private set; } = "No Action";
+        public int? LinkCenterDigit { get; private set; }
         public IReadOnlyList<RadialMenuSegmentId> SegmentOrder => DisplayOrder;
         public IReadOnlyList<RadialMenuSegmentId> OuterSegmentOrder => OuterOrder;
 
@@ -185,8 +186,18 @@ namespace Sudoku.UI.Menus
         {
             EnsureBuilt();
             OpenScreenPosition = screenPosition;
-            // Center is intentionally static and acts as an explicit no-op action.
-            CenterLabel = "No Action";
+            if (LinkSelectionMode && LinkCenterDigit.HasValue)
+            {
+                CenterLabel = LinkCenterDigit.Value.ToString();
+            }
+            else if (LinkSelectionMode && int.TryParse(centerLabel, out _))
+            {
+                CenterLabel = centerLabel;
+            }
+            else
+            {
+                CenterLabel = "No Action";
+            }
             IsOpen = true;
             HoveredSegmentId = RadialMenuSegmentId.None;
             SelectedSegmentId = RadialMenuSegmentId.None;
@@ -208,6 +219,21 @@ namespace Sudoku.UI.Menus
             ApplyVisibility(false);
             RefreshVisuals();
             _lastLoggedHover = RadialMenuSegmentId.None;
+        }
+
+        public void SetLinkSelectionDigit(int? digit)
+        {
+            LinkCenterDigit = digit;
+            if (LinkSelectionMode && LinkCenterDigit.HasValue)
+            {
+                CenterLabel = LinkCenterDigit.Value.ToString();
+            }
+            else
+            {
+                CenterLabel = "No Action";
+            }
+
+            UpdateCenterLabel();
         }
 
         public void UpdatePointer(Vector2 screenPosition)
@@ -345,6 +371,12 @@ namespace Sudoku.UI.Menus
                 Label = GetLabel(segmentId)
             };
 
+            if (LinkSelectionMode && segmentId == RadialMenuSegmentId.SmartCenter && LinkCenterDigit.HasValue)
+            {
+                selection.Digit = LinkCenterDigit.Value;
+                selection.Label = LinkCenterDigit.Value.ToString();
+            }
+
             if (IsColourAction(actionType))
             {
                 selection.ColourTargetDigit = selection.Digit;
@@ -402,6 +434,11 @@ namespace Sudoku.UI.Menus
 
         public string GetLabel(RadialMenuSegmentId segmentId)
         {
+            if (LinkSelectionMode && segmentId == RadialMenuSegmentId.SmartCenter)
+            {
+                return LinkCenterDigit.HasValue ? LinkCenterDigit.Value.ToString() : "No Action";
+            }
+
             if (!LinkSelectionMode && IsDigitSegment(segmentId) && _currentCellValue.HasValue)
             {
                 int? digit = SegmentIdToDigit(segmentId);
@@ -616,7 +653,23 @@ namespace Sudoku.UI.Menus
                     var rect = new Rect(centerPosition.x - CenterDiameter * 0.5f, centerPosition.y - CenterDiameter * 0.5f, CenterDiameter, CenterDiameter);
                     var fill = GetBaseColor(segmentId, false);
                     DrawFilledCircle(centerPosition, CenterDiameter * 0.5f, fill, 40);
-                    DrawNoActionX(rect, new Color(0.92f, 0.23f, 0.23f, 1f));
+                    if (LinkSelectionMode && LinkCenterDigit.HasValue)
+                    {
+                        var style = new GUIStyle(GUI.skin.label)
+                        {
+                            alignment = TextAnchor.MiddleCenter,
+                            normal = { textColor = TextColor },
+                            fontSize = 34,
+                            fontStyle = FontStyle.Bold,
+                            wordWrap = false,
+                            clipping = TextClipping.Clip
+                        };
+                        GUI.Label(rect, LinkCenterDigit.Value.ToString(), style);
+                    }
+                    else
+                    {
+                        DrawNoActionX(rect, new Color(0.92f, 0.23f, 0.23f, 1f));
+                    }
                 }
                 else if (segmentId == RadialMenuSegmentId.TopNoAction)
                 {
@@ -1161,7 +1214,7 @@ namespace Sudoku.UI.Menus
             label.alignment = TextAnchor.MiddleCenter;
             label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (label.font == null) label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
-            label.fontSize = segmentId == RadialMenuSegmentId.SmartCenter ? 16 : 14;
+            label.fontSize = segmentId == RadialMenuSegmentId.SmartCenter ? (LinkSelectionMode && LinkCenterDigit.HasValue ? 30 : 22) : 14;
             label.color = TextColor;
             label.text = GetLabel(segmentId);
             label.raycastTarget = false;
@@ -1457,6 +1510,11 @@ namespace Sudoku.UI.Menus
         {
             if (LinkSelectionMode)
             {
+                if (segmentId == RadialMenuSegmentId.SmartCenter)
+                {
+                    return LinkCenterDigit.HasValue;
+                }
+
                 if (!IsDigitSegment(segmentId))
                 {
                     return false;

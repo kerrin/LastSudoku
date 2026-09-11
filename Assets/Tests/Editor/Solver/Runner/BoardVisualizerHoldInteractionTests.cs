@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver;
@@ -149,6 +150,92 @@ namespace Sudoku.Tests.Editor
 
                 Assert.IsTrue(runner.CurrentBoard.Cells[0, 1].Candidates.Contains(5));
                 Assert.IsTrue(runner.LastRuleResult != null && runner.LastRuleResult.Apply);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void ApplyRadialSelection_DirectionalLinkCenterUsesPendingStartDigitAsEndCandidate()
+        {
+            var visualizer = CreateVisualizer(out var runner, out var root);
+            try
+            {
+                visualizer.SetDirectionalLinkToolMode(BoardVisualizer.DirectionalLinkToolMode.Strong);
+                visualizer.HoldOpenThresholdSeconds = 0f;
+
+                visualizer.BeginCellHold(0, 0, Vector2.zero);
+                visualizer.ApplyRadialSelection(new RadialMenuSelection
+                {
+                    SegmentId = RadialMenuSegmentId.Digit5,
+                    Digit = 5,
+                    Label = "5"
+                }, EventModifiers.None);
+
+                Assert.IsTrue(visualizer.IsAwaitingDirectionalLinkEnd);
+
+                Assert.IsTrue(visualizer.TryGetCellCenter(0, 1, out var destinationCenter));
+                visualizer.BeginCellHold(0, 1, destinationCenter);
+                visualizer.UpdateCellHold(destinationCenter);
+                Assert.IsNotNull(visualizer.RadialMenu);
+                Assert.AreEqual("5", visualizer.RadialMenu.CenterLabel);
+
+                visualizer.ApplyRadialSelection(new RadialMenuSelection
+                {
+                    SegmentId = RadialMenuSegmentId.SmartCenter,
+                    Label = "No Action"
+                }, EventModifiers.None);
+
+                Assert.IsNotNull(runner.CurrentBoard.DirectionalLinks);
+                Assert.AreEqual(1, runner.CurrentBoard.DirectionalLinks.Count);
+                Assert.AreEqual(5, runner.CurrentBoard.DirectionalLinks[0].Start.Digit);
+                Assert.AreEqual(5, runner.CurrentBoard.DirectionalLinks[0].End.Digit);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void ApplyRadialSelection_DirectionalLinkCenterNoOp_WhenDestinationMissingDigit()
+        {
+            var visualizer = CreateVisualizer(out var runner, out var root);
+            try
+            {
+                visualizer.SetDirectionalLinkToolMode(BoardVisualizer.DirectionalLinkToolMode.Strong);
+                visualizer.HoldOpenThresholdSeconds = 0f;
+
+                visualizer.BeginCellHold(0, 0, Vector2.zero);
+                visualizer.ApplyRadialSelection(new RadialMenuSelection
+                {
+                    SegmentId = RadialMenuSegmentId.Digit5,
+                    Digit = 5,
+                    Label = "5"
+                }, EventModifiers.None);
+
+                Assert.IsTrue(visualizer.IsAwaitingDirectionalLinkEnd);
+
+                var endCell = runner.CurrentBoard.Cells[0, 1];
+                endCell.Candidates.Remove(5);
+
+                Assert.IsTrue(visualizer.TryGetCellCenter(0, 1, out var destinationCenter));
+                visualizer.BeginCellHold(0, 1, destinationCenter);
+                visualizer.UpdateCellHold(destinationCenter);
+                Assert.IsNotNull(visualizer.RadialMenu);
+                Assert.AreEqual("No Action", visualizer.RadialMenu.CenterLabel, "Center should stay as X when the destination cannot accept the digit.");
+
+                visualizer.ApplyRadialSelection(new RadialMenuSelection
+                {
+                    SegmentId = RadialMenuSegmentId.SmartCenter,
+                    Label = "No Action"
+                }, EventModifiers.None);
+
+                Assert.IsTrue(string.IsNullOrEmpty(visualizer.LastRadialOutcomeMessage) || visualizer.LastRadialOutcomeMessage.Contains("not currently represented"), "Invalid center selection should be rejected as a no-op.");
+                Assert.IsNotNull(runner.CurrentBoard.DirectionalLinks);
+                Assert.AreEqual(0, runner.CurrentBoard.DirectionalLinks.Count);
             }
             finally
             {

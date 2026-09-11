@@ -565,6 +565,7 @@ namespace Sudoku.Solver
 
             var menu = EnsureRadialMenu();
             menu.LinkSelectionMode = IsDirectionalLinkModeActive();
+
             if (Runner != null && Runner.CurrentBoard != null &&
                 SelectedHoldRow >= 0 && SelectedHoldColumn >= 0 &&
                 SelectedHoldRow < Runner.CurrentBoard.Size && SelectedHoldColumn < Runner.CurrentBoard.Size)
@@ -573,9 +574,26 @@ namespace Sudoku.Solver
                 menu.ValueOnlyMode = IsValueOnlyEditMode();
                 menu.SetCellContext(cell?.Value, cell?.Candidates, cell != null && cell.IsGiven);
                 menu.SetCellColourContext(cell != null ? cell.DigitColors : null);
+
+                if (menu.LinkSelectionMode && _pendingDirectionalLinkStart != null && cell != null)
+                {
+                    bool destinationHasPendingDigit = (cell.Value.HasValue && cell.Value.Value == _pendingDirectionalLinkStart.Digit)
+                        || (cell.Candidates != null && cell.Candidates.Contains(_pendingDirectionalLinkStart.Digit));
+                    menu.SetLinkSelectionDigit(destinationHasPendingDigit ? _pendingDirectionalLinkStart.Digit : null);
+                }
+                else
+                {
+                    menu.SetLinkSelectionDigit(null);
+                }
             }
-            LogHoldDebug($"OpenRadialMenu at {center} using label='No Action' menu={(menu != null ? menu.name : "(null)")}");
-            menu.Open(center, "No Action");
+            else
+            {
+                menu.SetLinkSelectionDigit(null);
+            }
+
+            string centerLabel = menu.LinkSelectionMode && menu.LinkCenterDigit.HasValue ? menu.LinkCenterDigit.Value.ToString() : "No Action";
+            LogHoldDebug($"OpenRadialMenu at {center} using label='{centerLabel}' menu={(menu != null ? menu.name : "(null)")}");
+            menu.Open(center, centerLabel);
             menu.UpdatePointer(center);
         }
 
@@ -1347,7 +1365,27 @@ namespace Sudoku.Solver
                 return "Board interaction is unavailable.";
             }
 
-            if (selection == null || !selection.Digit.HasValue)
+            if (selection == null)
+            {
+                return "Select a digit to place a directional link endpoint.";
+            }
+
+            if (selection.SegmentId == RadialMenuSegmentId.SmartCenter && _pendingDirectionalLinkStart != null)
+            {
+                var destinationCell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
+                bool destinationHasDigit = destinationCell != null && (
+                    (destinationCell.Value.HasValue && destinationCell.Value.Value == _pendingDirectionalLinkStart.Digit) ||
+                    (destinationCell.Candidates != null && destinationCell.Candidates.Contains(_pendingDirectionalLinkStart.Digit)));
+
+                if (!destinationHasDigit)
+                {
+                    return $"Digit {_pendingDirectionalLinkStart.Digit} is not currently represented in r{SelectedHoldRow + 1}c{SelectedHoldColumn + 1}.";
+                }
+
+                selection.Digit = _pendingDirectionalLinkStart.Digit;
+            }
+
+            if (!selection.Digit.HasValue)
             {
                 return "Select a digit to place a directional link endpoint.";
             }
@@ -1356,6 +1394,19 @@ namespace Sudoku.Solver
             if (SelectedHoldRow < 0 || SelectedHoldColumn < 0)
             {
                 return "No selected cell for directional link.";
+            }
+
+            if (_pendingDirectionalLinkStart != null)
+            {
+                var destinationCell = Runner.CurrentBoard.Cells[SelectedHoldRow, SelectedHoldColumn];
+                bool destinationHasDigit = destinationCell != null && (
+                    (destinationCell.Value.HasValue && destinationCell.Value.Value == digit) ||
+                    (destinationCell.Candidates != null && destinationCell.Candidates.Contains(digit)));
+
+                if (!destinationHasDigit)
+                {
+                    return $"Digit {digit} is not currently represented in r{SelectedHoldRow + 1}c{SelectedHoldColumn + 1}.";
+                }
             }
 
             if (_pendingDirectionalLinkStart == null)
