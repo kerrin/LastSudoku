@@ -1599,7 +1599,36 @@ namespace Sudoku.Solver
             int cc = idx % 3;
             float cs = cellRect.width / 3f;
             var candidateRect = new Rect(cellRect.x + cc * cs + 2f, cellRect.y + rr * cs + 2f, cs - 4f, cs - 4f);
-            position = new Vector2(candidateRect.center.x, candidateRect.center.y);
+
+            float anchorX = candidateRect.center.x;
+            float anchorY = candidateRect.center.y;
+
+            float inset = candidateRect.width * 0.24f;
+            float slotOffset = candidateRect.width * 0.22f;
+
+            if (cc == 0)
+            {
+                anchorX = candidateRect.xMin + inset;
+                anchorY = candidateRect.center.y + (rr - 1f) * slotOffset;
+            }
+            else if (cc == 2)
+            {
+                anchorX = candidateRect.xMax - inset;
+                anchorY = candidateRect.center.y + (rr - 1f) * slotOffset;
+            }
+
+            if (rr == 0)
+            {
+                anchorY = candidateRect.yMin + inset;
+                anchorX = candidateRect.center.x + (cc - 1f) * slotOffset;
+            }
+            else if (rr == 2)
+            {
+                anchorY = candidateRect.yMax - inset;
+                anchorX = candidateRect.center.x + (cc - 1f) * slotOffset;
+            }
+
+            position = new Vector2(anchorX, anchorY);
             return true;
         }
 
@@ -1625,7 +1654,7 @@ namespace Sudoku.Solver
                     continue;
                 }
 
-                DrawDirectionalArrow(startPos, endPos, link.Kind);
+                DrawDirectionalArrow(startPos, endPos, link.Kind, link.Start.Digit);
             }
         }
 
@@ -1656,16 +1685,16 @@ namespace Sudoku.Solver
                 }
 
                 // Slightly thinner and translucent than user-authored links so both layers can coexist.
-                DrawDirectionalArrow(startPos, endPos, link.Kind, alphaMultiplier: 0.82f, widthMultiplier: 0.82f);
+                DrawDirectionalArrow(startPos, endPos, link.Kind, link.Start.Digit, alphaMultiplier: 0.82f, widthMultiplier: 0.82f);
             }
         }
 
-        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind)
+        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind, int digit)
         {
-            DrawDirectionalArrow(start, end, kind, alphaMultiplier: 1f, widthMultiplier: 1f);
+            DrawDirectionalArrow(start, end, kind, digit, alphaMultiplier: 1f, widthMultiplier: 1f);
         }
 
-        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind, float alphaMultiplier, float widthMultiplier)
+        private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind, int digit, float alphaMultiplier, float widthMultiplier)
         {
             float width = Mathf.Max(1f, GetComputedCellSize() * 0.026f * Mathf.Max(0.1f, widthMultiplier));
             Color color = kind == DirectionalLinkKind.Strong
@@ -1682,27 +1711,103 @@ namespace Sudoku.Solver
 
             var normalized = direction / length;
             float headLength = Mathf.Max(7f, GetComputedCellSize() * 0.17f);
-            var lineEnd = end - normalized * headLength;
+            int curveSign = GetDirectionalCurveSign(digit, normalized);
 
-            if (kind == DirectionalLinkKind.Strong)
+            if (curveSign == 0)
             {
-                DrawLineColored(start, lineEnd, width, color);
+                var straightLineEnd = end - normalized * headLength;
+
+                if (kind == DirectionalLinkKind.Strong)
+                {
+                    DrawLineColored(start, straightLineEnd, width, color);
+                }
+                else
+                {
+                    DrawDottedLine(start, straightLineEnd, width, color);
+                }
+
+                float straightSideAngle = 25f * Mathf.Deg2Rad;
+                var leftSide = new Vector2(
+                    normalized.x * Mathf.Cos(straightSideAngle) - normalized.y * Mathf.Sin(straightSideAngle),
+                    normalized.x * Mathf.Sin(straightSideAngle) + normalized.y * Mathf.Cos(straightSideAngle));
+                var rightSide = new Vector2(
+                    normalized.x * Mathf.Cos(-straightSideAngle) - normalized.y * Mathf.Sin(-straightSideAngle),
+                    normalized.x * Mathf.Sin(-straightSideAngle) + normalized.y * Mathf.Cos(-straightSideAngle));
+
+                DrawLineColored(end, end - leftSide * headLength, width, color);
+                DrawLineColored(end, end - rightSide * headLength, width, color);
+                return;
             }
-            else
+
+            float curveAmount = Mathf.Min(length * 0.18f, GetComputedCellSize() * 0.26f);
+            Vector2 normal = new Vector2(-normalized.y, normalized.x);
+            Vector2 control = (start + end) * 0.5f + normal * curveAmount * curveSign;
+            Vector2 tangentAtEnd = end - control;
+            if (tangentAtEnd.sqrMagnitude <= 0.0001f)
             {
-                DrawDottedLine(start, lineEnd, width, color);
+                tangentAtEnd = normalized;
+            }
+            tangentAtEnd = tangentAtEnd.normalized;
+            var curvedLineEnd = end - tangentAtEnd * headLength;
+
+            int samples = Mathf.Max(10, Mathf.CeilToInt(length / 4f));
+            Vector2 prev = start;
+            for (int i = 1; i <= samples; i++)
+            {
+                float t = i / (float)samples;
+                float inv = 1f - t;
+                Vector2 point = inv * inv * start + 2f * inv * t * control + t * t * end;
+                if (kind == DirectionalLinkKind.Strong)
+                {
+                    DrawLineColored(prev, point, width, color);
+                }
+                else
+                {
+                    if (i % 2 == 0)
+                    {
+                        DrawLineColored(prev, point, width, color);
+                    }
+                }
+                prev = point;
             }
 
-            float sideAngle = 25f * Mathf.Deg2Rad;
-            var left = new Vector2(
-                normalized.x * Mathf.Cos(sideAngle) - normalized.y * Mathf.Sin(sideAngle),
-                normalized.x * Mathf.Sin(sideAngle) + normalized.y * Mathf.Cos(sideAngle));
-            var right = new Vector2(
-                normalized.x * Mathf.Cos(-sideAngle) - normalized.y * Mathf.Sin(-sideAngle),
-                normalized.x * Mathf.Sin(-sideAngle) + normalized.y * Mathf.Cos(-sideAngle));
+            float curvedSideAngle = 25f * Mathf.Deg2Rad;
+            var curvedLeft = new Vector2(
+                tangentAtEnd.x * Mathf.Cos(curvedSideAngle) - tangentAtEnd.y * Mathf.Sin(curvedSideAngle),
+                tangentAtEnd.x * Mathf.Sin(curvedSideAngle) + tangentAtEnd.y * Mathf.Cos(curvedSideAngle));
+            var curvedRight = new Vector2(
+                tangentAtEnd.x * Mathf.Cos(-curvedSideAngle) - tangentAtEnd.y * Mathf.Sin(-curvedSideAngle),
+                tangentAtEnd.x * Mathf.Sin(-curvedSideAngle) + tangentAtEnd.y * Mathf.Cos(-curvedSideAngle));
 
-            DrawLineColored(end, end - left * headLength, width, color);
-            DrawLineColored(end, end - right * headLength, width, color);
+            DrawLineColored(end, end - curvedLeft * headLength, width, color);
+            DrawLineColored(end, end - curvedRight * headLength, width, color);
+        }
+
+        private static int GetDirectionalCurveSign(int digit, Vector2 normalized)
+        {
+            bool isHorizontal = Mathf.Abs(normalized.x) >= Mathf.Abs(normalized.y);
+            if (isHorizontal)
+            {
+                if (digit == 1 || digit == 4 || digit == 7)
+                {
+                    return 1;
+                }
+                if (digit == 3 || digit == 6 || digit == 9)
+                {
+                    return -1;
+                }
+                return 0;
+            }
+
+            if (digit >= 1 && digit <= 3)
+            {
+                return -1;
+            }
+            if (digit >= 7 && digit <= 9)
+            {
+                return 1;
+            }
+            return 0;
         }
 
         private void DrawDottedLine(Vector2 start, Vector2 end, float width, Color color)
