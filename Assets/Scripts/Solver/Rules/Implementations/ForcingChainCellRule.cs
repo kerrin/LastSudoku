@@ -20,7 +20,7 @@ namespace Sudoku.Solver.Rules
      *
      * Forcing chains can occur when:
      * 1. Chains start from all candidates in a single cell
-     * 2. Chains start from a single digit's candidates in a single row/column/box
+     * 2. Chains start from all a single digit's candidates in a single row/column/box
      * and all chains combine to produce a common conclusion (candidate placement or removal).
      * This class implements 1
      *
@@ -44,7 +44,7 @@ namespace Sudoku.Solver.Rules
         private const string DeductionTag = "Deduction";
 
         private const int MaxAssignmentsPerBranch = 4000;
-        private const int MaxEvidencePerBranch = 8;
+        private const int MaxEvidencePerBranch = 100;
 
         private sealed class ChainModel
         {

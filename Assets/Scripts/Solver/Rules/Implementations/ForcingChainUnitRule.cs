@@ -19,8 +19,8 @@ namespace Sudoku.Solver.Rules
      * - True digits to all seen matching digits in the same cell or unit (row/column/box), where there are multiple candidates of the digit seen.
      *
      * Forcing chains can occur when:
-     * - Chains start from all candidates in a single cell
-     * - Chains start from a single digit's candidates in a single row/column/box
+     * 1. Chains start from all candidates in a single cell
+     * 2. Chains start from all a single digit's candidates in a single row/column/box
      * and all chains combine to produce a common conclusion (candidate placement or removal).
      * This class implements 2
      *
@@ -44,7 +44,7 @@ namespace Sudoku.Solver.Rules
         private const string DeductionTag = "Deduction";
 
         private const int MaxAssignmentsPerBranch = 4000;
-        private const int MaxEvidencePerBranch = 8;
+        private const int MaxEvidencePerBranch = 100;
 
         private sealed class ChainModel
         {
@@ -222,7 +222,7 @@ namespace Sudoku.Solver.Rules
                             .ThenBy(k => GetDigit(board, k))
                             .ToList();
 
-                        bool hasCommonConclusion = plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
+                        bool hasCommonConclusion = false;//plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
                         bool hasContradictionOutcome = plan.ContradictionOnTrueBranch || plan.ContradictionOnFalseBranch;
                         if (!hasCommonConclusion && !hasContradictionOutcome)
                         {
