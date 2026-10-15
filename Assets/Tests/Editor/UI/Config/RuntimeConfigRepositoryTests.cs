@@ -63,6 +63,9 @@ namespace Sudoku.Tests.Editor.UI.Config
             config.Generation.UseRotationalSymmetry = true;
             config.Generation.GenerateUniqueSolvable = false;
             config.Generation.MaxAllowedSolutionsWhenNonUnique = 3;
+            config.Graphics.Width = 1920;
+            config.Graphics.Height = 1080;
+            config.Graphics.FullScreen = false;
             config.Rules.Add(new RuleConfigEntry { RuleTypeName = "NakedSingleRule", Enabled = false });
 
             RuntimeConfigRepository.Save(config);
@@ -76,6 +79,9 @@ namespace Sudoku.Tests.Editor.UI.Config
             Assert.IsTrue(loaded.Generation.UseRotationalSymmetry);
             Assert.IsFalse(loaded.Generation.GenerateUniqueSolvable);
             Assert.AreEqual(3, loaded.Generation.MaxAllowedSolutionsWhenNonUnique);
+            Assert.AreEqual(1920, loaded.Graphics.Width);
+            Assert.AreEqual(1080, loaded.Graphics.Height);
+            Assert.IsFalse(loaded.Graphics.FullScreen);
             Assert.AreEqual(1, loaded.Rules.Count);
             Assert.AreEqual("NakedSingleRule", loaded.Rules[0].RuleTypeName);
             Assert.IsFalse(loaded.Rules[0].Enabled);

@@ -37,6 +37,7 @@ namespace Sudoku.UI
             Assistance = 1,
             Generation = 2,
             Colours = 3,
+            Graphics = 4,
         }
 
         private static ConfigPanelManager _instance;
@@ -83,6 +84,15 @@ namespace Sudoku.UI
             Difficulty.Master,
             Difficulty.NotImplemented
         };
+        private static readonly (int width, int height)[] StandardResolutions =
+        {
+            (1280, 720),
+            (1366, 768),
+            (1600, 900),
+            (1920, 1080),
+            (2560, 1440)
+        };
+        private static readonly string[] FullScreenModeOptions = { "Windowed", "Full Screen" };
 
         // ─── Lifecycle ───────────────────────────────────────────────────────
 
@@ -240,6 +250,8 @@ namespace Sudoku.UI
             DrawTabButton(ConfigTabId.Generation, "Generation", 100f);
             GUILayout.Space(4f);
             DrawTabButton(ConfigTabId.Colours, "Colours", 80f);
+            GUILayout.Space(4f);
+            DrawTabButton(ConfigTabId.Graphics, "Graphics", 90f);
             GUILayout.FlexibleSpace();
             GUILayout.EndHorizontal();
 
@@ -293,7 +305,68 @@ namespace Sudoku.UI
                 case ConfigTabId.Colours:
                     DrawColourOptions();
                     break;
+                case ConfigTabId.Graphics:
+                    DrawGraphicsOptions();
+                    break;
             }            
+        }
+
+        /**
+         * Draw display resolution and window mode settings.
+         */
+        private void DrawGraphicsOptions()
+        {
+            RuntimeConfigService.EnsureLoaded();
+
+            GUILayout.Space(8f);
+            GUILayout.BeginVertical(_assistanceSectionStyle);
+            GUILayout.Space(4f);
+            GUILayout.Label("  Display", _ruleNameStyle);
+            GUILayout.Space(4f);
+            GUILayout.Label($"  Current: {RuntimeConfigService.GraphicsWidth} x {RuntimeConfigService.GraphicsHeight}", _ruleNameStyle);
+            GUILayout.Space(6f);
+
+            var resolutionLabels = new string[StandardResolutions.Length];
+            int selectedResolution = -1;
+            for (int i = 0; i < StandardResolutions.Length; i++)
+            {
+                var resolution = StandardResolutions[i];
+                resolutionLabels[i] = $"{resolution.width} x {resolution.height}";
+                if (resolution.width == RuntimeConfigService.GraphicsWidth &&
+                    resolution.height == RuntimeConfigService.GraphicsHeight)
+                {
+                    selectedResolution = i;
+                }
+            }
+
+            GUILayout.Label("  Resolution", _ruleNameStyle);
+            int newResolution = GUILayout.SelectionGrid(
+                selectedResolution,
+                resolutionLabels,
+                2,
+                GUILayout.ExpandWidth(true));
+            if (newResolution >= 0 && newResolution != selectedResolution)
+            {
+                var resolution = StandardResolutions[newResolution];
+                RuntimeConfigService.SetGraphicsResolution(resolution.width, resolution.height);
+            }
+
+            GUILayout.Space(10f);
+            GUILayout.Label("  Display Mode", _ruleNameStyle);
+            int selectedMode = RuntimeConfigService.GraphicsFullScreen ? 1 : 0;
+            int newMode = GUILayout.SelectionGrid(
+                selectedMode,
+                FullScreenModeOptions,
+                2,
+                GUILayout.ExpandWidth(true));
+            if (newMode != selectedMode)
+            {
+                RuntimeConfigService.SetGraphicsFullScreen(newMode == 1);
+            }
+
+            GUILayout.Space(16f);
+            GUILayout.EndVertical();
+            GUILayout.FlexibleSpace();
         }
 
         /**

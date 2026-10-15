@@ -20,6 +20,7 @@ namespace Sudoku.UI.Config
         public AssistanceConfigData Assistance = new AssistanceConfigData();
         public GenerationConfigData Generation = new GenerationConfigData();
         public ColourConfigData Colours = new ColourConfigData();
+        public GraphicsConfigData Graphics = new GraphicsConfigData();
         public List<RuleConfigEntry> Rules = new List<RuleConfigEntry>();
     }
 
@@ -48,6 +49,14 @@ namespace Sudoku.UI.Config
         public bool AmberEnabled = true;
         public bool RedEnabled   = true;
         public bool BlueEnabled  = false;
+    }
+
+    [Serializable]
+    public sealed class GraphicsConfigData
+    {
+        public int Width;
+        public int Height;
+        public bool FullScreen = true;
     }
 
     [Serializable]
@@ -266,7 +275,13 @@ namespace Sudoku.UI.Config
             config.Assistance ??= new AssistanceConfigData();
             config.Generation ??= new GenerationConfigData();
             config.Colours ??= new ColourConfigData();
+            config.Graphics ??= new GraphicsConfigData();
             config.Rules ??= new List<RuleConfigEntry>();
+            if (config.Graphics.Width <= 0 || config.Graphics.Height <= 0)
+            {
+                config.Graphics.Width = 0;
+                config.Graphics.Height = 0;
+            }
             config.Generation.MaxAllowedSolutionsWhenNonUnique = Mathf.Clamp(
                 config.Generation.MaxAllowedSolutionsWhenNonUnique,
                 GenerationSettings.MinAllowedSolutionsWhenNonUnique,
@@ -376,6 +391,66 @@ namespace Sudoku.UI.Config
             RuntimeConfigRepository.Save(_current);
         }
 
+        public static int GraphicsWidth
+        {
+            get
+            {
+                EnsureLoaded();
+                return _current.Graphics.Width;
+            }
+        }
+
+        public static int GraphicsHeight
+        {
+            get
+            {
+                EnsureLoaded();
+                return _current.Graphics.Height;
+            }
+        }
+
+        public static bool GraphicsFullScreen
+        {
+            get
+            {
+                EnsureLoaded();
+                return _current.Graphics.FullScreen;
+            }
+        }
+
+        /**
+         * Apply and persist the selected display resolution.
+         *
+         * @param width Requested display width.
+         * @param height Requested display height.
+         */
+        public static void SetGraphicsResolution(int width, int height)
+        {
+            if (width <= 0 || height <= 0)
+            {
+                return;
+            }
+
+            EnsureLoaded();
+            _current.Graphics.Width = width;
+            _current.Graphics.Height = height;
+            ApplyGraphicsSettings(_current.Graphics);
+            SaveCurrent();
+        }
+
+        /**
+         * Apply and persist the selected full-screen mode.
+         *
+         * @param fullScreen True for full-screen, false for windowed.
+         */
+        public static void SetGraphicsFullScreen(bool fullScreen)
+        {
+            EnsureLoaded();
+            _current.Graphics.FullScreen = fullScreen;
+            ApplyGraphicsSettings(_current.Graphics);
+            SaveCurrent();
+        }
+
         /**
          * Apply saved rule states to a live registry when available.
          *
@@ -460,6 +535,29 @@ namespace Sudoku.UI.Config
             ColourSettings.AmberEnabled = colours.AmberEnabled;
             ColourSettings.RedEnabled   = colours.RedEnabled;
             ColourSettings.BlueEnabled  = colours.BlueEnabled;
+
+            var graphics = config.Graphics ?? new GraphicsConfigData();
+            if (graphics.Width <= 0 || graphics.Height <= 0)
+            {
+                graphics.Width = Screen.width;
+                graphics.Height = Screen.height;
+                graphics.FullScreen = Screen.fullScreen;
+                config.Graphics = graphics;
+                return;
+            }
+
+            ApplyGraphicsSettings(graphics);
+        }
+
+        private static void ApplyGraphicsSettings(GraphicsConfigData graphics)
+        {
+            if (graphics == null || graphics.Width <= 0 || graphics.Height <= 0)
+            {
+                return;
+            }
+
+            var mode = graphics.FullScreen ? FullScreenMode.ExclusiveFullScreen : FullScreenMode.Windowed;
+            Screen.SetResolution(graphics.Width, graphics.Height, mode);
         }
     }
 }
