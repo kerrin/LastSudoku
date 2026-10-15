@@ -218,6 +218,44 @@ namespace Sudoku.UI.Panels
             Close();
         }
 
+        private void OnSolvedStateNameEdited(LoadPuzzleEntry entry, string newName)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.FilePath))
+            {
+                return;
+            }
+
+            string trimmed = string.IsNullOrWhiteSpace(newName) ? string.Empty : newName.Trim();
+            if (SolvedPuzzleStateXmlExporter.UpdateName(entry.FilePath, trimmed))
+            {
+                entry.State.Name = trimmed;
+            }
+            else
+            {
+                Debug.LogWarning($"LoadPuzzleListPanel: Could not update save name for '{entry.FilePath}'.");
+            }
+        }
+
+        private static string GetDefaultSolvedStateName(LoadPuzzleEntry entry)
+        {
+            if (entry == null || entry.State == null)
+            {
+                return "Saved Puzzle";
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.State.Name))
+            {
+                return entry.State.Name.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(entry.State.PuzzleCode))
+            {
+                return $"Puzzle {entry.State.PuzzleCode.Trim()}";
+            }
+
+            return "Saved Puzzle";
+        }
+
         private void OnDeleteClicked(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
@@ -711,22 +749,60 @@ namespace Sudoku.UI.Panels
             colLayout.preferredHeight = 76f;
             colLayout.minHeight = 76f;
 
-            var codeGO = new GameObject("CodeLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
-            codeGO.transform.SetParent(colGO.transform, false);
+            var nameInputGO = new GameObject("NameInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(InputField));
+            nameInputGO.transform.SetParent(colGO.transform, false);
 
-            var codeRect = codeGO.GetComponent<RectTransform>();
-            codeRect.anchorMin = new Vector2(0f, 0.50f);
-            codeRect.anchorMax = new Vector2(1f, 1f);
-            codeRect.offsetMin = Vector2.zero;
-            codeRect.offsetMax = Vector2.zero;
+            var nameInputRect = nameInputGO.GetComponent<RectTransform>();
+            nameInputRect.anchorMin = new Vector2(0f, 0.50f);
+            nameInputRect.anchorMax = new Vector2(1f, 1f);
+            nameInputRect.offsetMin = Vector2.zero;
+            nameInputRect.offsetMax = Vector2.zero;
 
-            var codeText = codeGO.GetComponent<Text>();
-            codeText.text = $"Code: {entry.State.PuzzleCode}";
-            codeText.alignment = TextAnchor.LowerLeft;
-            codeText.color = Color.white;
-            codeText.fontSize = 13;
-            codeText.fontStyle = FontStyle.Bold;
-            codeText.font = GetFont();
+            var nameInputImage = nameInputGO.GetComponent<Image>();
+            nameInputImage.color = new Color(0.20f, 0.20f, 0.20f, 1f);
+
+            var nameTextGO = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            nameTextGO.transform.SetParent(nameInputGO.transform, false);
+
+            var nameTextRect = nameTextGO.GetComponent<RectTransform>();
+            nameTextRect.anchorMin = Vector2.zero;
+            nameTextRect.anchorMax = Vector2.one;
+            nameTextRect.offsetMin = Vector2.zero;
+            nameTextRect.offsetMax = Vector2.zero;
+
+            var nameText = nameTextGO.GetComponent<Text>();
+            string displayName = string.IsNullOrWhiteSpace(entry.State.Name) ? GetDefaultSolvedStateName(entry) : entry.State.Name.Trim();
+            nameText.text = displayName;
+            nameText.alignment = TextAnchor.LowerLeft;
+            nameText.color = Color.white;
+            nameText.fontSize = 13;
+            nameText.fontStyle = FontStyle.Bold;
+            nameText.font = GetFont();
+
+            var placeholderGO = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            placeholderGO.transform.SetParent(nameInputGO.transform, false);
+
+            var placeholderRect = placeholderGO.GetComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = Vector2.zero;
+            placeholderRect.offsetMax = Vector2.zero;
+
+            var placeholderText = placeholderGO.GetComponent<Text>();
+            placeholderText.text = "Puzzle name";
+            placeholderText.alignment = TextAnchor.LowerLeft;
+            placeholderText.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+            placeholderText.fontSize = 13;
+            placeholderText.fontStyle = FontStyle.Bold;
+            placeholderText.font = GetFont();
+
+            var nameInput = nameInputGO.GetComponent<InputField>();
+            nameInput.text = displayName;
+            nameInput.textComponent = nameText;
+            nameInput.placeholder = placeholderText;
+            nameInput.lineType = InputField.LineType.SingleLine;
+            nameInput.characterLimit = 48;
+            nameInput.onEndEdit.AddListener(value => OnSolvedStateNameEdited(entry, value));
 
             var metaGO = new GameObject("MetaLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
             metaGO.transform.SetParent(colGO.transform, false);
@@ -740,7 +816,7 @@ namespace Sudoku.UI.Panels
             var metaText = metaGO.GetComponent<Text>();
             string localDate = entry.SavedAtUtc.ToLocalTime().ToString("dd MMM yyyy, HH:mm");
             string solveTime = FormatElapsedTime(entry.State.ElapsedSeconds);
-            metaText.text = $"Saved: {localDate}  |  {entry.DifficultyLabel}  |  Time: {solveTime}";
+            metaText.text = $"Saved: {localDate}  |  {entry.DifficultyLabel}  |  Time: {solveTime}  |  Code: {entry.State.PuzzleCode}";
             metaText.alignment = TextAnchor.UpperLeft;
             metaText.color = new Color(0.62f, 0.62f, 0.62f, 1f);
             metaText.fontSize = 11;

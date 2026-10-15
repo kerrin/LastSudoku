@@ -48,6 +48,25 @@ namespace Sudoku.Models
             SolveSteps = 0;
         }
 
+        /**
+         * Normalize a user-provided save name into a display-safe value.
+         * The model preserves empty names unless a caller explicitly fills one in.
+         *
+         * @param name Raw name to normalize.
+         * @param fallbackIndex Fallback index used when the name is blank.
+         * @returns A trimmed display name, or an empty string when the input is blank.
+         */
+        public static string SanitizeName(string name, int fallbackIndex)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            string trimmed = name.Trim();
+            return string.IsNullOrEmpty(trimmed) ? string.Empty : trimmed;
+        }
+
         /** Parameterless constructor required for XML deserialization. */
         public SavedPuzzle() { }
 

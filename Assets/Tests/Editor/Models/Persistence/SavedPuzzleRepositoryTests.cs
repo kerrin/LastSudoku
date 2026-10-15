@@ -297,5 +297,43 @@ namespace Sudoku.Tests.Editor.Models
             Assert.AreEqual(string.Empty, puzzle.Name);
             Assert.AreEqual(string.Empty, puzzle.Code);
         }
+
+        [Test]
+        public void UpdateName_ExistingPuzzle_ChangesStoredName()
+        {
+            var puzzle = new SavedPuzzle("Original", "codeA");
+            SavedPuzzleRepository.Add(puzzle);
+
+            SavedPuzzleRepository.UpdateName(puzzle.Id, "Renamed Puzzle");
+
+            var loaded = SavedPuzzleRepository.LoadAll();
+            Assert.AreEqual(1, loaded.Count);
+            Assert.AreEqual("Renamed Puzzle", loaded[0].Name);
+        }
+
+        [Test]
+        public void UpdateName_BlankName_PreservesBlankName()
+        {
+            var puzzle = new SavedPuzzle("Original", "codeA");
+            SavedPuzzleRepository.Add(puzzle);
+
+            SavedPuzzleRepository.UpdateName(puzzle.Id, "   ");
+
+            var loaded = SavedPuzzleRepository.LoadAll();
+            Assert.AreEqual(string.Empty, loaded[0].Name);
+        }
+
+        [Test]
+        public void UpdateName_ExistingPuzzle_CanClearName()
+        {
+            var puzzle = new SavedPuzzle("Original", "codeA");
+            SavedPuzzleRepository.Add(puzzle);
+
+            SavedPuzzleRepository.UpdateName(puzzle.Id, "Renamed Puzzle");
+            SavedPuzzleRepository.UpdateName(puzzle.Id, "   ");
+
+            var loaded = SavedPuzzleRepository.LoadAll();
+            Assert.AreEqual(string.Empty, loaded[0].Name);
+        }
     }
 }

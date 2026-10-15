@@ -13,6 +13,7 @@ namespace Sudoku.Models
     [Serializable]
     public class SolvedPuzzleStateExport
     {
+        public string Name;
         public string PuzzleCode;
         public string InitialPuzzleCode;
         public int Size;
@@ -310,6 +311,12 @@ namespace Sudoku.Models
                 throw new ArgumentNullException(nameof(state));
             }
 
+            if (string.IsNullOrWhiteSpace(state.Name))
+            {
+                string defaultName = BuildDefaultName(state);
+                state.Name = defaultName;
+            }
+
             string outputDirectory = GetOutputDirectory();
             Directory.CreateDirectory(outputDirectory);
 
@@ -368,6 +375,86 @@ namespace Sudoku.Models
             }
 
             return string.IsNullOrWhiteSpace(raw) ? "sudoku_state" : raw;
+        }
+
+        /**
+         * Resolve a display-friendly default name for a persisted solved-state save.
+         *
+         * @param state Export model to name.
+         * @returns A non-empty default save name.
+         */
+        public static string BuildDefaultName(SolvedPuzzleStateExport state)
+        {
+            if (state != null && !string.IsNullOrWhiteSpace(state.Name))
+            {
+                return state.Name.Trim();
+            }
+
+            if (state != null && !string.IsNullOrWhiteSpace(state.PuzzleCode))
+            {
+                return $"Puzzle {state.PuzzleCode.Trim()}";
+            }
+
+            return $"Saved Puzzle {DateTime.UtcNow:yyyyMMdd_HHmmss}";
+        }
+
+        /**
+         * Persist a renamed solved-state save to disk.
+         *
+         * @param filePath XML file backing the save.
+         * @param newName Desired display name.
+         * @returns True when the rename was saved successfully.
+         */
+        public static bool UpdateName(string filePath, string newName)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+            {
+                return false;
+            }
+
+            try
+            {
+                var serializer = new XmlSerializer(typeof(SolvedPuzzleStateExport));
+                SolvedPuzzleStateExport state;
+
+                using (var stream = File.OpenRead(filePath))
+                {
+                    state = serializer.Deserialize(stream) as SolvedPuzzleStateExport;
+                }
+
+                if (state == null)
+                {
+                    return false;
+                }
+
+                string defaultName = BuildDefaultName(state);
+                state.Name = string.IsNullOrWhiteSpace(newName)
+                    ? defaultName
+                    : newName.Trim();
+
+                if (string.IsNullOrWhiteSpace(state.Name))
+                {
+                    state.Name = defaultName;
+                }
+
+                var settings = new XmlWriterSettings
+                {
+                    Indent = true,
+                    NewLineHandling = NewLineHandling.Entitize,
+                };
+
+                using (var stream = File.Create(filePath))
+                using (var writer = XmlWriter.Create(stream, settings))
+                {
+                    serializer.Serialize(writer, state);
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

@@ -34,6 +34,7 @@ namespace Sudoku.UI.Controllers
         private BoardVisualizer _boardVisualizer;
         private BoardSidePanel _boardSidePanel;
         private InputField _generatedCodeInput;
+        private InputField _savePuzzleNameInput;
         private InputField _startPuzzleCodeInput;
         private GameObject _puzzleCodeRow;
         private GameObject _solvePuzzleCodeRow;
@@ -268,7 +269,7 @@ namespace Sudoku.UI.Controllers
             panelRect.anchorMax = new Vector2(1f, 0f);
             panelRect.pivot = new Vector2(1f, 0f);
             panelRect.anchoredPosition = new Vector2(-8f, 58f);
-            panelRect.sizeDelta = new Vector2(272f, 112f);
+            panelRect.sizeDelta = new Vector2(272f, 150f);
 
             var panelImage = _playPanel.GetComponent<Image>();
             panelImage.color = new Color(0f, 0f, 0f, 0f);
@@ -297,6 +298,7 @@ namespace Sudoku.UI.Controllers
             EnsurePuzzleCodeRow(_playPanel.transform);
             EnsureOverwriteConfirmationRow(_playPanel.transform);
             var actionsRow = EnsurePlayActionsRow(_playPanel.transform);
+            EnsureSaveNameRow(_playPanel.transform);
             EnsureSolvePuzzleCodeRow(sidePanel.transform);
             EnsureTimerLabel(sidePanel.transform);
             EnsureSolveTimer();
@@ -936,6 +938,7 @@ namespace Sudoku.UI.Controllers
             _runner.CreateBlankBoard();
             ConfigureBoardVisualizerForRunnerMode();
             EnterPlayMode();
+            SetSavePuzzleName(SavedPuzzleRepository.GetDefaultName(SavedPuzzleRepository.Count() + 1));
 
             ResolveSceneReferences();
             if (_boardSidePanel != null)
@@ -1045,9 +1048,15 @@ namespace Sudoku.UI.Controllers
          *
          * @param code The encoded puzzle code to start.
          */
-        private void OnSavedPuzzleLoadRequested(string code)
+        private void OnSavedPuzzleLoadRequested(SavedPuzzle puzzle)
         {
-            StartPuzzleFromOptionalCode(code);
+            if (puzzle == null)
+            {
+                return;
+            }
+
+            StartPuzzleFromOptionalCode(puzzle.Code);
+            SetSavePuzzleName(puzzle.Name);
         }
 
         /**
@@ -1283,6 +1292,7 @@ namespace Sudoku.UI.Controllers
             _lastTimerBoardFingerprint = int.MinValue;
 
             EnterPlayMode();
+            SetSavePuzzleName(SolvedPuzzleStateXmlExporter.BuildDefaultName(solvedState));
 
             ResolveSceneReferences();
             if (_boardSidePanel != null)
@@ -1384,9 +1394,27 @@ namespace Sudoku.UI.Controllers
          *
          * @param code Encoded puzzle code to load for editing.
          */
-        private void OnSavedPuzzleEditRequested(string code)
+        private void OnSavedPuzzleEditRequested(SavedPuzzle puzzle)
         {
-            StartPuzzleEditFromCode(code);
+            if (puzzle == null)
+            {
+                return;
+            }
+
+            StartPuzzleEditFromCode(puzzle.Code);
+            SetSavePuzzleName(puzzle.Name);
+        }
+
+        private void SetSavePuzzleName(string name)
+        {
+            if (_savePuzzleNameInput == null)
+            {
+                return;
+            }
+
+            _savePuzzleNameInput.text = string.IsNullOrWhiteSpace(name)
+                ? SavedPuzzleRepository.GetDefaultName(SavedPuzzleRepository.Count() + 1)
+                : name.Trim();
         }
 
         /**
@@ -1464,10 +1492,19 @@ namespace Sudoku.UI.Controllers
                 return;
             }
 
+            string requestedName = _savePuzzleNameInput != null && !string.IsNullOrWhiteSpace(_savePuzzleNameInput.text)
+                ? _savePuzzleNameInput.text.Trim()
+                : SavedPuzzleRepository.GetDefaultName(SavedPuzzleRepository.Count() + 1);
+
             int nextNumber = SavedPuzzleRepository.Count() + 1;
-            var entry = new SavedPuzzle($"Puzzle {nextNumber}", code);
+            var entry = new SavedPuzzle(requestedName, code);
             entry.ApplyAnalysis(SavedPuzzleAnalysisGenerator.AnalyzeFromCode(code));
             SavedPuzzleRepository.Add(entry);
+
+            if (_savePuzzleNameInput != null)
+            {
+                _savePuzzleNameInput.text = SavedPuzzleRepository.GetDefaultName(nextNumber + 1);
+            }
 
             Debug.Log($"MainMenuFlowController: Saved '{entry.Name}' to the puzzle list.");
         }
@@ -1508,8 +1545,12 @@ namespace Sudoku.UI.Controllers
             {
                 double elapsed = _solveTimer != null ? _solveTimer.ElapsedSeconds : 0.0;
                 var exportModel = SolvedPuzzleStateExport.FromBoard(_runner.CurrentBoard, currentPuzzleCode, _startingPuzzleCode, elapsed);
+                string requestedName = _savePuzzleNameInput != null && !string.IsNullOrWhiteSpace(_savePuzzleNameInput.text)
+                    ? _savePuzzleNameInput.text.Trim()
+                    : SolvedPuzzleStateXmlExporter.BuildDefaultName(exportModel);
+                exportModel.Name = requestedName;
                 string fullPath = SolvedPuzzleStateXmlExporter.Save(exportModel);
-                Debug.Log($"MainMenuFlowController: Saved solved-state XML to '{fullPath}'.");
+                Debug.Log($"MainMenuFlowController: Saved solved-state XML to '{fullPath}' as '{exportModel.Name}'.");
             }
             catch (Exception ex)
             {
@@ -2181,6 +2222,87 @@ namespace Sudoku.UI.Controllers
         }
 
         /**
+         * Ensure the save-name input remains available in both create and solve modes.
+         */
+        private void EnsureSaveNameRow(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var rowTransform = parent.Find("SaveNameRow");
+            GameObject rowGO;
+            if (rowTransform == null)
+            {
+                rowGO = new GameObject("SaveNameRow", typeof(RectTransform), typeof(CanvasRenderer));
+                rowGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                rowGO = rowTransform.gameObject;
+            }
+
+            rowGO.transform.SetSiblingIndex(1);
+
+            var layout = rowGO.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = rowGO.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
+            layout.flexibleHeight = 0f;
+
+            var horizontal = rowGO.GetComponent<HorizontalLayoutGroup>();
+            if (horizontal == null)
+            {
+                horizontal = rowGO.AddComponent<HorizontalLayoutGroup>();
+            }
+
+            horizontal.padding = new RectOffset(0, 0, 0, 0);
+            horizontal.spacing = 6f;
+            horizontal.childAlignment = TextAnchor.MiddleLeft;
+            horizontal.childControlWidth = true;
+            horizontal.childControlHeight = true;
+            horizontal.childForceExpandWidth = false;
+            horizontal.childForceExpandHeight = false;
+
+            var labelTransform = rowGO.transform.Find("SaveNameLabel");
+            GameObject labelGO;
+            if (labelTransform == null)
+            {
+                labelGO = new GameObject("SaveNameLabel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                labelGO.transform.SetParent(rowGO.transform, false);
+            }
+            else
+            {
+                labelGO = labelTransform.gameObject;
+            }
+
+            var labelLayout = labelGO.GetComponent<LayoutElement>();
+            if (labelLayout == null)
+            {
+                labelLayout = labelGO.AddComponent<LayoutElement>();
+            }
+
+            labelLayout.preferredWidth = 48f;
+            labelLayout.minWidth = 48f;
+            labelLayout.preferredHeight = 30f;
+            labelLayout.flexibleWidth = 0f;
+
+            var label = labelGO.GetComponent<Text>();
+            label.text = "Name:";
+            label.alignment = TextAnchor.MiddleLeft;
+            label.color = Color.white;
+            label.fontSize = 12;
+            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+
+            EnsureSaveNameInput(rowGO.transform);
+        }
+
+        /**
          * Ensure the startup-menu row containing code input and start button exists.
          */
         private void EnsureMenuPuzzleCodeRow(Transform parent)
@@ -2417,6 +2539,111 @@ namespace Sudoku.UI.Controllers
             inputField.placeholder = placeholder;
 
             _generatedCodeInput = inputField;
+        }
+
+        /**
+         * Ensure the save-name input field exists next to the generated puzzle code.
+         */
+        private void EnsureSaveNameInput(Transform parent)
+        {
+            if (parent == null)
+            {
+                return;
+            }
+
+            var inputTransform = parent.Find("SavePuzzleNameInput");
+            GameObject inputGO;
+            if (inputTransform == null)
+            {
+                inputGO = new GameObject("SavePuzzleNameInput", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(InputField));
+                inputGO.transform.SetParent(parent, false);
+            }
+            else
+            {
+                inputGO = inputTransform.gameObject;
+            }
+
+            var layout = inputGO.GetComponent<LayoutElement>();
+            if (layout == null)
+            {
+                layout = inputGO.AddComponent<LayoutElement>();
+            }
+
+            layout.preferredWidth = 208f;
+            layout.minWidth = 180f;
+            layout.preferredHeight = 34f;
+            layout.minHeight = 34f;
+            layout.flexibleWidth = 0f;
+            layout.flexibleHeight = 0f;
+
+            var image = inputGO.GetComponent<Image>();
+            image.color = new Color(0.97f, 0.97f, 0.97f, 1f);
+
+            var inputField = inputGO.GetComponent<InputField>();
+            inputField.readOnly = false;
+            inputField.lineType = InputField.LineType.SingleLine;
+
+            var textTransform = inputGO.transform.Find("Text");
+            if (textTransform == null)
+            {
+                var textGO = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                textGO.transform.SetParent(inputGO.transform, false);
+                textTransform = textGO.transform;
+            }
+
+            var textRect = textTransform.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(8f, 6f);
+            textRect.offsetMax = new Vector2(-8f, -6f);
+
+            var text = textTransform.GetComponent<Text>();
+            text.alignment = TextAnchor.MiddleLeft;
+            text.color = new Color(0.08f, 0.08f, 0.08f, 1f);
+            text.fontSize = 12;
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null)
+            {
+                font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            }
+            text.font = font;
+
+            var placeholderTransform = inputGO.transform.Find("Placeholder");
+            if (placeholderTransform == null)
+            {
+                var placeholderGO = new GameObject("Placeholder", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                placeholderGO.transform.SetParent(inputGO.transform, false);
+                placeholderTransform = placeholderGO.transform;
+            }
+
+            var placeholderRect = placeholderTransform.GetComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = new Vector2(8f, 6f);
+            placeholderRect.offsetMax = new Vector2(-8f, -6f);
+
+            var placeholder = placeholderTransform.GetComponent<Text>();
+            placeholder.text = "Name (optional)";
+            placeholder.alignment = TextAnchor.MiddleLeft;
+            placeholder.color = new Color(0.42f, 0.42f, 0.42f, 0.85f);
+            placeholder.fontSize = 11;
+            placeholder.font = font;
+
+            inputField.textComponent = text;
+            inputField.placeholder = placeholder;
+
+            if (string.IsNullOrWhiteSpace(inputField.text))
+            {
+                inputField.text = SavedPuzzleRepository.GetDefaultName(SavedPuzzleRepository.Count() + 1);
+            }
+
+            var nameTapColor = inputField.colors;
+            nameTapColor.normalColor = new Color(0.97f, 0.97f, 0.97f, 1f);
+            nameTapColor.highlightedColor = new Color(0.99f, 0.99f, 0.99f, 1f);
+            nameTapColor.pressedColor = new Color(0.92f, 0.92f, 0.92f, 1f);
+            inputField.colors = nameTapColor;
+
+            _savePuzzleNameInput = inputField;
         }
 
         /**

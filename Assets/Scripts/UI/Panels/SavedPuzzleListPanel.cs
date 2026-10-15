@@ -22,10 +22,10 @@ namespace Sudoku.UI.Panels
     [DisallowMultipleComponent]
     public class SavedPuzzleListPanel : MonoBehaviour
     {
-        // Fired with the puzzle code when the user clicks "Load" on an entry.
-        public event Action<string> OnPuzzleLoadRequested;
-        // Fired with the puzzle code when the user clicks "Edit" on an entry.
-        public event Action<string> OnPuzzleEditRequested;
+        // Fired with the selected saved puzzle when the user clicks "Load".
+        public event Action<SavedPuzzle> OnPuzzleLoadRequested;
+        // Fired with the selected saved puzzle when the user clicks "Edit".
+        public event Action<SavedPuzzle> OnPuzzleEditRequested;
 
         // Panel colours kept consistent with MainMenuFlowController styling.
         private static readonly Color ColourOverlay = new Color(0f, 0f, 0f, 0.72f);
@@ -60,6 +60,7 @@ namespace Sudoku.UI.Panels
         private LayoutElement _emptyLabelLayout;
         private Text _emptyLabelText;
         private InputField _addCodeInput;
+        private InputField _addNameInput;
         private ScrollRect _scrollRect;
         private string _pendingDeletePuzzleId = string.Empty;
 
@@ -259,17 +260,17 @@ namespace Sudoku.UI.Panels
         //  Entry Callbacks
         // ------------------------------------------------------------------ //
 
-        private void OnLoadClicked(string code)
+        private void OnLoadClicked(SavedPuzzle puzzle)
         {
             _pendingDeletePuzzleId = string.Empty;
-            OnPuzzleLoadRequested?.Invoke(code);
+            OnPuzzleLoadRequested?.Invoke(puzzle);
             Close();
         }
 
-        private void OnEditClicked(string code)
+        private void OnEditClicked(SavedPuzzle puzzle)
         {
             _pendingDeletePuzzleId = string.Empty;
-            OnPuzzleEditRequested?.Invoke(code);
+            OnPuzzleEditRequested?.Invoke(puzzle);
             Close();
         }
 
@@ -347,13 +348,40 @@ namespace Sudoku.UI.Panels
             }
 
             int nextNumber = SavedPuzzleRepository.Count() + 1;
-            var entry = new SavedPuzzle($"Puzzle {nextNumber}", canonical);
+            string requestedName = _addNameInput != null && !string.IsNullOrWhiteSpace(_addNameInput.text)
+                ? _addNameInput.text.Trim()
+                : SavedPuzzleRepository.GetDefaultName(nextNumber);
+
+            var entry = new SavedPuzzle(requestedName, canonical);
             entry.ApplyAnalysis(SavedPuzzleAnalysisGenerator.AnalyzeFromCode(canonical));
             SavedPuzzleRepository.Add(entry);
+
+            if (_addNameInput != null)
+            {
+                _addNameInput.text = string.Empty;
+            }
 
             _addCodeInput.text = string.Empty;
             RefreshList();
             Debug.Log($"SavedPuzzleListPanel: Added puzzle '{entry.Name}' from code.");
+        }
+
+        private void OnSavedPuzzleNameEdited(SavedPuzzle puzzle, string newName)
+        {
+            if (puzzle == null || string.IsNullOrEmpty(puzzle.Id))
+            {
+                return;
+            }
+
+            string trimmed = string.IsNullOrWhiteSpace(newName) ? string.Empty : newName.Trim();
+            if (SavedPuzzleRepository.UpdateName(puzzle.Id, trimmed))
+            {
+                puzzle.Name = trimmed;
+            }
+            else
+            {
+                Debug.LogWarning($"SavedPuzzleListPanel: Could not update puzzle name for '{puzzle.Id}'.");
+            }
         }
 
         // ------------------------------------------------------------------ //
@@ -471,26 +499,46 @@ namespace Sudoku.UI.Panels
         {
             var row = CreateHorizontalRow(parent, "AddCodeRow", 28f);
 
-            // "Add from code:" label.
-            var labelGO = new GameObject("AddCodeLabel",
+            // Name label.
+            var nameLabelGO = new GameObject("AddNameLabel",
                 typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
-            labelGO.transform.SetParent(row, false);
+            nameLabelGO.transform.SetParent(row, false);
 
-            var labelLayout = labelGO.AddComponent<LayoutElement>();
-            labelLayout.preferredWidth = 130f;
-            labelLayout.minWidth = 130f;
-            labelLayout.preferredHeight = 28f;
-            labelLayout.flexibleWidth = 0f;
+            var nameLabelLayout = nameLabelGO.AddComponent<LayoutElement>();
+            nameLabelLayout.preferredWidth = 54f;
+            nameLabelLayout.minWidth = 54f;
+            nameLabelLayout.preferredHeight = 28f;
+            nameLabelLayout.flexibleWidth = 0f;
 
-            var labelText = labelGO.GetComponent<Text>();
-            labelText.text = "Add from code:";
-            labelText.alignment = TextAnchor.MiddleLeft;
-            labelText.color = new Color(0.82f, 0.82f, 0.82f, 1f);
-            labelText.fontSize = 14;
-            labelText.font = GetFont();
+            var nameLabelText = nameLabelGO.GetComponent<Text>();
+            nameLabelText.text = "Name:";
+            nameLabelText.alignment = TextAnchor.MiddleLeft;
+            nameLabelText.color = new Color(0.82f, 0.82f, 0.82f, 1f);
+            nameLabelText.fontSize = 14;
+            nameLabelText.font = GetFont();
+
+            _addNameInput = BuildInputField(row, "AddNameInput", "Custom name…", 160f, 0.5f);
+
+            // "Add from code:" label.
+            var codeLabelGO = new GameObject("AddCodeLabel",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            codeLabelGO.transform.SetParent(row, false);
+
+            var codeLabelLayout = codeLabelGO.AddComponent<LayoutElement>();
+            codeLabelLayout.preferredWidth = 96f;
+            codeLabelLayout.minWidth = 96f;
+            codeLabelLayout.preferredHeight = 28f;
+            codeLabelLayout.flexibleWidth = 0f;
+
+            var codeLabelText = codeLabelGO.GetComponent<Text>();
+            codeLabelText.text = "Add from code:";
+            codeLabelText.alignment = TextAnchor.MiddleLeft;
+            codeLabelText.color = new Color(0.82f, 0.82f, 0.82f, 1f);
+            codeLabelText.fontSize = 14;
+            codeLabelText.font = GetFont();
 
             // Code input field.
-            _addCodeInput = BuildInputField(row, "AddCodeInput", "Paste puzzle code…", 360f, 1f);
+            _addCodeInput = BuildInputField(row, "AddCodeInput", "Paste puzzle code…", 320f, 1f);
 
             // Add button.
             var addBtn = CreateButton(row, "AddCodeButton", "Add to List", OnAddFromCodeClicked, true);
@@ -868,24 +916,62 @@ namespace Sudoku.UI.Panels
             var colRect = colGO.GetComponent<RectTransform>();
             colRect.sizeDelta = new Vector2(0f, 60f);
 
-            // Puzzle name.
-            var nameGO = new GameObject("NameLabel",
+            var nameInputGO = new GameObject("NameInput",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(InputField));
+            nameInputGO.transform.SetParent(colGO.transform, false);
+
+            var nameInputRect = nameInputGO.GetComponent<RectTransform>();
+            nameInputRect.anchorMin = new Vector2(0f, 0.52f);
+            nameInputRect.anchorMax = new Vector2(1f, 1f);
+            nameInputRect.offsetMin = new Vector2(0f, 0f);
+            nameInputRect.offsetMax = new Vector2(0f, 0f);
+
+            var nameInputImage = nameInputGO.GetComponent<Image>();
+            nameInputImage.color = new Color(0.20f, 0.20f, 0.20f, 1f);
+
+            var textGO = new GameObject("Text",
                 typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
-            nameGO.transform.SetParent(colGO.transform, false);
+            textGO.transform.SetParent(nameInputGO.transform, false);
 
-            var nameRect = nameGO.GetComponent<RectTransform>();
-            nameRect.anchorMin = new Vector2(0f, 0.52f);
-            nameRect.anchorMax = new Vector2(1f, 1f);
-            nameRect.offsetMin = new Vector2(0f, 0f);
-            nameRect.offsetMax = new Vector2(0f, 0f);
+            var textRect = textGO.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = new Vector2(0f, 0f);
+            textRect.offsetMax = new Vector2(0f, 0f);
 
-            var nameText = nameGO.GetComponent<Text>();
+            var nameText = textGO.GetComponent<Text>();
             nameText.text = puzzle.Name;
             nameText.alignment = TextAnchor.LowerLeft;
             nameText.color = Color.white;
             nameText.fontSize = 15;
             nameText.fontStyle = FontStyle.Bold;
             nameText.font = GetFont();
+
+            var placeholderGO = new GameObject("Placeholder",
+                typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+            placeholderGO.transform.SetParent(nameInputGO.transform, false);
+
+            var placeholderRect = placeholderGO.GetComponent<RectTransform>();
+            placeholderRect.anchorMin = Vector2.zero;
+            placeholderRect.anchorMax = Vector2.one;
+            placeholderRect.offsetMin = new Vector2(0f, 0f);
+            placeholderRect.offsetMax = new Vector2(0f, 0f);
+
+            var placeholderText = placeholderGO.GetComponent<Text>();
+            placeholderText.text = "Puzzle name";
+            placeholderText.alignment = TextAnchor.LowerLeft;
+            placeholderText.color = new Color(0.7f, 0.7f, 0.7f, 1f);
+            placeholderText.fontSize = 15;
+            placeholderText.fontStyle = FontStyle.Bold;
+            placeholderText.font = GetFont();
+
+            var nameInput = nameInputGO.GetComponent<InputField>();
+            nameInput.text = puzzle.Name;
+            nameInput.textComponent = nameText;
+            nameInput.placeholder = placeholderText;
+            nameInput.lineType = InputField.LineType.SingleLine;
+            nameInput.characterLimit = 48;
+            nameInput.onEndEdit.AddListener(value => OnSavedPuzzleNameEdited(puzzle, value));
 
             // Save date.
             var dateGO = new GameObject("DateLabel",
@@ -937,12 +1023,11 @@ namespace Sudoku.UI.Panels
             spacerLayout.preferredHeight = 72f;
 
             string puzzleId = puzzle.Id;
-            string puzzleCode = puzzle.Code;
             bool isDeletePendingForRow = !string.IsNullOrEmpty(_pendingDeletePuzzleId) && _pendingDeletePuzzleId == puzzleId;
 
             // Load button.
             var loadBtn = CreateButton(colGO.transform, "LoadButton", "Load",
-                () => OnLoadClicked(puzzleCode), true);
+                () => OnLoadClicked(puzzle), true);
             SetButtonSize(loadBtn, 40f, 34f);
 
             if (isDeletePendingForRow)
@@ -972,7 +1057,7 @@ namespace Sudoku.UI.Panels
 
             // Edit button opens puzzle creation mode with this puzzle preloaded.
             var editBtn = CreateButton(colGO.transform, "EditButton", "Edit",
-                () => OnEditClicked(puzzleCode), false);
+                () => OnEditClicked(puzzle), false);
             SetButtonSize(editBtn, 40f, 34f);
 
             // Move Up button.

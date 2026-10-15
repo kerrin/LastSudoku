@@ -79,6 +79,76 @@ namespace Sudoku.Models
         }
 
         /**
+         * Derive the default display name for a saved puzzle at the provided slot index.
+         *
+         * @param index One-based slot index in the saved list.
+         * @returns The default name for the entry.
+         */
+        public static string GetDefaultName(int index)
+        {
+            int safeIndex = Math.Max(index, 1);
+            return $"Puzzle {safeIndex}";
+        }
+
+        /**
+         * Normalize a raw user-entered name into a non-empty list-friendly display label.
+         *
+         * @param rawName Raw value entered by the user.
+         * @param fallbackIndex One-based index used if the value is blank.
+         * @returns A displayable name.
+         */
+        public static string SanitizeDisplayName(string rawName, int fallbackIndex)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+            {
+                return GetDefaultName(fallbackIndex);
+            }
+
+            string trimmed = rawName.Trim();
+            return string.IsNullOrEmpty(trimmed)
+                ? GetDefaultName(fallbackIndex)
+                : trimmed;
+        }
+
+        /**
+         * Update an existing puzzle's display name and persist the change.
+         *
+         * @param id Unique puzzle identifier.
+         * @param newName New display name to store.
+         * @returns True when a matching puzzle was renamed; otherwise false.
+         */
+        public static bool UpdateName(string id, string newName)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                return false;
+            }
+
+            var puzzles = LoadAll();
+            bool changed = false;
+
+            for (int i = 0; i < puzzles.Count; i++)
+            {
+                var puzzle = puzzles[i];
+                if (puzzle == null || puzzle.Id != id)
+                {
+                    continue;
+                }
+
+                puzzle.Name = string.IsNullOrWhiteSpace(newName) ? string.Empty : newName.Trim();
+                changed = true;
+                break;
+            }
+
+            if (changed)
+            {
+                SaveAll(puzzles);
+            }
+
+            return changed;
+        }
+
+        /**
          * Append a new puzzle entry to the end of the saved list and flush to disk.
          *
          * @param puzzle The puzzle entry to add. Null entries are ignored.
