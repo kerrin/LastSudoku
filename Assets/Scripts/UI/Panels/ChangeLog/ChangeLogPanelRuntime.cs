@@ -40,36 +40,17 @@ namespace Sudoku.UI.Panels
                     return;
                 }
                 var host = new GameObject("ChangeLogPanelRuntime", typeof(RectTransform));
-                // If a SidePanel exists, parent the host to the same parent so we can match its size/location.
+                // Parent under SidePanel so the overlay inherits its live resolution-dependent bounds.
                 var side = GameObject.Find("SidePanel");
                 if (side != null)
                 {
-                    var sideRT = side.transform as RectTransform;
-                    // Parent the host to the Canvas's parent (scene root) to avoid inheriting any scale on the existing Canvas.
-                    var parentForHost = canvas.transform.parent != null ? canvas.transform.parent : canvas.transform;
-                    host.transform.SetParent(parentForHost, false);
-                    // copy anchors/position/size so host covers the SidePanel area
-                    if (sideRT != null)
-                    {
-                        var hostRT = host.GetComponent<RectTransform>();
-                        hostRT.anchorMin = sideRT.anchorMin;
-                        hostRT.anchorMax = sideRT.anchorMax;
-                        hostRT.anchoredPosition = sideRT.anchoredPosition;
-                        hostRT.pivot = sideRT.pivot;
-                        hostRT.sizeDelta = sideRT.sizeDelta;
-                    }
-                    host.transform.SetAsLastSibling();
+                    host.transform.SetParent(side.transform, false);
+                    StretchToParent(host.GetComponent<RectTransform>());
                 }
                 else
                 {
                     host.transform.SetParent(canvas.transform, false);
-                    // make host fill the entire canvas so panel anchors work as expected
-                    var hostRT = host.GetComponent<RectTransform>();
-                    hostRT.anchorMin = new Vector2(0f, 0f);
-                    hostRT.anchorMax = new Vector2(1f, 1f);
-                    hostRT.offsetMin = Vector2.zero;
-                    hostRT.offsetMax = Vector2.zero;
-                    host.transform.SetAsLastSibling();
+                    StretchToParent(host.GetComponent<RectTransform>());
                 }
                 _instance = host.AddComponent<ChangeLogPanelRuntime>();
                 Debug.Log("ChangeLogPanelRuntime: creating panel host");
@@ -105,42 +86,7 @@ namespace Sudoku.UI.Panels
             // Ensure panel is the last sibling to appear in front
             _panelGO.transform.SetAsLastSibling();
             var rt = _panelGO.GetComponent<RectTransform>();
-            // If a SidePanel exists, match its rect so the panel overlays it exactly.
-            var side = GameObject.Find("SidePanel");
-            if (side != null)
-            {
-                var sideRT = side.transform as RectTransform;
-                if (sideRT != null)
-                {
-                    rt.anchorMin = sideRT.anchorMin;
-                    rt.anchorMax = sideRT.anchorMax;
-                    rt.pivot = sideRT.pivot;
-                    rt.sizeDelta = sideRT.sizeDelta;
-                    // Position the panel so it overlays the side panel: posX = half width, posY = -half height
-                    float posX = rt.sizeDelta.x * 0.5f;
-                    float posY = -rt.sizeDelta.y * 0.5f;
-                    rt.anchoredPosition = new Vector2(posX, posY);
-                        // Avoid copying parent's scale/rotation which can make the UI tiny or rotated.
-                        rt.localScale = Vector3.one;
-                        rt.localRotation = Quaternion.identity;
-                }
-                else
-                {
-                    rt.anchorMin = new Vector2(0.02f, 0.02f);
-                    rt.anchorMax = new Vector2(0.98f, 0.98f);
-                    rt.offsetMin = Vector2.zero;
-                    rt.offsetMax = Vector2.zero;
-                }
-            }
-            else
-            {
-                // Make the panel much larger and centered over the canvas
-                rt.anchorMin = new Vector2(0.02f, 0.02f);
-                rt.anchorMax = new Vector2(0.98f, 0.98f);
-                rt.offsetMin = Vector2.zero;
-                rt.offsetMax = Vector2.zero;
-            }
-
+            StretchToParent(rt);
             var img = _panelGO.GetComponent<Image>();
             img.color = new Color(0.12f, 0.12f, 0.12f, 0.95f);
 
@@ -274,6 +220,24 @@ namespace Sudoku.UI.Panels
             layout.spacing = 6;
             var fitter = contentGO.AddComponent<ContentSizeFitter>();
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        }
+
+
+        /**
+         * Stretch a RectTransform to fill its immediate parent.
+         *
+         * @param rectTransform RectTransform whose bounds should match its parent.
+         */
+        private static void StretchToParent(RectTransform rectTransform)
+        {
+            if (rectTransform == null) return;
+
+            rectTransform.anchorMin = Vector2.zero;
+            rectTransform.anchorMax = Vector2.one;
+            rectTransform.offsetMin = Vector2.zero;
+            rectTransform.offsetMax = Vector2.zero;
+            rectTransform.localScale = Vector3.one;
+            rectTransform.localRotation = Quaternion.identity;
         }
 
         /**

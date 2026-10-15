@@ -37,13 +37,13 @@ public class BoardSidePanel : MonoBehaviour
     private RectTransform _panelRect;
     private Image _panelImage;
     public RectTransform RulesArea;
-    // Cache of recent layout-affecting values to avoid unnecessary per-frame layout work
     private int _lastScreenWidth = -1;
     private int _lastScreenHeight = -1;
+    private Rect _lastCanvasPixelRect;
+    private float _lastCanvasScaleFactor = -1f;
     private Vector2 _lastBoardOffset = new Vector2(float.MinValue, float.MinValue);
     private int _lastComputedCellSize = -1;
     private int _lastBoardSize = -1;
-    private bool _preserveSceneLayout = true;
     private RectTransform _colourClearPanelRect;
     private RectTransform _directionalLinkPanelRect;
     private const float DirectionalLinkPanelWidth = 48f;
@@ -77,7 +77,7 @@ public class BoardSidePanel : MonoBehaviour
         {
             EnsurePanel();
             SyncApplyRulePanelVisibility();
-            if (!_preserveSceneLayout) UpdatePanelGeometry();
+            UpdatePanelGeometry();
         }
     }
 
@@ -134,33 +134,46 @@ public class BoardSidePanel : MonoBehaviour
         if (_panelRect == null) EnsurePanel();
         SyncApplyRulePanelVisibility();
 
-        // Only update geometry when something that affects placement changes
-        bool shouldUpdate = false;
-
-        int sw = Screen.width;
-        int sh = Screen.height;
-        if (sw != _lastScreenWidth || sh != _lastScreenHeight)
+        bool shouldUpdateGeometry = false;
+        int screenWidth = Screen.width;
+        int screenHeight = Screen.height;
+        if (screenWidth != _lastScreenWidth || screenHeight != _lastScreenHeight)
         {
-            shouldUpdate = true;
-            _lastScreenWidth = sw;
-            _lastScreenHeight = sh;
+            _lastScreenWidth = screenWidth;
+            _lastScreenHeight = screenHeight;
+            shouldUpdateGeometry = true;
+        }
+
+        Rect canvasPixelRect = TargetCanvas != null
+            ? TargetCanvas.pixelRect
+            : new Rect(0f, 0f, screenWidth, screenHeight);
+        float canvasScaleFactor = TargetCanvas != null ? TargetCanvas.scaleFactor : 1f;
+        if (canvasPixelRect != _lastCanvasPixelRect ||
+            !Mathf.Approximately(canvasScaleFactor, _lastCanvasScaleFactor))
+        {
+            _lastCanvasPixelRect = canvasPixelRect;
+            _lastCanvasScaleFactor = canvasScaleFactor;
+            shouldUpdateGeometry = true;
         }
 
         if (BoardVisualizer != null)
         {
-            var bv = BoardVisualizer;
-            int computedCell = bv.GetComputedCellSize();
-            int boardSize = (bv.Runner != null && bv.Runner.CurrentBoard != null) ? bv.Runner.CurrentBoard.Size : -1;
-            if (computedCell != _lastComputedCellSize || boardSize != _lastBoardSize || bv.Offset != _lastBoardOffset)
+            int computedCellSize = BoardVisualizer.GetComputedCellSize();
+            int boardSize = BoardVisualizer.Runner != null && BoardVisualizer.Runner.CurrentBoard != null
+                ? BoardVisualizer.Runner.CurrentBoard.Size
+                : -1;
+            if (computedCellSize != _lastComputedCellSize ||
+                boardSize != _lastBoardSize ||
+                BoardVisualizer.Offset != _lastBoardOffset)
             {
-                shouldUpdate = true;
-                _lastComputedCellSize = computedCell;
+                _lastComputedCellSize = computedCellSize;
                 _lastBoardSize = boardSize;
-                _lastBoardOffset = bv.Offset;
+                _lastBoardOffset = BoardVisualizer.Offset;
+                shouldUpdateGeometry = true;
             }
         }
 
-        if (shouldUpdate && !_preserveSceneLayout) UpdatePanelGeometry();
+        if (shouldUpdateGeometry) UpdatePanelGeometry();
         UpdateColourClearPanelLayout();
         UpdateDirectionalLinkModePanelLayout();
     }
@@ -168,8 +181,6 @@ public class BoardSidePanel : MonoBehaviour
     private void EnsurePanel()
     {
         if (_panelRect != null) return;
-
-        _preserveSceneLayout = true;
 
         if (TargetCanvas == null) TargetCanvas = Object.FindAnyObjectByType<Canvas>();
         if (TargetCanvas == null)
@@ -377,94 +388,52 @@ public class BoardSidePanel : MonoBehaviour
 
     private void UpdatePanelGeometry()
     {
-        if (_panelRect == null || _preserveSceneLayout) return;
-        float left = Padding;
-        float top = Padding;
-        float bottom = Padding;
-        float right = Padding;
+        if (_panelRect == null) return;
 
-        // Make sure we have a valid canvas reference for pixel-accurate layout.
         if (TargetCanvas == null)
+        {
             TargetCanvas = FindAnyObjectByType<Canvas>();
+        }
 
-        // Use screen dimensions for geometry because the board is drawn with IMGUI
-        // coordinates (Screen space). This keeps both systems aligned.
-        // Prefer canvas pixel rect when available (handles CanvasScaler)
-        float canvasWidth = TargetCanvas != null ? TargetCanvas.pixelRect.width : Screen.width;
-        float canvasHeight = TargetCanvas != null ? TargetCanvas.pixelRect.height : Screen.height;
-
-        // Determine board rectangle in screen space
-        if (BoardVisualizer != null && BoardVisualizer.Runner != null && BoardVisualizer.Runner.CurrentBoard != null)
+        if (TargetCanvas == null || !(TargetCanvas.transform is RectTransform canvasRect))
         {
-            int gridSize = BoardVisualizer.Runner.CurrentBoard.Size;
-            int cell = BoardVisualizer.GetComputedCellSize();
-            float boardLeft = BoardVisualizer.Offset.x;
-            float boardTop = BoardVisualizer.Offset.y;
-            float boardWidth = gridSize * cell;
-            float boardHeight = gridSize * cell;
+            return;
+        }
 
-            // If the board, when placed at BoardVisualizer.Offset.x, would overflow
-            // the screen (or Offset.x looks like a default small margin while the
-            // board is actually centered), prefer a centered placement computed
-            // from the screen width so the panel starts at the board's visible
-            // right edge.
-            float centeredLeft = Mathf.Round((Screen.width - boardWidth) / 2f);
-            bool offsetLooksInvalid = float.IsNaN(boardLeft) || boardLeft < 0f || boardLeft + boardWidth + Padding > Screen.width;
-            if (offsetLooksInvalid)
+        var canvasBounds = canvasRect.rect;
+        float leftAnchor = canvasBounds.width > 0f
+            ? Mathf.Clamp01((canvasBounds.width - MinWidth - Padding) / canvasBounds.width)
+            : 1f;
+        float topOffset = Padding;
+        if (BoardVisualizer != null && BoardVisualizer.TryGetBoardRect(out var boardRect))
+        {
+            // IMGUI uses a top-left origin; convert the board's right/top screen point
+            // into the canvas' local coordinates before deriving normalized anchors.
+            var boardRightTop = new Vector2(
+                boardRect.xMax + Padding,
+                Screen.height - boardRect.yMin);
+            if (RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                    canvasRect,
+                    boardRightTop,
+                    TargetCanvas.renderMode == RenderMode.ScreenSpaceOverlay ? null : TargetCanvas.worldCamera,
+                    out var localPoint))
             {
-                boardLeft = centeredLeft;
-            }
+                if (canvasBounds.width > 0f)
+                {
+                    leftAnchor = Mathf.Clamp01((localPoint.x - canvasBounds.xMin) / canvasBounds.width);
+                }
 
-            // The panel's left boundary should be just after the board's right edge
-            left = Mathf.Round(boardLeft + boardWidth) + Padding;
-
-            // Ensure minimum width is respected
-            float availableWidth = canvasWidth - left - Padding;
-            if (availableWidth < MinWidth)
-            {
-                // Move left so min width fits
-                left = Mathf.Max(Padding, canvasWidth - MinWidth - Padding);
+                topOffset = Mathf.Max(0f, canvasBounds.yMax - localPoint.y);
             }
         }
-        else
-        {
-            // If we don't have board geometry yet, place the panel at the right edge
-            left = Mathf.Max(Padding, canvasWidth - MinWidth - Padding);
-        }
 
-        // Prefer setting horizontal anchors using normalized canvas coordinates
-        // so the panel reliably occupies the remaining right-side space even
-        // when UI scaling or CanvasScaler is active.
-        // Compute pixel rectangle for the panel: left offset and width in pixels
-        float leftPixel = left;
-        float widthPixels = Mathf.Max(MinWidth, canvasWidth - leftPixel - right);
-        float heightPixels = Mathf.Max(0f, canvasHeight - top - bottom);
-
-        // Anchor to top-left and set explicit size; position by anchoredPosition so we can align with IMGUI board top
-        _panelRect.anchorMin = new Vector2(0f, 1f);
-        _panelRect.anchorMax = new Vector2(0f, 1f);
-        _panelRect.pivot = new Vector2(0.5f, 1f);
-        _panelRect.sizeDelta = new Vector2(widthPixels, heightPixels);
-
-        // If we have a BoardVisualizer, align the panel top with the board's top (IMGUI uses top-left screen origin).
-        if (BoardVisualizer != null)
-        {
-            // BoardVisualizer.Offset is in IMGUI coordinates (top-left origin).
-            Vector2 boardGuiOffset = BoardVisualizer.Offset; // x,y in IMGUI (top-left)
-            // For a RectTransform anchored at (0,1) with pivot (0.5,1), the anchoredPosition
-            // x should be leftPixel and y should be negative boardGuiOffset.y (to move down).
-            _panelRect.anchoredPosition = new Vector2(leftPixel, -boardGuiOffset.y);
-
-            Vector3[] corners = new Vector3[4];
-            _panelRect.GetWorldCorners(corners);
-            float topWorldY = corners[1].y; // top-left corner
-        }
-        else
-        {
-            // Fallback: simple anchored position using top inset
-            float panelTopOffset = top;
-            _panelRect.anchoredPosition = new Vector2(leftPixel, -panelTopOffset);
-        }
+        // Stretch from the board's right edge to the canvas right edge. Anchors
+        // make the remaining width follow the canvas instead of storing a pixel width.
+        _panelRect.anchorMin = new Vector2(leftAnchor, 0f);
+        _panelRect.anchorMax = Vector2.one;
+        _panelRect.pivot = new Vector2(0f, 1f);
+        _panelRect.offsetMin = new Vector2(0f, Padding);
+        _panelRect.offsetMax = new Vector2(-Padding, -topOffset);
     }
     /**
      * Create and wire up the ColourClearPanel if it does not already exist.

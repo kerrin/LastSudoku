@@ -90,7 +90,16 @@ namespace Sudoku.UI
             (1366, 768),
             (1600, 900),
             (1920, 1080),
-            (2560, 1440)
+            (2560, 1440),
+            (3840, 2160),
+            (2868,1320), // iPhone 14 Pro Max native resolution
+            (2778, 1284), // iPhone 13 Pro Max native resolution
+            (2688, 1242), // iPhone XS Max native resolution
+            (2436, 1125), // iPhone X/XS native resolution
+            (2340, 1080), // iPhone 12/13/14 native resolution
+            (2280, 1080), // Samsung Galaxy S10 native resolution
+            (2220, 1080), // Samsung Galaxy S9/S20 native resolution
+            (2160, 1080) // Samsung Galaxy S8/S21 native resolution
         };
         private static readonly string[] FullScreenModeOptions = { "Windowed", "Full Screen" };
 
