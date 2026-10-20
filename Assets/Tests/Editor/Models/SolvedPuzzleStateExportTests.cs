@@ -41,6 +41,19 @@ namespace Sudoku.Tests.Editor
         }
 
         [Test]
+        public void FromBoard_PersistsDifficultyFromInitialPuzzleCode()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            string initialCode = PuzzleCodeGenerator.EncodeBoardToCode(board);
+
+            var export = SolvedPuzzleStateExport.FromBoard(board, "CURRENT", initialCode);
+
+            Assert.AreEqual(
+                SavedPuzzleAnalysisGenerator.AnalyzeFromCode(initialCode).DifficultyLabel,
+                export.DifficultyLabel);
+        }
+
+        [Test]
         public void XmlDeserialize_WithoutDirectionalLinksField_KeepsDefaultCollectionsInitialised()
         {
             const string xml = "<SolvedPuzzleStateExport><PuzzleCode>ABC</PuzzleCode><InitialPuzzleCode>ABC</InitialPuzzleCode><Size>9</Size><BoxWidth>3</BoxWidth><BoxHeight>3</BoxHeight><SavedAtUtcTicks>0</SavedAtUtcTicks><ChangeLogIndex>0</ChangeLogIndex><NextChangeGroupId>1</NextChangeGroupId><ElapsedSeconds>0</ElapsedSeconds></SolvedPuzzleStateExport>";
@@ -56,6 +69,27 @@ namespace Sudoku.Tests.Editor
             Assert.IsNotNull(deserialized.DirectionalLinks);
             Assert.IsNotNull(deserialized.ChangeLog);
             Assert.IsNotNull(deserialized.Cells);
+            Assert.AreEqual("Unknown", deserialized.DifficultyLabel);
+        }
+
+        [Test]
+        public void XmlSerialize_PersistsDifficultyLabel()
+        {
+            var export = new SolvedPuzzleStateExport { DifficultyLabel = "Hard" };
+
+            var serializer = new XmlSerializer(typeof(SolvedPuzzleStateExport));
+            SolvedPuzzleStateExport deserialized;
+            using (var writer = new StringWriter())
+            {
+                serializer.Serialize(writer, export);
+                using (var reader = new StringReader(writer.ToString()))
+                {
+                    deserialized = serializer.Deserialize(reader) as SolvedPuzzleStateExport;
+                }
+            }
+
+            Assert.IsNotNull(deserialized);
+            Assert.AreEqual("Hard", deserialized.DifficultyLabel);
         }
     }
 }

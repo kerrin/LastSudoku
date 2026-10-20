@@ -16,6 +16,7 @@ namespace Sudoku.Models
         public string Name;
         public string PuzzleCode;
         public string InitialPuzzleCode;
+        public string DifficultyLabel = "Unknown";
         public int Size;
         public int BoxWidth;
         public int BoxHeight;
@@ -51,6 +52,7 @@ namespace Sudoku.Models
             {
                 PuzzleCode = puzzleCode ?? string.Empty,
                 InitialPuzzleCode = initialPuzzleCode ?? string.Empty,
+                DifficultyLabel = GetDifficultyLabel(puzzleCode, initialPuzzleCode),
                 Size = board.Size,
                 BoxWidth = board.BoxWidth,
                 BoxHeight = board.BoxHeight,
@@ -190,6 +192,17 @@ namespace Sudoku.Models
             }
 
             return export;
+        }
+
+        private static string GetDifficultyLabel(string puzzleCode, string initialPuzzleCode)
+        {
+            string sourceCode = !string.IsNullOrWhiteSpace(initialPuzzleCode)
+                ? initialPuzzleCode.Trim()
+                : puzzleCode;
+            var analysis = SavedPuzzleAnalysisGenerator.AnalyzeFromCode(sourceCode);
+            return analysis != null && !string.IsNullOrWhiteSpace(analysis.DifficultyLabel)
+                ? analysis.DifficultyLabel
+                : "Unknown";
         }
 
         /**

@@ -335,16 +335,24 @@ namespace Sudoku.UI.Panels
                     continue;
                 }
 
-                string difficultySourceCode = !string.IsNullOrWhiteSpace(state.InitialPuzzleCode)
-                    ? state.InitialPuzzleCode.Trim()
-                    : currentCode;
-
                 string difficultyLabel = "Unknown";
-                var analysis = SavedPuzzleAnalysisGenerator.AnalyzeFromCode(difficultySourceCode);
-                if (analysis != null && !string.IsNullOrWhiteSpace(analysis.DifficultyLabel))
+                if(string.IsNullOrWhiteSpace(state.DifficultyLabel) || state.DifficultyLabel == "Unknown")
                 {
-                    difficultyLabel = analysis.DifficultyLabel;
+                    // No saved difficulty
+                    string difficultySourceCode = !string.IsNullOrWhiteSpace(state.InitialPuzzleCode)
+                        ? state.InitialPuzzleCode.Trim()
+                        : currentCode;
+
+                    var analysis = SavedPuzzleAnalysisGenerator.AnalyzeFromCode(difficultySourceCode);
+                    if (analysis != null && !string.IsNullOrWhiteSpace(analysis.DifficultyLabel))
+                    {
+                        difficultyLabel = analysis.DifficultyLabel;
+                    }
+                } else {
+                    difficultyLabel = state.DifficultyLabel;
                 }
+
+                
 
                 DateTime savedUtc = state.SavedAtUtcTicks > 0
                     ? new DateTime(state.SavedAtUtcTicks, DateTimeKind.Utc)
