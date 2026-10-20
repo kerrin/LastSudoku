@@ -8,21 +8,23 @@ using Board = Sudoku.Models.Board;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * Forcing Chains (AIC family) derive conclusions by following alternating
-     * strong/weak inferences.
+     * Forcing Chains (AIC family) derive conclusions by following
+     * strong and weak inferences.
      *
      * Strong links are built from:
      * - Bi-value cells (exactly two candidates in one cell).
-     * - Conjugate pairs (exactly two candidates for a digit in one row/column/box).
+     * - Conjugate pairs (exactly two candidates for a single digit in one row/column/box).
      * 
      * Weak links are built from:
-     * - True digits to all seen matching digits in the same cell or unit (row/column/box), where there are multiple candidates of the digit seen.
+     * - Two or more digits in the same cell or unit (row/column/box), where only one can be true. 
+     *      e.g. candidates in a cell, as only one can be the value.
+     *      or all candidates for the same digit in a unit (row/column/box), as only one can be true.
      *
      * Forcing chains can occur when:
      * 1. Chains start from all candidates in a single cell
      * 2. Chains start from all a single digit's candidates in a single row/column/box
      * and all chains combine to produce a common conclusion (candidate placement or removal).
-     * This class implements 1
+     * ** This class implements 1 **
      *
      * This bounded implementation targets human-tractable chains and intentionally
      * avoids exhaustive SAT-level search.
@@ -504,37 +506,16 @@ namespace Sudoku.Solver.Rules
                 }
             }
 
-            // Weak links: keep the full propagation graph so the rule can find
-            // forcing chains, but only real conjugate-pair edges are exposed as
-            // visible weak links in the preview. The rest remain internal conflict
-            // steps used by the solver.
-            foreach (var candidate in model.Candidates)
+            // Every pair of candidates in a cell conflicts, as does every pair of
+            // candidates for one digit in a unit.
+            foreach (var group in model.CellGroupsByIndex.Values)
             {
-                var weakLinks = new HashSet<int>();
-                int row = GetRow(board, candidate);
-                int column = GetColumn(board, candidate);
-                int digit = GetDigit(board, candidate);
-                var cell = board.Cells[row, column];
+                AddGroupLinks(model.WeakLinksByKey, group);
+            }
 
-                if (cell != null && cell.Candidates != null)
-                {
-                    // All other candidates in the same cell conflict with this candidate.
-                    foreach (int other in cell.Candidates)
-                    {
-                        if (other == digit) continue;
-                        weakLinks.Add(MakeCandidateKey(board, row, column, other));
-                    }
-                }
-
-                // All peers in the same row, column, or box that have this digit as a candidate conflict with this candidate.
-                foreach (var peer in board.GetPeers(board.Cells[row, column]))
-                {
-                    if (peer == null || peer.Value.HasValue || peer.Candidates == null) continue;
-                    if (!peer.Candidates.Contains(digit)) continue;
-                    weakLinks.Add(MakeCandidateKey(board, peer.Row, peer.Column, digit));
-                }
-
-                model.WeakLinksByKey[candidate] = weakLinks.OrderBy(k => k).ToList();
+            foreach (var group in model.UnitDigitGroupsByIndex.Values)
+            {
+                AddGroupLinks(model.WeakLinksByKey, group);
             }
 
             return model;
@@ -1599,7 +1580,7 @@ namespace Sudoku.Solver.Rules
          * @param board Current puzzle board.
          * @param fromCandidate Source candidate.
          * @param toCandidate Target candidate.
-         * @returns True when the conflict is a conjugate pair in a row/column/box.
+         * @returns True for a same-digit conflict between distinct peer cells.
          */
         private static bool ShouldExposeWeakConflictAsLink(Board board, int fromCandidate, int toCandidate)
         {
@@ -1616,29 +1597,12 @@ namespace Sudoku.Solver.Rules
 
             if (fromRow == toRow && fromColumn == toColumn)
             {
-                // Same cells never have a link, it is infered
                 return false;
             }
 
-            // if (fromRow == toRow)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the row
-            //     return CountDigitCandidatesInRow(board, fromRow, GetDigit(board, fromCandidate)) > 2;
-            // }
-
-            // if (fromColumn == toColumn)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the column
-            //     return CountDigitCandidatesInColumn(board, fromColumn, GetDigit(board, fromCandidate)) > 2;
-            // }
-
-            // if (board.Cells[fromRow, fromColumn] != null && board.Cells[fromRow, fromColumn].Box == board.Cells[toRow, toColumn].Box)
-            // {
-            //     // Only show links when the digit is a conjugate pair (only 2 candidates) in the box
-            //     return CountDigitCandidatesInBox(board, board.Cells[fromRow, fromColumn].Box, GetDigit(board, fromCandidate)) > 2;
-            // }
-
-            return true;
+            var fromCell = board.Cells[fromRow, fromColumn];
+            var toCell = board.Cells[toRow, toColumn];
+            return fromCell != null && toCell != null && board.GetPeers(fromCell).Contains(toCell);
         }
 
         /**
@@ -1714,9 +1678,9 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Add a bidirectional strong link between two candidates.
+         * Add a bidirectional link between two candidates.
          *
-         * @param links Strong-link adjacency map.
+         * @param links Link adjacency map.
          * @param a First candidate key.
          * @param b Second candidate key.
          */
@@ -1744,6 +1708,26 @@ namespace Sudoku.Solver.Rules
             if (!listB.Contains(a))
             {
                 listB.Add(a);
+            }
+        }
+
+        /**
+         * Add weak conflicts between every pair of candidates in one cell or unit-digit group.
+         */
+        private static void AddGroupLinks(Dictionary<int, List<int>> links, List<int> group)
+        {
+            if (group == null || group.Count < 2)
+            {
+                return;
+            }
+
+            var orderedCandidates = group.OrderBy(candidate => candidate).ToList();
+            for (int i = 0; i < orderedCandidates.Count; i++)
+            {
+                for (int j = i + 1; j < orderedCandidates.Count; j++)
+                {
+                    AddLink(links, orderedCandidates[i], orderedCandidates[j]);
+                }
             }
         }
 
@@ -1876,4 +1860,3 @@ namespace Sudoku.Solver.Rules
     }
 
 }
-
