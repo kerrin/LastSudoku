@@ -5,7 +5,7 @@ using Sudoku.Models;
 namespace Sudoku.Solver.Rules
 {
     /**
-     * Shared branch-state used by all forcing-chain rules during propagation.
+     * Shared branch-state used by both forcing-chain seed strategies during propagation.
      */
     internal sealed class PropagationState
     {
@@ -32,7 +32,7 @@ namespace Sudoku.Solver.Rules
     }
 
     /**
-     * Shared forcing-chain state used by both the cell and unit chain variants.
+     * Shared forcing-chain state used by the cell- and unit-seeded searches.
      */
     internal sealed class ForcingPlan
     {
@@ -46,14 +46,14 @@ namespace Sudoku.Solver.Rules
     }
 
     /**
-     * Shared helpers for combining candidate forcing plans produced by the cell and
-     * unit forcing-chain variants.
+     * Shared helpers for combining candidate forcing plans from both seed strategies.
      */
     internal static class ForcingChainPlanCombiner
     {
         /**
          * Combine multiple forcing plans into a single plan by intersecting all shared
-         * common conclusions and merging contradiction flags.
+         * common conclusions. Contradiction plans are not combinable because each
+         * contradiction applies to a specific seed assumption.
          *
          * @param plans Candidate plans to merge.
          * @returns Combined plan or null when no valid plans were supplied.
@@ -66,7 +66,9 @@ namespace Sudoku.Solver.Rules
             }
 
             var validPlans = plans
-                .Where(plan => plan != null)
+                .Where(plan => plan != null
+                    && !plan.ContradictionOnTrueBranch
+                    && !plan.ContradictionOnFalseBranch)
                 .ToList();
 
             if (validPlans.Count == 0)
@@ -80,9 +82,7 @@ namespace Sudoku.Solver.Rules
                 TrueBranch = validPlans[0].TrueBranch,
                 FalseBranch = validPlans[0].FalseBranch,
                 CommonFalseCandidates = new List<int>(validPlans[0].CommonFalseCandidates ?? Enumerable.Empty<int>()),
-                CommonTrueCandidates = new List<int>(validPlans[0].CommonTrueCandidates ?? Enumerable.Empty<int>()),
-                ContradictionOnTrueBranch = validPlans[0].ContradictionOnTrueBranch,
-                ContradictionOnFalseBranch = validPlans[0].ContradictionOnFalseBranch
+                CommonTrueCandidates = new List<int>(validPlans[0].CommonTrueCandidates ?? Enumerable.Empty<int>())
             };
 
             for (int i = 1; i < validPlans.Count; i++)
@@ -94,8 +94,6 @@ namespace Sudoku.Solver.Rules
                 combined.CommonTrueCandidates = combined.CommonTrueCandidates
                     .Intersect(plan.CommonTrueCandidates ?? Enumerable.Empty<int>())
                     .ToList();
-                combined.ContradictionOnTrueBranch |= plan.ContradictionOnTrueBranch;
-                combined.ContradictionOnFalseBranch |= plan.ContradictionOnFalseBranch;
             }
 
             return combined;

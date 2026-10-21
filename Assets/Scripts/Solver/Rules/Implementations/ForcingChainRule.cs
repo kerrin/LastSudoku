@@ -20,11 +20,8 @@ namespace Sudoku.Solver.Rules
      *      e.g. candidates in a cell, as only one can be the value.
      *      or all candidates for the same digit in a unit (row/column/box), as only one can be true.
      *
-     * Forcing chains can occur when:
-     * 1. Chains start from all candidates in a single cell
-     * 2. Chains start from all a single digit's candidates in a single row/column/box
-     * and all chains combine to produce a common conclusion (candidate placement or removal).
-     * ** This class implements 1 **
+     * Chains can start from all candidates in a single cell, or from a candidate
+     * that has same-digit peers in a row, column, or box.
      *
      * This bounded implementation targets human-tractable chains and intentionally
      * avoids exhaustive SAT-level search.
@@ -32,7 +29,7 @@ namespace Sudoku.Solver.Rules
      * This rule should only be applied if colouring is enabled and has at least
      * two colours enabled.
      */
-    public class ForcingChainCellRule : CachedRuleBase
+    public class ForcingChainRule : CachedRuleBase
     {
         private enum UnitType
         {
@@ -61,7 +58,7 @@ namespace Sudoku.Solver.Rules
             public Dictionary<int, List<int>> UnitDigitGroupsByIndex = new Dictionary<int, List<int>>();
         }
 
-        public override string Name => "Forcing Chain (Cell)";
+        public override string Name => "Forcing Chain";
 
         public override Difficulty Difficulty => Difficulty.Expert;
 
@@ -124,7 +121,7 @@ namespace Sudoku.Solver.Rules
 
             if (result.Apply && string.IsNullOrWhiteSpace(result.Description))
             {
-                result.Description = "Forcing Chain (Cell) produced a deduction.";
+                result.Description = "Forcing Chain produced a deduction.";
             }
 
             if (!result.Apply)
@@ -170,7 +167,7 @@ namespace Sudoku.Solver.Rules
                     continue;
                 }
 
-                var plansForCell = new List<ForcingPlan>();
+                var commonConclusionPlans = new List<ForcingPlan>();
                 foreach (int digit in cell.Candidates.OrderBy(v => v))
                 {
                     int seed = MakeCandidateKey(board, cell.Row, cell.Column, digit);
@@ -182,13 +179,24 @@ namespace Sudoku.Solver.Rules
                     var plan = EvaluateSeedCandidate(board, model, seed);
                     if (plan != null && IsPlanWithinPreviewEvidenceLimit(plan))
                     {
-                        // Store only plans whose preview evidence stays within the rule's
-                        // display cap; otherwise the solver must continue evaluating other
-                        // viable plans in the same cell.
-                        plansForCell.Add(plan);
+                        if (plan.ContradictionOnTrueBranch || plan.ContradictionOnFalseBranch)
+                        {
+                            // A contradiction is evidence about this seed only. Never merge
+                            // contradiction flags from different candidate assumptions.
+                            int contradictionScore = ScorePlan(board, digitCounts, plan);
+                            if (contradictionScore < bestScore)
+                            {
+                                bestScore = contradictionScore;
+                                bestPlan = plan;
+                            }
+                        }
+                        else
+                        {
+                            commonConclusionPlans.Add(plan);
+                        }
                     }
                 }
-                var combinedPlan = ForcingChainPlanCombiner.Combine(plansForCell);
+                var combinedPlan = ForcingChainPlanCombiner.Combine(commonConclusionPlans);
                 var score = combinedPlan == null ? int.MaxValue : ScorePlan(board, digitCounts, combinedPlan);
 
                 // Check if the score is better than the best score so far, and if so, store it as the best plan.
@@ -196,6 +204,55 @@ namespace Sudoku.Solver.Rules
                 {
                     bestScore = score;
                     bestPlan = combinedPlan;
+                }
+            }
+
+            var unitPlan = FindUnitPlan(board, model, digitCounts, orderedCandidates);
+            var unitPlanScore = unitPlan == null ? int.MaxValue : ScorePlan(board, digitCounts, unitPlan);
+            if (unitPlanScore < bestScore)
+            {
+                bestPlan = unitPlan;
+            }
+
+            return bestPlan;
+        }
+
+        /**
+         * Search same-digit unit peers using propagation without unit completion.
+         *
+         * @param board Current puzzle board.
+         * @param model Chain model containing candidate links.
+         * @param digitCounts Global candidate count per digit.
+         * @param orderedCandidates Candidate seeds ordered by digit rarity and position.
+         * @returns The best unit-seeded plan, or null when none is available.
+         */
+        private ForcingPlan FindUnitPlan(
+            Board board,
+            ChainModel model,
+            IReadOnlyDictionary<int, int> digitCounts,
+            IReadOnlyList<int> orderedCandidates)
+        {
+            ForcingPlan bestPlan = null;
+            int bestScore = int.MaxValue;
+
+            foreach (int seed in orderedCandidates)
+            {
+                if (!HasSameDigitUnitPeer(board, seed))
+                {
+                    continue;
+                }
+
+                var plan = EvaluateUnitSeedCandidate(board, model, seed);
+                if (!IsPlanWithinPreviewEvidenceLimit(plan))
+                {
+                    continue;
+                }
+
+                int score = ScorePlan(board, digitCounts, plan);
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestPlan = plan;
                 }
             }
 
@@ -215,13 +272,15 @@ namespace Sudoku.Solver.Rules
             var trueBranch = PropagateFromAssumption(board, model, seedCandidate, assumeTrue: true, enableUnitCompletion: true);
             var falseBranch = PropagateFromAssumption(board, model, seedCandidate, assumeTrue: false, enableUnitCompletion: true);
 
-            if (!trueBranch.HasContradiction && !falseBranch.HasContradiction)
+            if (trueBranch.HasContradiction && falseBranch.HasContradiction)
             {
-                // Find common conclusions between the two branches.
-                var commonFalse = trueBranch.FalseCandidates.Intersect(falseBranch.FalseCandidates).ToList();
-                var commonTrue = trueBranch.TrueCandidates.Intersect(falseBranch.TrueCandidates).ToList();
+                return null;
+            }
 
-                if (commonFalse.Count == 0 && commonTrue.Count == 0)
+            if (trueBranch.HasContradiction || falseBranch.HasContradiction)
+            {
+                var contradictionBranch = trueBranch.HasContradiction ? trueBranch : falseBranch;
+                if (!IsMeaningfulContradictionBranch(contradictionBranch, seedCandidate))
                 {
                     return null;
                 }
@@ -231,25 +290,114 @@ namespace Sudoku.Solver.Rules
                     SeedCandidate = seedCandidate,
                     TrueBranch = trueBranch,
                     FalseBranch = falseBranch,
-                    CommonFalseCandidates = commonFalse,
-                    CommonTrueCandidates = commonTrue,
-                    ContradictionOnTrueBranch = false,
-                    ContradictionOnFalseBranch = false
-                };
-            }
-            else
-            {
-                return new ForcingPlan
-                {
-                    SeedCandidate = seedCandidate,
-                    TrueBranch = trueBranch,
-                    FalseBranch = falseBranch,
-                    CommonFalseCandidates = new List<int>(),
-                    CommonTrueCandidates = new List<int>(),
                     ContradictionOnTrueBranch = trueBranch.HasContradiction,
                     ContradictionOnFalseBranch = falseBranch.HasContradiction
                 };
             }
+
+            // Find common conclusions between the two non-contradictory branches.
+            var commonFalse = trueBranch.FalseCandidates.Intersect(falseBranch.FalseCandidates).ToList();
+            var commonTrue = trueBranch.TrueCandidates.Intersect(falseBranch.TrueCandidates).ToList();
+            if (commonFalse.Count == 0 && commonTrue.Count == 0)
+            {
+                return null;
+            }
+
+            return new ForcingPlan
+            {
+                SeedCandidate = seedCandidate,
+                TrueBranch = trueBranch,
+                FalseBranch = falseBranch,
+                CommonFalseCandidates = commonFalse,
+                CommonTrueCandidates = commonTrue
+            };
+        }
+
+        /**
+         * Evaluate a candidate with the unit-seeded chain rules.
+         *
+         * @param board Current puzzle board.
+         * @param model Chain model containing candidate links.
+         * @param seedCandidate Candidate key to evaluate.
+         * @returns A valid unit-seeded plan, or null when it yields no useful deduction.
+         */
+        private ForcingPlan EvaluateUnitSeedCandidate(Board board, ChainModel model, int seedCandidate)
+        {
+            var trueBranch = PropagateFromAssumption(
+                board,
+                model,
+                seedCandidate,
+                assumeTrue: true,
+                enableUnitCompletion: false);
+            var falseBranch = PropagateFromAssumption(
+                board,
+                model,
+                seedCandidate,
+                assumeTrue: false,
+                enableUnitCompletion: false);
+
+            if (trueBranch.HasContradiction && falseBranch.HasContradiction)
+            {
+                return null;
+            }
+
+            var plan = new ForcingPlan
+            {
+                SeedCandidate = seedCandidate,
+                TrueBranch = trueBranch,
+                FalseBranch = falseBranch,
+                ContradictionOnTrueBranch = trueBranch.HasContradiction,
+                ContradictionOnFalseBranch = falseBranch.HasContradiction
+            };
+
+            plan.CommonFalseCandidates = trueBranch.FalseCandidates
+                .Intersect(falseBranch.FalseCandidates)
+                .Where(candidate => candidate != seedCandidate)
+                .Where(candidate => !IsSameCell(board, candidate, seedCandidate))
+                .Where(candidate => IsCandidateStillCandidate(board, candidate))
+                .OrderBy(candidate => GetRow(board, candidate))
+                .ThenBy(candidate => GetColumn(board, candidate))
+                .ThenBy(candidate => GetDigit(board, candidate))
+                .ToList();
+
+            plan.CommonTrueCandidates = trueBranch.TrueCandidates
+                .Intersect(falseBranch.TrueCandidates)
+                .Where(candidate => !IsSameCell(board, candidate, seedCandidate))
+                .Where(candidate => IsCandidateStillCandidate(board, candidate))
+                .OrderBy(candidate => GetRow(board, candidate))
+                .ThenBy(candidate => GetColumn(board, candidate))
+                .ThenBy(candidate => GetDigit(board, candidate))
+                .ToList();
+
+            bool hasCommonConclusion =
+                plan.CommonFalseCandidates.Count > 0 || plan.CommonTrueCandidates.Count > 0;
+            bool hasMeaningfulContradiction =
+                (plan.ContradictionOnTrueBranch &&
+                 IsMeaningfulContradictionBranch(trueBranch, seedCandidate)) ||
+                (plan.ContradictionOnFalseBranch &&
+                 IsMeaningfulContradictionBranch(falseBranch, seedCandidate));
+
+            return hasCommonConclusion || hasMeaningfulContradiction ? plan : null;
+        }
+
+        private static bool HasSameDigitUnitPeer(Board board, int seedCandidate)
+        {
+            var cell = board.Cells[GetRow(board, seedCandidate), GetColumn(board, seedCandidate)];
+            int digit = GetDigit(board, seedCandidate);
+
+            return HasSameDigitPeer(board.GetRow(cell.Row), cell, digit)
+                || HasSameDigitPeer(board.GetColumn(cell.Column), cell, digit)
+                || HasSameDigitPeer(board.GetBox(cell.Box), cell, digit);
+        }
+
+        private static bool HasSameDigitPeer(IEnumerable<Cell> unit, Cell seedCell, int digit)
+        {
+            return unit.Any(cell =>
+                cell != null
+                && !ReferenceEquals(cell, seedCell)
+                && !cell.Value.HasValue
+                && cell.Candidates != null
+                && cell.Candidates.Contains(digit));
         }
 
         /**
@@ -886,6 +1034,15 @@ namespace Sudoku.Solver.Rules
         private void ResolveUnitGroup(Board board, ChainModel model, PropagationState state, int groupIndex, string groupLabel)
         {
             if (!model.UnitDigitGroupsByIndex.TryGetValue(groupIndex, out var group) || group.Count == 0)
+            {
+                return;
+            }
+
+            // A singleton unit-digit group is already a hidden single before either
+            // branch is assumed. Leave it to the single-candidate rules; treating
+            // its rejection as a chain contradiction creates false positives when
+            // candidate sets are incomplete.
+            if (group.Count == 1)
             {
                 return;
             }

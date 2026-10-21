@@ -113,8 +113,7 @@ namespace Sudoku.Solver.Rules
             Register(new WWingRule());
             Register(new XYZWingRule());
             Register(new ColouringRule());
-            Register(new ForcingChainCellRule());
-            Register(new ForcingChainUnitRule());
+            Register(new ForcingChainRule());
         }
 
         /**

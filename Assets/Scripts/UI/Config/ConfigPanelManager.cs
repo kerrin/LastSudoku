@@ -66,8 +66,7 @@ namespace Sudoku.UI
         private bool _showColouringAutoDisableWarning;
 
         private const string ColouringRuleTypeName = nameof(ColouringRule);
-        private const string ForcingChainCellRuleTypeName = nameof(ForcingChainCellRule);
-        private const string ForcingChainUnitRuleTypeName = nameof(ForcingChainUnitRule);
+        private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
 
         // Panel layout constants.
         private const float PanelW  = 500f;
@@ -724,16 +723,10 @@ namespace Sudoku.UI
                 _runner?.HandleRuleToggleChanged(ColouringRuleTypeName, false);
             }
 
-            if (IsRuleEnabledByTypeName(ForcingChainCellRuleTypeName))
+            if (IsRuleEnabledByTypeName(ForcingChainRuleTypeName))
             {
-                _registry?.SetEnabled(ForcingChainCellRuleTypeName, false);
-                _runner?.HandleRuleToggleChanged(ForcingChainCellRuleTypeName, false);
-            }
-            
-            if (IsRuleEnabledByTypeName(ForcingChainUnitRuleTypeName))
-            {
-                _registry?.SetEnabled(ForcingChainUnitRuleTypeName, false);
-                _runner?.HandleRuleToggleChanged(ForcingChainUnitRuleTypeName, false);
+                _registry?.SetEnabled(ForcingChainRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ForcingChainRuleTypeName, false);
             }
 
             RefreshApplyRulesPanel();
@@ -777,17 +770,10 @@ namespace Sudoku.UI
                 changed = true;
             }
 
-            if (IsRuleEnabledByTypeName(ForcingChainCellRuleTypeName))
+            if (IsRuleEnabledByTypeName(ForcingChainRuleTypeName))
             {
-                _registry.SetEnabled(ForcingChainCellRuleTypeName, false);
-                _runner?.HandleRuleToggleChanged(ForcingChainCellRuleTypeName, false);
-                changed = true;
-            }
-
-            if (IsRuleEnabledByTypeName(ForcingChainUnitRuleTypeName))
-            {
-                _registry.SetEnabled(ForcingChainUnitRuleTypeName, false);
-                _runner?.HandleRuleToggleChanged(ForcingChainUnitRuleTypeName, false);
+                _registry.SetEnabled(ForcingChainRuleTypeName, false);
+                _runner?.HandleRuleToggleChanged(ForcingChainRuleTypeName, false);
                 changed = true;
             }
 
@@ -807,8 +793,7 @@ namespace Sudoku.UI
         {
             return ColourSettings.GetEnabledColourCount() == 2
                 && (IsRuleEnabledByTypeName(ColouringRuleTypeName)
-                 || IsRuleEnabledByTypeName(ForcingChainCellRuleTypeName)
-                 || IsRuleEnabledByTypeName(ForcingChainUnitRuleTypeName));
+                 || IsRuleEnabledByTypeName(ForcingChainRuleTypeName));
         }
 
         /**
@@ -846,8 +831,7 @@ namespace Sudoku.UI
         private static bool IsColouringRuleTypeName(string typeName)
         {
             return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
-                || string.Equals(typeName, ForcingChainCellRuleTypeName, System.StringComparison.Ordinal)
-                || string.Equals(typeName, ForcingChainUnitRuleTypeName, System.StringComparison.Ordinal);
+                || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
         }
 
         /**

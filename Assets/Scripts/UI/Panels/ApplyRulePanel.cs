@@ -16,8 +16,7 @@ namespace Sudoku.UI.Panels
 public class ApplyRulePanel : MonoBehaviour
 {
     private const string ColouringRuleTypeName = nameof(ColouringRule);
-    private const string ForcingChainCellRuleTypeName = nameof(ForcingChainCellRule);
-    private const string ForcingChainUnitRuleTypeName = nameof(ForcingChainUnitRule);
+    private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
 
     public SolverRunner Runner;
 
@@ -417,8 +416,7 @@ public class ApplyRulePanel : MonoBehaviour
 
         string typeName = rule.GetType().Name;
         return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
-            || string.Equals(typeName, ForcingChainCellRuleTypeName, System.StringComparison.Ordinal)
-            || string.Equals(typeName, ForcingChainUnitRuleTypeName, System.StringComparison.Ordinal);
+            || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
     }
 
     private void CreateReinitialiseCandidatesRow(Transform parent)

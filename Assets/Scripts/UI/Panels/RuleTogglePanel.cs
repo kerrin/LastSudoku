@@ -19,8 +19,7 @@ namespace Sudoku.UI.Panels
 public class RuleTogglePanel : MonoBehaviour
 {
     private const string ColouringRuleTypeName = nameof(ColouringRule);
-    private const string ForcingChainCellRuleTypeName = nameof(ForcingChainCellRule);
-    private const string ForcingChainUnitRuleTypeName = nameof(ForcingChainUnitRule);
+    private const string ForcingChainRuleTypeName = nameof(ForcingChainRule);
     private const string ColouringRuleRequirementSuffix = " (requires 2 colours)";
 
     private static readonly Difficulty[] DifficultyDisplayOrder =
@@ -841,8 +840,7 @@ public class RuleTogglePanel : MonoBehaviour
         }
 
         ApplyColourDependentVisualStateForRule(ColouringRuleTypeName, prerequisiteMet);
-        ApplyColourDependentVisualStateForRule(ForcingChainCellRuleTypeName, prerequisiteMet);
-        ApplyColourDependentVisualStateForRule(ForcingChainUnitRuleTypeName, prerequisiteMet);
+        ApplyColourDependentVisualStateForRule(ForcingChainRuleTypeName, prerequisiteMet);
     }
 
     /**
@@ -924,8 +922,7 @@ public class RuleTogglePanel : MonoBehaviour
     private static bool IsColourDependentRuleTypeName(string ruleTypeName)
     {
         return string.Equals(ruleTypeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
-            || string.Equals(ruleTypeName, ForcingChainCellRuleTypeName, System.StringComparison.Ordinal)
-            || string.Equals(ruleTypeName, ForcingChainUnitRuleTypeName, System.StringComparison.Ordinal);
+            || string.Equals(ruleTypeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
     }
 
     /**
