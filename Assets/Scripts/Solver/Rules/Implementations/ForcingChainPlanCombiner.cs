@@ -16,7 +16,9 @@ namespace Sudoku.Solver.Rules
         public int? ContradictionCandidate;
         public int? ContradictionSourceCandidate;
         public DirectionalLinkKind? ContradictionSourceLinkKind;
-        public Queue<(int key, bool valueTrue)> Pending = new Queue<(int key, bool valueTrue)>();
+        public List<int> ContradictionGroupCandidates = new List<int>();
+        public Queue<(int key, bool valueTrue, int? sourceCandidate, DirectionalLinkKind? sourceLinkKind)> Pending
+            = new Queue<(int key, bool valueTrue, int? sourceCandidate, DirectionalLinkKind? sourceLinkKind)>();
         public List<int> AssignmentOrder = new List<int>();
         public Dictionary<int, List<InferenceCause>> InferenceCausesByCandidate = new Dictionary<int, List<InferenceCause>>();
     }
@@ -31,6 +33,12 @@ namespace Sudoku.Solver.Rules
         public bool IsPreviewLink;
     }
 
+    internal sealed class ForcingChainBranch
+    {
+        public int SeedCandidate;
+        public PropagationState State;
+    }
+
     /**
      * Shared forcing-chain state used by the cell- and unit-seeded searches.
      */
@@ -41,6 +49,7 @@ namespace Sudoku.Solver.Rules
         public PropagationState FalseBranch;
         public List<int> CommonFalseCandidates = new List<int>();
         public List<int> CommonTrueCandidates = new List<int>();
+        public List<ForcingChainBranch> VerityBranches = new List<ForcingChainBranch>();
         public bool ContradictionOnTrueBranch;
         public bool ContradictionOnFalseBranch;
     }

@@ -769,15 +769,11 @@ namespace Sudoku.Solver
                                         }
                                         else if (string.Equals(uc.HighlightTag, "Deduction", OrdinalIgnoreCase))
                                         {
-                                            highlightColor = colouringChainEvidenceActive
-                                                ? ResolveChainHighlightColor("TargetA", 0.50f)
-                                                : new Color(1f, 0.58f, 0.1f, 0.50f);
+                                            highlightColor = new Color(1f, 0.72f, 0.05f, 1f);
                                         }
                                         else if (string.Equals(uc.HighlightTag, "Failure", OrdinalIgnoreCase))
                                         {
-                                            highlightColor = colouringChainEvidenceActive
-                                                ? ResolveChainHighlightColor("TargetB", 0.62f)
-                                                : new Color(1f, 0.2f, 0.2f, 0.62f);
+                                            highlightColor = new Color(1f, 0.2f, 0.2f, 0.72f);
                                         }
                                     }
 
@@ -1640,12 +1636,12 @@ namespace Sudoku.Solver
                 return true;
             }
 
-            if (cell.Candidates == null || !cell.Candidates.Contains(endpoint.Digit))
+            int idx = endpoint.Digit - 1;
+            if (idx < 0 || idx >= 9)
             {
                 return false;
             }
 
-            int idx = endpoint.Digit - 1;
             int rr = idx / 3;
             int cc = idx % 3;
             float cs = cellRect.width / 3f;
@@ -1735,8 +1731,7 @@ namespace Sudoku.Solver
                     continue;
                 }
 
-                // Slightly thinner and translucent than user-authored links so both layers can coexist.
-                DrawDirectionalArrow(startPos, endPos, link.Kind, link.Start.Digit, alphaMultiplier: 0.82f, widthMultiplier: 0.82f);
+                DrawDirectionalArrow(startPos, endPos, link.Kind, link.Start.Digit, alphaMultiplier: 1f, widthMultiplier: 1.2f);
             }
         }
 
@@ -2053,7 +2048,7 @@ namespace Sudoku.Solver
                 // Candidate-level evidence should tint the candidate slot itself.
                 if (isHighlighted)
                 {
-                    DrawHighlight(r, new Color(candidateHighlightColor.r, candidateHighlightColor.g, candidateHighlightColor.b, 0.35f));
+                    DrawHighlight(r, new Color(candidateHighlightColor.r, candidateHighlightColor.g, candidateHighlightColor.b, 0.5f));
                     DrawCandidateBorder(r, new Color(candidateHighlightColor.r, candidateHighlightColor.g, candidateHighlightColor.b, 1f));
                 }
 
@@ -2069,11 +2064,11 @@ namespace Sudoku.Solver
                         GUI.Label(r, d.ToString(), _candidateStyle);
                         GUI.color = prev;
                     }
-                    else if (wasRemovedByApplied)
+                    else if (wasRemovedByApplied && !isHighlighted)
                     {
                         // previously-applied removal: hide it while previewing
                     }
-                    else if (hasCandidate)
+                    else if (hasCandidate || isHighlighted)
                     {
                         GUI.Label(r, d.ToString(), _candidateStyle);
                     }
@@ -2089,7 +2084,7 @@ namespace Sudoku.Solver
                         GUI.Label(r, d.ToString(), _candidateStyle);
                         GUI.color = prev;
                     }
-                    else if (hasCandidate)
+                    else if (hasCandidate || isHighlighted)
                     {
                         GUI.Label(r, d.ToString(), _candidateStyle);
                     }
@@ -2169,7 +2164,8 @@ namespace Sudoku.Solver
          */
         private static int GetHighlightPriority(Color color)
         {
-            if (ApproximatelyColor(color, new Color(1f, 0.2f, 0.2f, 0.62f))) return 3; // Failure
+            if (ApproximatelyColor(color, new Color(1f, 0.2f, 0.2f, 0.72f))) return 5; // Failure
+            if (ApproximatelyColor(color, new Color(1f, 0.72f, 0.05f, 1f))) return 4; // Deduction
             if (ApproximatelyColor(color, new Color(1f, 0.58f, 0.1f, 0.50f))) return 2; // Deduction
             return 1; // Chain colours and default evidence
         }

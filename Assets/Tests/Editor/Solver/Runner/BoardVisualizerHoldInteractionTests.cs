@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Reflection;
 using NUnit.Framework;
 using Sudoku.Models;
 using Sudoku.Solver;
@@ -20,6 +21,31 @@ namespace Sudoku.Tests.Editor
                 Assert.IsTrue(visualizer.TryGetCellFromScreenPosition(new Vector2(60f, 100f), out var row, out var column));
                 Assert.AreEqual(2, row);
                 Assert.AreEqual(1, column);
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
+        public void TryGetDirectionalEndpointPosition_ShowsEvidenceForMissingCandidate()
+        {
+            var visualizer = CreateVisualizer(out var runner, out var root);
+            try
+            {
+                runner.CurrentBoard.Cells[0, 1].Candidates.Remove(5);
+                var endpoint = new DirectionalLinkEndpoint { Row = 0, Column = 1, Digit = 5 };
+                var method = typeof(BoardVisualizer).GetMethod(
+                    "TryGetDirectionalEndpointPosition",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                Assert.IsNotNull(method);
+
+                var arguments = new object[] { endpoint, Vector2.zero };
+                var found = (bool)method.Invoke(visualizer, arguments);
+
+                Assert.IsTrue(found);
+                Assert.AreNotEqual(Vector2.zero, (Vector2)arguments[1]);
             }
             finally
             {
