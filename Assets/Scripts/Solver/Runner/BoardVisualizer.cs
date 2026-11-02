@@ -87,9 +87,6 @@ namespace Sudoku.Solver
         // Track the last seen RuleResult so we can render removed candidates
         // in red until a new rule result is produced.
         private Sudoku.Solver.Rules.RuleResult _lastSeenRuleResult;
-        // last result logged to avoid spamming logs every frame
-        private Sudoku.Solver.Rules.RuleResult _lastLoggedResultToShow;
-        private bool _lastLoggedPreviewActive = false;
         private DirectionalLinkEndpoint _pendingDirectionalLinkStart;
         private Texture2D _linkCursorStrongThinTexture;
         private Texture2D _linkCursorStrongBoldTexture;
@@ -686,15 +683,6 @@ namespace Sudoku.Solver
                                                         string.Equals(u.HighlightTag, "TargetA", OrdinalIgnoreCase) ||
                                                         string.Equals(u.HighlightTag, "TargetB", OrdinalIgnoreCase)));
 
-                // Log when the display source changes or preview toggles (throttled)
-                if (resultToShow != _lastLoggedResultToShow || activePreview != _lastLoggedPreviewActive)
-                {
-                    string src = activePreview ? "PreviewRuleResult" : ( _lastSeenRuleResult != null ? "LastSeenApplied" : "LastRuleResult" );
-                    string desc = resultToShow != null ? resultToShow.Description ?? "(no desc)" : "(none)";
-                    _lastLoggedResultToShow = resultToShow;
-                    _lastLoggedPreviewActive = activePreview;
-                }
-
             float x0 = Offset.x;
             float y0 = Offset.y;
 
@@ -748,34 +736,10 @@ namespace Sudoku.Solver
                                 if (uc.Row == r && uc.Column == c)
                                 {
                                     if (usedCandidateHighlightColors == null) usedCandidateHighlightColors = new System.Collections.Generic.Dictionary<int, Color>();
-                                    var highlightColor = resultToShow.Apply ? new Color(0.1f, 0.6f, 1f, 0.45f) : new Color(1f, 0.2f, 0.2f, 0.55f);
-                                    if (!string.IsNullOrWhiteSpace(uc.HighlightTag))
-                                    {
-                                        if (string.Equals(uc.HighlightTag, "Target", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = ResolveChainHighlightColor("TargetA");
-                                        }
-                                        else if (string.Equals(uc.HighlightTag, "Seed", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = new Color(0f, 0.45f, 0f, 0.85f);
-                                        }
-                                        else if (string.Equals(uc.HighlightTag, "TargetA", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = ResolveChainHighlightColor("TargetA");
-                                        }
-                                        else if (string.Equals(uc.HighlightTag, "TargetB", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = ResolveChainHighlightColor("TargetB");
-                                        }
-                                        else if (string.Equals(uc.HighlightTag, "Deduction", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = new Color(1f, 0.72f, 0.05f, 1f);
-                                        }
-                                        else if (string.Equals(uc.HighlightTag, "Failure", OrdinalIgnoreCase))
-                                        {
-                                            highlightColor = new Color(1f, 0.2f, 0.2f, 0.72f);
-                                        }
-                                    }
+                                    Color defaultHighlightColor = resultToShow.Apply
+                                        ? new Color(0.1f, 0.6f, 1f, 0.45f)
+                                        : new Color(1f, 0.2f, 0.2f, 0.55f);
+                                    Color highlightColor = ResolveUsedCellHighlightColor(uc.HighlightTag, defaultHighlightColor);
 
                                     if (uc.Candidate.HasValue)
                                     {
@@ -1743,10 +1707,19 @@ namespace Sudoku.Solver
         private void DrawDirectionalArrow(Vector2 start, Vector2 end, DirectionalLinkKind kind, int digit, float alphaMultiplier, float widthMultiplier)
         {
             float width = Mathf.Max(1f, GetComputedCellSize() * 0.026f * Mathf.Max(0.1f, widthMultiplier));
-            Color color = kind == DirectionalLinkKind.Strong
+            if (kind == DirectionalLinkKind.Conflict)
+            {
+                var conflictColor = new Color(0.18f, 0.48f, 1f, Mathf.Clamp01(alphaMultiplier));
+                DrawLineColored(start, end, width, conflictColor);
+                return;
+            }
+
+            bool strongStyle = kind == DirectionalLinkKind.Strong;
+            Color color = strongStyle
                 ? new Color(0.96f, 0.28f, 0.28f, 1f)
                 : new Color(0.14f, 0.82f, 0.28f, 1f);
             color.a *= Mathf.Clamp01(alphaMultiplier);
+            bool solidLine = strongStyle;
 
             var direction = (end - start);
             float length = direction.magnitude;
@@ -1763,7 +1736,7 @@ namespace Sudoku.Solver
             {
                 var straightLineEnd = end - normalized * headLength;
 
-                if (kind == DirectionalLinkKind.Strong)
+                if (solidLine)
                 {
                     DrawLineColored(start, straightLineEnd, width, color);
                 }
@@ -1803,7 +1776,7 @@ namespace Sudoku.Solver
                 float t = i / (float)samples;
                 float inv = 1f - t;
                 Vector2 point = inv * inv * start + 2f * inv * t * control + t * t * end;
-                if (kind == DirectionalLinkKind.Strong)
+                if (solidLine)
                 {
                     DrawLineColored(prev, point, width, color);
                 }
@@ -1908,61 +1881,6 @@ namespace Sudoku.Solver
         private void DrawCandidates(Rect rect, Cell cell, System.Collections.Generic.Dictionary<int, Color> highlightDigits)
         {
             if (cell == null || cell.Candidates == null) return;
-            // Temporary debug: if this cell is affected by the preview or the
-            // last applied result, dump the live candidate list so we can
-            // correlate model state with EnactAll logs.
-            try
-            {
-                var previewResLocal = Runner != null ? Runner.PreviewRuleResult : null;
-                var appliedResLocal = _lastSeenRuleResult;
-                bool cellAffected = false;
-                System.Action<RuleResult> checkRes = (res) =>
-                {
-                    if (res == null || res.Changes == null) return;
-                    foreach (var ch in res.Changes)
-                    {
-                        if (ch == null) continue;
-                        if (ch.Row == cell.Row && ch.Column == cell.Column)
-                        {
-                            cellAffected = true; break;
-                        }
-                        if (ch.NewValue.HasValue)
-                        {
-                            var boardLocal = Runner != null ? Runner.CurrentBoard : null;
-                            if (boardLocal != null && ch.Row >= 0 && ch.Column >= 0 && ch.Row < boardLocal.Size && ch.Column < boardLocal.Size)
-                            {
-                                var originBox = boardLocal.Cells[ch.Row, ch.Column].Box;
-                                if ((cell.Row == ch.Row || cell.Column == ch.Column || cell.Box == originBox) && !(cell.Row == ch.Row && cell.Column == ch.Column))
-                                {
-                                    cellAffected = true; break;
-                                }
-                            }
-                        }
-                    }
-                };
-
-                checkRes(previewResLocal);
-                checkRes(appliedResLocal);
-
-                if (cellAffected)
-                {
-                    var liveSb = new StringBuilder();
-                    if (cell.Candidates != null)
-                    {
-                        foreach (var cd in cell.Candidates)
-                        {
-                            liveSb.Append(cd).Append(',');
-                        }
-                    }
-                    var liveStr = liveSb.Length > 0 ? liveSb.ToString(0, liveSb.Length - 1) : "(none)";
-                    var previewActiveLocal = previewResLocal != null && previewResLocal.Apply;
-                    var appliedDesc = _lastSeenRuleResult != null ? _lastSeenRuleResult.Description : (Runner.LastRuleResult != null ? Runner.LastRuleResult.Description : "(none)");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Debug.LogException(ex);
-            }
             // small 3x3 layout for candidates assuming up to 9 digits
             int size = 3;
             float cs = rect.width / size;
@@ -2200,12 +2118,29 @@ namespace Sudoku.Solver
             HighlightColor second = HighlightColor.Blue;
             if (enabled.Count > 0)
             {
-                first = enabled[0];
+                if (enabled.Contains(HighlightColor.Green))
+                {
+                    first = HighlightColor.Green;
+                }
+                else if (enabled.Count > 1 && enabled.Contains(HighlightColor.Red))
+                {
+                    first = enabled.Find(colour => colour != HighlightColor.Red);
+                }
+                else
+                {
+                    first = enabled[0];
+                }
             }
 
             if (enabled.Count > 1)
             {
-                second = enabled[1];
+                second = enabled.Contains(HighlightColor.Red) && first != HighlightColor.Red
+                    ? HighlightColor.Red
+                    : enabled.Find(colour => colour != first);
+            }
+            else if (enabled.Count == 1)
+            {
+                second = first;
             }
 
             var baseColor = string.Equals(tag, "TargetB", OrdinalIgnoreCase)
@@ -2214,6 +2149,35 @@ namespace Sudoku.Solver
 
             baseColor.a = alpha;
             return baseColor;
+        }
+
+        private static Color ResolveUsedCellHighlightColor(string tag, Color fallback)
+        {
+            if (string.Equals(tag, "Target", OrdinalIgnoreCase)
+                || string.Equals(tag, "Seed", OrdinalIgnoreCase)
+                || string.Equals(tag, "TargetA", OrdinalIgnoreCase))
+            {
+                return ResolveChainHighlightColor("TargetA");
+            }
+
+            if (string.Equals(tag, "TargetB", OrdinalIgnoreCase))
+            {
+                return ResolveChainHighlightColor("TargetB");
+            }
+
+            if (string.Equals(tag, "TrueDeduction", OrdinalIgnoreCase)
+                || string.Equals(tag, "FalseDeduction", OrdinalIgnoreCase)
+                || string.Equals(tag, "Deduction", OrdinalIgnoreCase))
+            {
+                return new Color(1f, 0.72f, 0.05f, 1f);
+            }
+
+            if (string.Equals(tag, "Failure", OrdinalIgnoreCase))
+            {
+                return new Color(1f, 0.2f, 0.2f, 0.72f);
+            }
+
+            return fallback;
         }
 
         private void DrawHighlightBorder(Rect rect, Color color)

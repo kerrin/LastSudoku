@@ -17,6 +17,7 @@ namespace Sudoku.Solver.Rules
         public int? ContradictionSourceCandidate;
         public DirectionalLinkKind? ContradictionSourceLinkKind;
         public List<int> ContradictionGroupCandidates = new List<int>();
+        public Dictionary<int, List<int>> CompletionSupportsByCandidate = new Dictionary<int, List<int>>();
         public Queue<(int key, bool valueTrue, int? sourceCandidate, DirectionalLinkKind? sourceLinkKind)> Pending
             = new Queue<(int key, bool valueTrue, int? sourceCandidate, DirectionalLinkKind? sourceLinkKind)>();
         public List<int> AssignmentOrder = new List<int>();

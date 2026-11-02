@@ -75,6 +75,30 @@ namespace Sudoku.Tests.Editor
             Assert.IsTrue(branch.TrueCandidates.Contains(completed));
         }
 
+        [Test]
+        public void PropagateFromAssumption_DoesNotExposeWeakLinksWithinSameCell()
+        {
+            var board = TestHelpers.CreateEmptyBoard();
+            ClearAllCandidates(board);
+            AddCandidates(board, 0, 0, 1, 2, 3);
+            var model = ForcingChainLinkModel.Build(board);
+            int assumedTrue = ForcingChainLinkModel.MakeCandidateKey(board, 0, 0, 1);
+            int excluded = ForcingChainLinkModel.MakeCandidateKey(board, 0, 0, 2);
+
+            var branch = ForcingChainPropagation.PropagateFromAssumption(
+                board,
+                model,
+                assumedTrue,
+                assumeTrue: true,
+                enableUnitCompletion: false);
+
+            Assert.IsTrue(branch.InferenceCausesByCandidate.TryGetValue(excluded, out var causes));
+            Assert.IsTrue(causes.Exists(cause =>
+                cause.FromCandidate == assumedTrue
+                && cause.LinkKind == DirectionalLinkKind.Weak
+                && !cause.IsPreviewLink));
+        }
+
         private static void ClearAllCandidates(Board board)
         {
             foreach (Cell cell in board.Cells)

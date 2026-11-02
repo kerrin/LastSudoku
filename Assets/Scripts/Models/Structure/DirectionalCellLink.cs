@@ -4,12 +4,15 @@ using System.Collections.Generic;
 namespace Sudoku.Models
 {
     /**
-     * Link strength used by user-authored directional links in solve mode.
+     * Kind of relationship shown between candidate inferences.
+     * Completion is a solver-preview marker, not a user-authored link strength.
      */
     public enum DirectionalLinkKind
     {
         Strong = 1,
         Weak = 2,
+        Completion = 3,
+        Conflict = 4,
     }
 
     /**

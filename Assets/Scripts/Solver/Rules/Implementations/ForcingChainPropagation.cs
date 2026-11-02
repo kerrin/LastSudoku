@@ -321,6 +321,7 @@ namespace Sudoku.Solver.Rules
             if (trueCount == 0 && unknownCount == 1)
             {
                 // Only one candidate left in the cell, so it must be true.
+                RecordCompletionSupports(state, unknownCandidate, group);
                 TryEnqueueAssignment(board, model, state, unknownCandidate, true, "Cell completion");
             }
         }
@@ -414,31 +415,42 @@ namespace Sudoku.Solver.Rules
             // boards from dominating forcing-chain test scenarios.
             if (trueCount == 0 && unknownCount == 1 && falseCount > 0)
             {
+                RecordCompletionSupports(state, unknownCandidate, group);
                 TryEnqueueAssignment(board, model, state, unknownCandidate, true, "Unit completion");
+            }
+        }
+
+        private static void RecordCompletionSupports(PropagationState state, int candidate, List<int> group)
+        {
+            if (state == null || group == null)
+            {
+                return;
+            }
+
+            if (!state.CompletionSupportsByCandidate.TryGetValue(candidate, out var supports))
+            {
+                supports = new List<int>();
+                state.CompletionSupportsByCandidate[candidate] = supports;
+            }
+
+            foreach (int groupCandidate in group)
+            {
+                if (groupCandidate != candidate
+                    && state.FalseCandidates.Contains(groupCandidate)
+                    && !supports.Contains(groupCandidate))
+                {
+                    supports.Add(groupCandidate);
+                }
             }
         }
 
         private static bool ShouldExposeWeakConflictAsLink(Board board, int fromCandidate, int toCandidate)
         {
-            if (ForcingChainLinkModel.GetDigit(board, fromCandidate) != ForcingChainLinkModel.GetDigit(board, toCandidate))
-            {
-                // Only show links between the same digits
-                return false;
-            }
-
             int fromRow = ForcingChainLinkModel.GetRow(board, fromCandidate);
             int fromColumn = ForcingChainLinkModel.GetColumn(board, fromCandidate);
             int toRow = ForcingChainLinkModel.GetRow(board, toCandidate);
             int toColumn = ForcingChainLinkModel.GetColumn(board, toCandidate);
-
-            if (fromRow == toRow && fromColumn == toColumn)
-            {
-                return false;
-            }
-
-            var fromCell = board.Cells[fromRow, fromColumn];
-            var toCell = board.Cells[toRow, toColumn];
-            return fromCell != null && toCell != null && board.GetPeers(fromCell).Contains(toCell);
+            return fromRow != toRow || fromColumn != toColumn;
         }
         private static string FormatCandidate(Board board, int candidate)
         {
