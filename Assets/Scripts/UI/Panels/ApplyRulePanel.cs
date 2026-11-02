@@ -203,10 +203,6 @@ public class ApplyRulePanel : MonoBehaviour
             bool interactable = applies && colouringPrerequisiteMet;
             bool faded = isColouringRule && !colouringPrerequisiteMet;
             string subtitle = faded ? "Requires at least 2 colours" : string.Empty;
-            if (string.IsNullOrEmpty(subtitle) && IsForcingChainRule(rule))
-            {
-                subtitle = BuildForcingChainPreviewSummary(preview);
-            }
             CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis, interactable, faded, subtitle);
             created++;
         }
@@ -402,7 +398,7 @@ public class ApplyRulePanel : MonoBehaviour
             subtitleRT.offsetMax = new Vector2(-8f, -2f);
         }
 
-        // Full rule descriptions are omitted; forcing chains show a concise action summary.
+        // Full rule descriptions are omitted.
     }
 
     /**
@@ -421,93 +417,6 @@ public class ApplyRulePanel : MonoBehaviour
         string typeName = rule.GetType().Name;
         return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
             || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
-    }
-
-    private static bool IsForcingChainRule(ISudokuRule rule)
-    {
-        return rule != null
-            && string.Equals(
-                rule.GetType().Name,
-                ForcingChainRuleTypeName,
-                System.StringComparison.Ordinal);
-    }
-
-    private static string BuildForcingChainPreviewSummary(RuleResult preview)
-    {
-        if (preview?.Changes == null || preview.Changes.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        string action;
-        var changes = preview.Changes;
-        if (changes.Count == 1)
-        {
-            var change = changes[0];
-            if (change.NewValue.HasValue)
-            {
-                action = $"Set r{change.Row + 1}c{change.Column + 1}={change.NewValue.Value}";
-            }
-            else if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
-            {
-                action = $"Remove {string.Join(", ", change.RemovedCandidates)} from r{change.Row + 1}c{change.Column + 1}";
-            }
-            else
-            {
-                return string.Empty;
-            }
-        }
-        else
-        {
-            action = $"Apply {changes.Count} forcing-chain changes";
-        }
-
-        string description = (preview.Description ?? string.Empty).Trim();
-        const string prefix = "Forcing Chain: ";
-        if (description.StartsWith(prefix, System.StringComparison.Ordinal))
-        {
-            description = description.Substring(prefix.Length).TrimEnd('.');
-        }
-
-        const string trueContradiction = " is true leads to a contradiction";
-        const string falseContradiction = " is false leads to a contradiction";
-        int trueContradictionIndex = description.IndexOf(trueContradiction, System.StringComparison.Ordinal);
-        if (trueContradictionIndex >= 0)
-        {
-            string assumption = description.Substring(0, trueContradictionIndex)
-                .Replace("assuming ", string.Empty);
-            return $"If {assumption} is true, contradiction; {action.ToLowerInvariant()}";
-        }
-
-        int falseContradictionIndex = description.IndexOf(falseContradiction, System.StringComparison.Ordinal);
-        if (falseContradictionIndex >= 0)
-        {
-            string assumption = description.Substring(0, falseContradictionIndex)
-                .Replace("assuming ", string.Empty);
-            return $"If {assumption} is false, contradiction; {action.ToLowerInvariant()}";
-        }
-
-        const string remainingPlacement = "; therefore the remaining placement is ";
-        int remainingPlacementIndex = description.IndexOf(remainingPlacement, System.StringComparison.Ordinal);
-        if (remainingPlacementIndex >= 0)
-        {
-            string impossible = description.Substring(0, remainingPlacementIndex);
-            string placement = description.Substring(remainingPlacementIndex + remainingPlacement.Length);
-            return $"Verity: {impossible}; set {placement}";
-        }
-
-        int eachForceIndex = description.IndexOf("assuming ", System.StringComparison.Ordinal);
-        if (eachForceIndex >= 0 && description.Contains(" each force ", System.StringComparison.Ordinal))
-        {
-            return $"Verity: {description.Substring(eachForceIndex)}";
-        }
-
-        if (description.Contains(" both force ", System.StringComparison.Ordinal))
-        {
-            return $"Two-way chain: {description}";
-        }
-
-        return action;
     }
 
     private void CreateReinitialiseCandidatesRow(Transform parent)
