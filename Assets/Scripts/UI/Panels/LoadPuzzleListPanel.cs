@@ -93,7 +93,7 @@ namespace Sudoku.UI.Panels
                 _overlay.SetActive(true);
             }
 
-            RefreshList();
+            RefreshList(resetScrollPosition: true);
         }
 
         /** Hide modal. */
@@ -107,12 +107,16 @@ namespace Sudoku.UI.Panels
             gameObject.SetActive(false);
         }
 
-        private void RefreshList()
+        private void RefreshList(bool resetScrollPosition = false)
         {
             if (_scrollContent == null)
             {
                 return;
             }
+
+            float scrollPosition = resetScrollPosition || _scrollRect == null
+                ? 1f
+                : _scrollRect.verticalNormalizedPosition;
 
             DestroyPreviewTextures();
             for (int i = _scrollContent.childCount - 1; i >= 0; i--)
@@ -166,25 +170,26 @@ namespace Sudoku.UI.Panels
 
             Canvas.ForceUpdateCanvases();
 
-            if (_scrollRect != null)
-            {
-                _scrollRect.StopMovement();
-                _scrollRect.verticalNormalizedPosition = 1f;
-                if (_scrollRect.verticalScrollbar != null)
-                {
-                    _scrollRect.verticalScrollbar.value = 1f;
-                }
-
-                if (_scrollRect.content != null)
-                {
-                    _scrollRect.content.anchoredPosition = Vector2.zero;
-                }
-            }
-
-            StartCoroutine(EnsureScrollAtTopNextFrame());
+            SetScrollPosition(scrollPosition);
+            StartCoroutine(EnsureScrollPositionNextFrame(scrollPosition));
         }
 
-        private System.Collections.IEnumerator EnsureScrollAtTopNextFrame()
+        private void SetScrollPosition(float position)
+        {
+            if (_scrollRect == null)
+            {
+                return;
+            }
+
+            _scrollRect.StopMovement();
+            _scrollRect.verticalNormalizedPosition = position;
+            if (_scrollRect.verticalScrollbar != null)
+            {
+                _scrollRect.verticalScrollbar.value = position;
+            }
+        }
+
+        private System.Collections.IEnumerator EnsureScrollPositionNextFrame(float position)
         {
             yield return null;
 
@@ -193,17 +198,7 @@ namespace Sudoku.UI.Panels
                 yield break;
             }
 
-            _scrollRect.StopMovement();
-            _scrollRect.verticalNormalizedPosition = 1f;
-            if (_scrollRect.verticalScrollbar != null)
-            {
-                _scrollRect.verticalScrollbar.value = 1f;
-            }
-
-            if (_scrollRect.content != null)
-            {
-                _scrollRect.content.anchoredPosition = Vector2.zero;
-            }
+            SetScrollPosition(position);
         }
 
         private void OnLoadClicked(LoadPuzzleEntry entry)
