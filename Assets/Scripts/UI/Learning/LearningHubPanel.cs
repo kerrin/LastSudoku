@@ -30,6 +30,9 @@ namespace Sudoku.UI.Learning
         private bool _showWiki;
         private LearningItem _selectedItem;
         private bool _selectedItemCompleted;
+        private bool _confirmResetProgress;
+        private string _exerciseFeedbackMessage;
+        private bool _exerciseFeedbackIsCorrect;
         private int _tutorialIndex;
         private readonly Dictionary<int, LearningBoardCell> _exerciseCellOverrides = new Dictionary<int, LearningBoardCell>();
         private int _selectedRow = -1;
@@ -91,12 +94,14 @@ namespace Sudoku.UI.Learning
         {
             CancelExerciseCellHold();
             _showWiki = false;
+            _confirmResetProgress = false;
             PrepareOverlayRenderer();
             _tutorialIndex = 0;
             _exerciseCellOverrides.Clear();
             _selectedRow = -1;
             _selectedColumn = -1;
             _selectedDigit = 0;
+            ClearExerciseFeedback();
             ShowOverlay();
             RefreshContent();
         }
@@ -283,6 +288,7 @@ namespace Sudoku.UI.Learning
                         _selectedRow = -1;
                         _selectedColumn = -1;
                         _selectedDigit = 0;
+                        ClearExerciseFeedback();
                     }
                     RefreshContent();
                 }, new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0.5f, 1f), Vector2.zero, new Vector2(0f, 42f));
@@ -325,7 +331,10 @@ namespace Sudoku.UI.Learning
                 }
                 _feedback = CreateText(_detailContent, string.Empty, 17, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
                 if (_selectedItemCompleted)
-                    _feedback.text = _selectedItem.Exercise.SuccessMessage;
+                {
+                    _feedback.text = "✓ Completed";
+                    _feedback.color = new Color(0.45f, 0.88f, 0.52f, 1f);
+                }
             }
 
             if (_showWiki)
@@ -334,8 +343,23 @@ namespace Sudoku.UI.Learning
             _progress = CreateText(_detailContent, string.Empty, 15, FontStyle.Normal, TextAnchor.MiddleLeft, Color.white);
             UpdateProgress();
             var navigation = CreateHorizontalRow(_detailContent, "LessonNavigation", 48f);
-            CreateButton(navigation.transform, "Previous", _buttonColor, () => MoveTutorial(-1), new Vector2(0f, 0f), new Vector2(0.48f, 1f));
-            CreateButton(navigation.transform, "Next", _accentColor, () => MoveTutorial(1), new Vector2(0.52f, 0f), new Vector2(1f, 1f));
+            int tutorialCount = LearningContent.GetTutorials().Count;
+            if (_tutorialIndex > 0)
+                CreateButton(navigation.transform, "Previous", _buttonColor, () => MoveTutorial(-1), new Vector2(0f, 0f), new Vector2(0.48f, 1f));
+            if (_tutorialIndex < tutorialCount - 1)
+                CreateButton(navigation.transform, "Next", _accentColor, () => MoveTutorial(1), new Vector2(0.52f, 0f), new Vector2(1f, 1f));
+
+            if (_confirmResetProgress)
+            {
+                CreateText(_detailContent, "Reset all saved tutorial progress?", 15, FontStyle.Bold, TextAnchor.MiddleLeft, Color.white);
+                var confirmation = CreateHorizontalRow(_detailContent, "ResetProgressConfirmation", 42f);
+                CreateButton(confirmation.transform, "Confirm reset", new Color(0.65f, 0.22f, 0.22f, 1f), ResetTutorialProgress);
+                CreateButton(confirmation.transform, "Cancel", _buttonColor, () => _confirmResetProgress = false);
+            }
+            else
+            {
+                CreateButton(_detailContent, "Reset progress", _buttonColor, () => _confirmResetProgress = true);
+            }
         }
 
         private void SelectExerciseCell(int row, int column)
@@ -359,6 +383,8 @@ namespace Sudoku.UI.Learning
 
             if (!exercise.IsCorrectAction(_selectedRow, _selectedColumn, _selectedDigit, action))
             {
+                _exerciseFeedbackMessage = "Not quite. Check the highlighted cell and the row, column, box, or candidate pattern.";
+                _exerciseFeedbackIsCorrect = false;
                 RefreshDetails("Not quite. Check the highlighted cell and the row, column, box, or candidate pattern.");
                 return;
             }
@@ -385,6 +411,8 @@ namespace Sudoku.UI.Learning
             _exerciseCellOverrides[_selectedRow * 9 + _selectedColumn] =
                 new LearningBoardCell(_selectedRow, _selectedColumn, value, candidates.ToArray());
             _selectedItemCompleted = true;
+            _exerciseFeedbackMessage = exercise.SuccessMessage;
+            _exerciseFeedbackIsCorrect = true;
             PlayerPrefs.SetInt(ProgressKeyPrefix + _selectedItem.Id, 1);
             PlayerPrefs.Save();
             RefreshDetails(exercise.SuccessMessage, true);
@@ -398,7 +426,30 @@ namespace Sudoku.UI.Learning
             _selectedRow = -1;
             _selectedColumn = -1;
             _selectedDigit = 0;
+            ClearExerciseFeedback();
             RefreshContent();
+        }
+
+        private void ResetTutorialProgress()
+        {
+            foreach (var tutorial in LearningContent.GetTutorials())
+                PlayerPrefs.DeleteKey(ProgressKeyPrefix + tutorial.Id);
+
+            PlayerPrefs.Save();
+            _exerciseCellOverrides.Clear();
+            _selectedItemCompleted = false;
+            _selectedRow = -1;
+            _selectedColumn = -1;
+            _selectedDigit = 0;
+            _confirmResetProgress = false;
+            ClearExerciseFeedback();
+            RefreshContent();
+        }
+
+        private void ClearExerciseFeedback()
+        {
+            _exerciseFeedbackMessage = null;
+            _exerciseFeedbackIsCorrect = false;
         }
 
         private void UpdateProgress()
@@ -940,7 +991,17 @@ namespace Sudoku.UI.Learning
                 }
 
                 var itemRect = new Rect(8f, y, contentRect.width - 12f, 32f);
-                if (GUI.Button(itemRect, item.Title) && _selectedItem != item)
+                bool completed = !_showWiki &&
+                    PlayerPrefs.GetInt(ProgressKeyPrefix + item.Id, 0) == 1;
+                var itemStyle = new GUIStyle(GUI.skin.button);
+                if (completed)
+                {
+                    itemStyle.alignment = TextAnchor.MiddleLeft;
+                    itemStyle.padding.left = 8;
+                    itemStyle.padding.right = 88;
+                }
+
+                if (GUI.Button(itemRect, item.Title, itemStyle) && _selectedItem != item)
                 {
                     _selectedItem = item;
                     if (!_showWiki)
@@ -950,8 +1011,22 @@ namespace Sudoku.UI.Learning
                         _selectedRow = -1;
                         _selectedColumn = -1;
                         _selectedDigit = 0;
+                        ClearExerciseFeedback();
                     }
                     _wikiDetailScroll = Vector2.zero;
+                }
+
+                if (completed)
+                {
+                    var completedStyle = new GUIStyle(GUI.skin.label)
+                    {
+                        alignment = TextAnchor.MiddleRight,
+                        fontStyle = FontStyle.Bold,
+                        fontSize = 11,
+                        normal = { textColor = new Color(0.45f, 0.88f, 0.52f, 1f) }
+                    };
+                    GUI.Label(new Rect(itemRect.xMax - 86f, itemRect.y, 82f, itemRect.height),
+                        "✓ Completed", completedStyle);
                 }
                 y += 36f;
             }
@@ -976,8 +1051,21 @@ namespace Sudoku.UI.Learning
             float exerciseBoardSize = _selectedItem.Exercise == null ? 0f : Mathf.Min(296f, contentWidth, 330f);
             float exerciseBoardHeight = exerciseBoardSize + 14f;
             float basicsControlsHeight = _selectedItem.Id == "sudoku-basics" ? 48f : 0f;
-            float feedbackHeight = _selectedItem.Exercise == null ? 0f : 32f;
-            float footerHeight = _selectedItem.IsTutorial ? 72f : 0f;
+            string feedback = GetExerciseFeedback();
+            Color feedbackColor = string.IsNullOrEmpty(feedback)
+                ? Color.white
+                : _exerciseFeedbackIsCorrect
+                    ? new Color(0.62f, 0.9f, 0.62f, 1f)
+                    : new Color(1f, 0.42f, 0.38f, 1f);
+            var feedbackStyle = new GUIStyle(wrappedStyle)
+            {
+                fontStyle = FontStyle.Bold,
+                normal = { textColor = feedbackColor }
+            };
+            float feedbackHeight = string.IsNullOrEmpty(feedback)
+                ? 32f
+                : Mathf.Max(32f, feedbackStyle.CalcHeight(new GUIContent(feedback), contentWidth));
+            float footerHeight = _selectedItem.IsTutorial ? 112f : 0f;
             float contentHeight = Mathf.Max(viewport.height,
                 40f + 28f + explanationHeight + 20f + promptHeight + exerciseBoardHeight +
                 basicsControlsHeight + feedbackHeight + footerHeight + 36f);
@@ -1009,26 +1097,45 @@ namespace Sudoku.UI.Learning
                     y += 48f;
                 }
 
-                bool completed = PlayerPrefs.GetInt(ProgressKeyPrefix + _selectedItem.Id, 0) == 1;
-                string feedback = completed ? _selectedItem.Exercise.SuccessMessage : string.Empty;
-                GUI.Label(new Rect(0f, y, contentWidth, 32f), feedback, wrappedStyle);
-                y += 34f;
+                GUI.Label(new Rect(0f, y, contentWidth, feedbackHeight), feedback, feedbackStyle);
+                y += feedbackHeight + 2f;
             }
 
             if (_selectedItem.IsTutorial)
             {
                 int completedCount = LearningContent.GetTutorials()
                     .Count(item => PlayerPrefs.GetInt(ProgressKeyPrefix + item.Id, 0) == 1);
-                GUI.Label(new Rect(0f, y, contentWidth, 26f),
+                GUI.Label(new Rect(0f, y, contentWidth - 128f, 26f),
                     $"Lesson {_tutorialIndex + 1} of {tutorials.Count}   |   {completedCount} completed", sectionStyle);
+                if (!_confirmResetProgress &&
+                    GUI.Button(new Rect(contentWidth - 120f, y - 2f, 120f, 28f), "Reset progress"))
+                    _confirmResetProgress = true;
                 y += 30f;
-                if (GUI.Button(new Rect(0f, y, 120f, 36f), "Previous"))
-                    MoveTutorial(-1);
-                if (GUI.Button(new Rect(128f, y, 120f, 36f), "Next"))
-                    MoveTutorial(1);
+                if (_confirmResetProgress)
+                {
+                    GUI.Label(new Rect(0f, y, contentWidth, 24f), "Reset all saved tutorial progress?", bodyStyle);
+                    y += 26f;
+                    if (GUI.Button(new Rect(0f, y, 120f, 36f), "Confirm reset"))
+                        ResetTutorialProgress();
+                    if (GUI.Button(new Rect(128f, y, 120f, 36f), "Cancel"))
+                        _confirmResetProgress = false;
+                }
+                else
+                {
+                    if (_tutorialIndex > 0 && GUI.Button(new Rect(0f, y, 120f, 36f), "Previous"))
+                        MoveTutorial(-1);
+                    if (_tutorialIndex < tutorials.Count - 1 &&
+                        GUI.Button(new Rect(128f, y, 120f, 36f), "Next"))
+                        MoveTutorial(1);
+                }
             }
 
             GUI.EndScrollView();
+        }
+
+        private string GetExerciseFeedback()
+        {
+            return _exerciseFeedbackMessage ?? string.Empty;
         }
 
         private void DrawExerciseBoardOnGUI(Rect boardRect, LearningExercise exercise, bool basicsExercise)
