@@ -51,6 +51,7 @@ namespace Sudoku.UI.Learning
         public bool IsOverlayOpen => _overlay != null && _overlay.activeSelf;
         public bool IsWikiOverlayOpen => IsOverlayOpen && _showWiki;
         public bool IsRenderedByBoardVisualizer => IsOverlayOpen && _renderOverlayInBoardPass;
+        public event System.Action OverlayClosed;
 
         private void Awake()
         {
@@ -67,7 +68,7 @@ namespace Sudoku.UI.Learning
                 if (_renderOverlayInBoardPass != renderInBoardPass)
                 {
                     _renderOverlayInBoardPass = renderInBoardPass;
-                    _hubCanvas.enabled = !_renderOverlayInBoardPass && !_showWiki;
+                    _hubCanvas.enabled = false;
                 }
             }
 
@@ -76,21 +77,14 @@ namespace Sudoku.UI.Learning
                 Time.unscaledTime - _exerciseHoldStartedAt < ExerciseRadialHoldThresholdSeconds)
                 return;
 
-            bool pointerStillOnCell = _renderOverlayInBoardPass
-                ? _exerciseHeldGuiRect.Contains(_exerciseHeldPointerPosition)
-                : _exerciseHeldCellRect != null && RectTransformUtility.RectangleContainsScreenPoint(
-                    _exerciseHeldCellRect, _exerciseHeldPointerPosition, null);
-            if (!pointerStillOnCell)
+            if (!_exerciseHeldGuiRect.Contains(_exerciseHeldPointerPosition))
             {
                 CancelExerciseCellHold();
                 return;
             }
 
             var cell = FindExerciseCell(_selectedItem.Exercise, _selectedRow, _selectedColumn);
-            if (_renderOverlayInBoardPass)
-                OpenExerciseRadialMenu(_selectedRow, _selectedColumn, cell, _exerciseHeldGuiRect.center);
-            else
-                OpenExerciseRadialMenu(_selectedRow, _selectedColumn, cell, _exerciseHeldCellRect);
+            OpenExerciseRadialMenu(_selectedRow, _selectedColumn, cell, _exerciseHeldGuiRect.center);
         }
 
         public void OpenTutorials()
@@ -182,7 +176,7 @@ namespace Sudoku.UI.Learning
                 _boardVisualizer = Object.FindAnyObjectByType<BoardVisualizer>();
 
             _renderOverlayInBoardPass = _boardVisualizer != null && _boardVisualizer.isActiveAndEnabled;
-            _hubCanvas.enabled = !_renderOverlayInBoardPass && !_showWiki;
+            _hubCanvas.enabled = false;
         }
 
         private void ShowOverlay()
@@ -205,6 +199,7 @@ namespace Sudoku.UI.Learning
                 _exerciseRadialMenu.Close();
             _radialInputBlocker.SetActive(false);
             RestoreCanvasSortingOrders();
+            OverlayClosed?.Invoke();
         }
 
         private void RaiseCanvasToFront()
@@ -747,12 +742,12 @@ namespace Sudoku.UI.Learning
             if (IsRenderedByBoardVisualizer)
                 return;
 
-            if (IsWikiOverlayOpen)
+            if (IsOverlayOpen)
             {
                 if (_boardVisualizer == null)
                     _boardVisualizer = Object.FindAnyObjectByType<BoardVisualizer>();
 
-                if (_boardVisualizer == null)
+                if (_boardVisualizer == null || !_boardVisualizer.isActiveAndEnabled)
                     RenderLearningOverlayOnGUI();
                 return;
             }
@@ -762,8 +757,7 @@ namespace Sudoku.UI.Learning
 
         public void RenderLearningOverlayOnGUI()
         {
-            bool wikiWithoutBoard = IsWikiOverlayOpen && _boardVisualizer == null;
-            if ((!IsRenderedByBoardVisualizer && !wikiWithoutBoard) || Event.current == null)
+            if (!IsOverlayOpen || Event.current == null)
                 return;
 
             HandleImmediateExerciseRadialInput();

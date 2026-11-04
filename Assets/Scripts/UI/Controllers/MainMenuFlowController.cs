@@ -52,6 +52,7 @@ namespace Sudoku.UI.Controllers
         private Text _timerLabelText;
         private int _lastTimerBoardFingerprint = int.MinValue;
         private bool _runtimeConfigRulesApplied;
+        private bool _learningOpenedFromMainMenu;
 
         /**
          * Prepare runtime references and UI containers.
@@ -1602,7 +1603,29 @@ namespace Sudoku.UI.Controllers
                 return;
             }
 
+            _learningOpenedFromMainMenu = _menuPanel != null && _menuPanel.activeSelf;
+            if (_learningOpenedFromMainMenu)
+            {
+                learningHub.OverlayClosed -= RestoreMainMenuAfterLearning;
+                learningHub.OverlayClosed += RestoreMainMenuAfterLearning;
+            }
+
             learningHub.OpenTutorials();
+            if (_learningOpenedFromMainMenu)
+                _menuPanel.SetActive(false);
+        }
+
+        private void RestoreMainMenuAfterLearning()
+        {
+            if (!_learningOpenedFromMainMenu)
+                return;
+
+            _learningOpenedFromMainMenu = false;
+            var learningHub = Object.FindAnyObjectByType<LearningHubPanel>();
+            if (learningHub != null)
+                learningHub.OverlayClosed -= RestoreMainMenuAfterLearning;
+            if (_menuPanel != null)
+                _menuPanel.SetActive(true);
         }
 
         /**
