@@ -114,6 +114,7 @@ namespace Sudoku.Solver.Rules
             Register(new XYZWingRule());
             Register(new ColouringRule());
             Register(new ForcingChainRule());
+            Register(new BivalueUniversalGraveRule());
         }
 
         /**
