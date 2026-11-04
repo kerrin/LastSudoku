@@ -8,6 +8,13 @@ namespace Sudoku.Tests.UI
     public class LearningContentTests
     {
         [Test]
+        public void LoadsTutorialsAndWikiArticlesFromTheLearningResource()
+        {
+            Assert.AreEqual(7, LearningContent.GetTutorials().Count);
+            Assert.AreEqual(26, LearningContent.GetWikiArticles().Count);
+        }
+
+        [Test]
         public void TutorialsStartWithBasicsAndProgressThroughEasyRules()
         {
             var titles = LearningContent.GetTutorials().Select(item => item.Title).ToArray();

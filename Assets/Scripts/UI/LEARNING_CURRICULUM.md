@@ -13,3 +13,7 @@
 ## Current milestone
 
 The shared runtime hub is available from the main menu and from the solve-view side panel. In solve view, both Learn and Wiki render through the board's final IMGUI pass so the board stays visible behind an opaque, interactive learning window. Sudoku Basics keeps its example answer unselected and unrevealed; subsequent lessons use the game's radial menu with unrelated actions faded and require the player to hold the left mouse button while moving to an action, then release to apply it. The wiki is grouped into sections and subsections, with cross-references styled as inline links in article explanations. Interactive examples cover Sudoku basics, app controls, candidates, Naked Single, Hidden Single, Naked Pair, and Pointing Pair. Remaining work is to add interactive lessons for the remaining rules, improve example generation, and link each wiki entry to its lesson.
+
+## Content authoring
+
+Tutorials, exercise boards, and Wiki articles are authored in `Assets/Resources/LearningContent.xml`. The XML is loaded as a Unity `TextAsset`; tutorial and article structure can be edited without changing UI code. Wiki `Link` entries name the inline label and target article ID. The loader rejects malformed entries, duplicate IDs, broken article references, and link labels missing from their article explanations.
