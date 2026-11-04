@@ -203,6 +203,10 @@ public class ApplyRulePanel : MonoBehaviour
             bool interactable = applies && colouringPrerequisiteMet;
             bool faded = isColouringRule && !colouringPrerequisiteMet;
             string subtitle = faded ? "Requires at least 2 colours" : string.Empty;
+            if (string.IsNullOrEmpty(subtitle) && IsForcingChainRule(rule))
+            {
+                subtitle = BuildForcingChainPreviewSummary(preview);
+            }
             CreateRuleRow(_contentRoot, rule, preview, usedInAnalysis, interactable, faded, subtitle);
             created++;
         }
@@ -417,6 +421,75 @@ public class ApplyRulePanel : MonoBehaviour
         string typeName = rule.GetType().Name;
         return string.Equals(typeName, ColouringRuleTypeName, System.StringComparison.Ordinal)
             || string.Equals(typeName, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
+    }
+
+    private static bool IsForcingChainRule(ISudokuRule rule)
+    {
+        return rule != null
+            && string.Equals(rule.GetType().Name, ForcingChainRuleTypeName, System.StringComparison.Ordinal);
+    }
+
+    private static string BuildForcingChainPreviewSummary(RuleResult preview)
+    {
+        if (preview == null || string.IsNullOrWhiteSpace(preview.Description))
+        {
+            return null;
+        }
+
+        string deduction = BuildForcingChainDeductionSummary(preview);
+        if (string.IsNullOrEmpty(deduction))
+        {
+            return null;
+        }
+
+        var contradiction = System.Text.RegularExpressions.Regex.Match(
+            preview.Description,
+            @"assuming\s+(r\d+c\d+=\d+)\s+is\s+(true|false)\s+leads\s+to\s+a\s+contradiction",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (contradiction.Success)
+        {
+            return $"If {contradiction.Groups[1].Value} is {contradiction.Groups[2].Value.ToLowerInvariant()}, contradiction; {deduction}";
+        }
+
+        var impossibleCandidate = System.Text.RegularExpressions.Regex.Match(
+            preview.Description,
+            @"(r\d+c\d+=\d+)\s+is impossible",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (impossibleCandidate.Success)
+        {
+            return $"Verity: {impossibleCandidate.Groups[1].Value} is impossible; {deduction}";
+        }
+
+        return null;
+    }
+
+    private static string BuildForcingChainDeductionSummary(RuleResult preview)
+    {
+        if (preview.Changes == null)
+        {
+            return null;
+        }
+
+        foreach (var change in preview.Changes)
+        {
+            if (change == null)
+            {
+                continue;
+            }
+
+            string cell = $"r{change.Row + 1}c{change.Column + 1}";
+            if (change.NewValue.HasValue)
+            {
+                return $"set {cell}={change.NewValue.Value}";
+            }
+
+            if (change.RemovedCandidates != null && change.RemovedCandidates.Count > 0)
+            {
+                return $"remove {change.RemovedCandidates[0]} from {cell}";
+            }
+        }
+
+        return null;
     }
 
     private void CreateReinitialiseCandidatesRow(Transform parent)
