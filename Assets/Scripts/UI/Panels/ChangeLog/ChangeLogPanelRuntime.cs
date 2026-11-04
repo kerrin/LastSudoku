@@ -67,6 +67,12 @@ namespace Sudoku.UI.Panels
             }
         }
 
+        public static void HidePanel()
+        {
+            if (_instance != null && _instance._panelGO != null)
+                _instance._panelGO.SetActive(false);
+        }
+
         private void BuildPanel()
         {
             // Root panel

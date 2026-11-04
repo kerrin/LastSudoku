@@ -10,6 +10,7 @@ using Sudoku.UI.Panels;
 using Sudoku.UI.Menus;
 using Sudoku.Solver.Unsolver;
 using Sudoku.UI.Config;
+using Sudoku.UI.Learning;
 
 namespace Sudoku.UI.Controllers
 {
@@ -190,6 +191,7 @@ namespace Sudoku.UI.Controllers
             if (existing != null)
             {
                 _menuPanel = existing.gameObject;
+                EnsureMenuLearningButton();
                 return;
             }
 
@@ -223,6 +225,7 @@ namespace Sudoku.UI.Controllers
             CreateLabel(_menuPanel.transform, "Subtitle", "Choose an option to begin", 26, FontStyle.Normal, 46f);
             EnsureMenuPuzzleCodeRow(_menuPanel.transform);
 
+            EnsureMenuLearningButton();
             CreateMenuButton(_menuPanel.transform, "StartGeneratedPuzzleButton", "Start Puzzle", StartPuzzleFromCodeOrExisting, true);
             CreateMenuSpacer(_menuPanel.transform, "CreatePuzzleGroupSpacer", 14f);
             CreateMenuButton(_menuPanel.transform, "LoadPuzzleButton", "Load Puzzle", OpenLoadPuzzleList, false);
@@ -232,6 +235,23 @@ namespace Sudoku.UI.Controllers
             EnsureButtonTextPadding(_menuPanel.transform.Find("OpenConfigurationButton"), 0f, 0f);
             EnsureIconNearCenteredText(_menuPanel.transform.Find("OpenConfigurationButton"), "ConfigIconLabel", "⚙", 30, 18f, 2f);
             CreateMenuButton(_menuPanel.transform, "ExitGameButton", "Exit Game", ExitGame, true);
+        }
+
+        private void EnsureMenuLearningButton()
+        {
+            if (_menuPanel == null)
+                return;
+
+            var learningButton = _menuPanel.transform.Find("LearnWikiButton");
+            if (learningButton == null)
+            {
+                CreateMenuButton(_menuPanel.transform, "LearnWikiButton", "Learn / Wiki", OpenLearningHub, false);
+                learningButton = _menuPanel.transform.Find("LearnWikiButton");
+            }
+
+            var startButton = _menuPanel.transform.Find("StartGeneratedPuzzleButton");
+            if (learningButton != null && startButton != null && learningButton.GetSiblingIndex() > startButton.GetSiblingIndex())
+                learningButton.SetSiblingIndex(startButton.GetSiblingIndex());
         }
 
         /**
@@ -1571,6 +1591,18 @@ namespace Sudoku.UI.Controllers
                 configManager = managerGO.GetComponent<ConfigPanelManager>();
             }
             configManager.OpenConfigPanel();
+        }
+
+        private void OpenLearningHub()
+        {
+            var learningHub = Object.FindAnyObjectByType<LearningHubPanel>();
+            if (learningHub == null)
+            {
+                Debug.LogError("MainMenuFlowController: The learning hub is unavailable.");
+                return;
+            }
+
+            learningHub.OpenTutorials();
         }
 
         /**

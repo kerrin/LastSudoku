@@ -54,6 +54,37 @@ namespace Sudoku.Tests.Editor
                 Assert.AreEqual(RadialMenuSegmentId.None, addSelection.SegmentId, "Disabled sub-action should commit no selection.");
                 Assert.AreEqual(RadialDigitActionType.DefaultDigit, addSelection.DigitActionType, "Add sub-action should be disabled when candidate already exists.");
             }
+
+            finally
+            {
+                Object.DestroyImmediate(canvas.gameObject);
+            }
+        }
+
+        [Test]
+        public void TutorialActionFilter_AllowsOnlyTheLessonAction()
+        {
+            var canvas = CreateCanvas("RadialMenuCanvas_TutorialFilter");
+            try
+            {
+                var menu = CreateMenu(canvas);
+                menu.TutorialActionFilter = RadialDigitActionType.AddCandidate;
+                menu.Open(new Vector2(220f, 220f), "No Action");
+                menu.SetCellContext(null, new[] { 2, 8 });
+
+                Assert.IsTrue(menu.TryGetDigitActionButtonPosition(
+                    RadialMenuSegmentId.Digit5, RadialDigitActionType.AddCandidate, out var addPointer));
+                Assert.IsTrue(menu.TryGetSegmentScreenPosition(RadialMenuSegmentId.Digit5, out var valuePointer));
+
+                var addSelection = menu.ReleasePointer(addPointer);
+                Assert.AreEqual(RadialMenuSegmentId.Digit5, addSelection.SegmentId);
+                Assert.AreEqual(RadialDigitActionType.AddCandidate, addSelection.DigitActionType);
+
+                menu.Open(new Vector2(220f, 220f), "No Action");
+                menu.SetCellContext(null, new[] { 2, 8 });
+                var valueSelection = menu.ReleasePointer(valuePointer);
+                Assert.AreEqual(RadialMenuSegmentId.None, valueSelection.SegmentId);
+            }
             finally
             {
                 Object.DestroyImmediate(canvas.gameObject);

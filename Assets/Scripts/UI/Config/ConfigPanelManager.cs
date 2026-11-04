@@ -168,7 +168,7 @@ namespace Sudoku.UI
             if (!_isOpen) return;
 
             // Lower GUI.depth value = drawn later = visually on top.
-            // BoardVisualizer uses default depth (0); -50000 puts us above it.
+            // BoardVisualizer draws at depth 10000; -50000 puts us above it.
             GUI.depth = -50000;
 
             EnsureStyles();

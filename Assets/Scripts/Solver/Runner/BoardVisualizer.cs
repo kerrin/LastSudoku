@@ -6,6 +6,7 @@ using Cell = Sudoku.Models.Cell;
 using Board = Sudoku.Models.Board;
 using Sudoku.Solver.Rules;
 using Sudoku.UI.Config;
+using Sudoku.UI.Learning;
 using Sudoku.UI.Menus;
 using static System.StringComparison;
 
@@ -77,6 +78,7 @@ namespace Sudoku.Solver
         private Vector2 _holdStartedPointerPosition;
         private bool _radialOpenIntentRequested;
         private RadialMenuRuntime _radialMenu;
+        private LearningHubPanel _learningHubPanel;
         public HoldPhase CurrentHoldPhase { get; private set; } = HoldPhase.Idle;
         public int SelectedHoldRow { get; private set; } = -1;
         public int SelectedHoldColumn { get; private set; } = -1;
@@ -636,6 +638,12 @@ namespace Sudoku.Solver
 
         private void OnGUI()
         {
+            if (_learningHubPanel == null)
+                _learningHubPanel = Object.FindAnyObjectByType<LearningHubPanel>();
+
+            int previousGuiDepth = GUI.depth;
+            GUI.depth = 10000;
+            bool learningOverlayRendered = false;
             try
             {
                 if (Runner == null || Runner.CurrentBoard == null) return;
@@ -824,7 +832,14 @@ namespace Sudoku.Solver
                     _radialMenu.RenderOverlayOnGUI();
                 }
 
-                if (Application.isPlaying)
+                if (_learningHubPanel != null && _learningHubPanel.IsRenderedByBoardVisualizer)
+                {
+                    _learningHubPanel.RenderLearningOverlayOnGUI();
+                    learningOverlayRendered = true;
+                }
+
+                if (Application.isPlaying &&
+                    (_learningHubPanel == null || !_learningHubPanel.IsOverlayOpen))
                 {
                     PollHoldTimer();
                     HandlePointerInput();
@@ -834,6 +849,13 @@ namespace Sudoku.Solver
             {
                 Debug.LogException(ex);
                 return;
+            }
+            finally
+            {
+                if (!learningOverlayRendered && _learningHubPanel != null && _learningHubPanel.IsRenderedByBoardVisualizer)
+                    _learningHubPanel.RenderLearningOverlayOnGUI();
+
+                GUI.depth = previousGuiDepth;
             }
         }
 

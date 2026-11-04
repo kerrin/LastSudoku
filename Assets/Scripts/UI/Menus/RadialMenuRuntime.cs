@@ -120,6 +120,7 @@ namespace Sudoku.UI.Menus
         public bool IsOpen { get; private set; }
         public bool ValueOnlyMode { get; set; }
         public bool LinkSelectionMode { get; set; }
+        public RadialDigitActionType? TutorialActionFilter { get; set; }
         public RadialMenuSegmentId HoveredSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public RadialMenuSegmentId SelectedSegmentId { get; private set; } = RadialMenuSegmentId.None;
         public Vector2 OpenScreenPosition { get; private set; }
@@ -249,6 +250,11 @@ namespace Sudoku.UI.Menus
                 HoveredSegmentId = ResolveSegment(screenPosition);
                 _hoveredDigitActionType = ResolveDigitActionType(screenPosition, HoveredSegmentId);
             }
+            if (IsDigitSegment(HoveredSegmentId) && !IsDigitActionAllowed(_hoveredDigitActionType))
+            {
+                HoveredSegmentId = RadialMenuSegmentId.None;
+                _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
+            }
             if (HoveredSegmentId != _lastLoggedHover)
             {
                 Debug.Log($"[RadialMenuRuntime] Hover segment={HoveredSegmentId} pointer={screenPosition}", this);
@@ -273,6 +279,11 @@ namespace Sudoku.UI.Menus
             }
 
             if (HoveredSegmentId != RadialMenuSegmentId.None && !IsSegmentEnabled(HoveredSegmentId))
+            {
+                HoveredSegmentId = RadialMenuSegmentId.None;
+                _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
+            }
+            if (IsDigitSegment(HoveredSegmentId) && !IsDigitActionAllowed(_hoveredDigitActionType))
             {
                 HoveredSegmentId = RadialMenuSegmentId.None;
                 _hoveredDigitActionType = RadialDigitActionType.DefaultDigit;
@@ -600,7 +611,9 @@ namespace Sudoku.UI.Menus
         {
             if (_built) return;
 
-            _canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
+            _canvas = GetComponentInParent<Canvas>();
+            if (_canvas == null)
+                _canvas = UnityEngine.Object.FindAnyObjectByType<Canvas>();
             if (_canvas == null)
             {
                 var canvasGO = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -693,7 +706,9 @@ namespace Sudoku.UI.Menus
             float startAngle = centerAngle + 18f - 2f;
             float endAngle = centerAngle - 18f + 2f;
 
-            DrawDigitWedgeBand(segmentId, ResolvePrimaryDigitAction(segmentId), GetLabel(segmentId), 0, enabled, startAngle, endAngle);
+            var primaryAction = ResolvePrimaryDigitAction(segmentId);
+            DrawDigitWedgeBand(segmentId, primaryAction, GetLabel(segmentId), 0,
+                enabled && IsDigitActionAllowed(primaryAction), startAngle, endAngle);
             if (!ValueOnlyMode && !LinkSelectionMode)
             {
                 DrawDigitWedgeBand(segmentId, RadialDigitActionType.AddCandidate, "+", 1, enabled && IsDigitSubActionEnabled(segmentId, RadialDigitActionType.AddCandidate), startAngle, endAngle);
@@ -845,6 +860,7 @@ namespace Sudoku.UI.Menus
 
         private bool IsDigitSubActionEnabled(RadialMenuSegmentId segmentId, RadialDigitActionType actionType)
         {
+            if (!IsDigitActionAllowed(actionType)) return false;
             if (ValueOnlyMode) return false;
             if (_isGivenCell) return false;
 
@@ -887,6 +903,11 @@ namespace Sudoku.UI.Menus
                 default:
                     return true;
             }
+        }
+
+        private bool IsDigitActionAllowed(RadialDigitActionType actionType)
+        {
+            return !TutorialActionFilter.HasValue || TutorialActionFilter.Value == actionType;
         }
 
         private static bool IsDigitSegment(RadialMenuSegmentId segmentId)
@@ -1508,6 +1529,9 @@ namespace Sudoku.UI.Menus
 
         private bool IsSegmentEnabled(RadialMenuSegmentId segmentId)
         {
+            if (TutorialActionFilter.HasValue && !IsDigitSegment(segmentId))
+                return false;
+
             if (LinkSelectionMode)
             {
                 if (segmentId == RadialMenuSegmentId.SmartCenter)

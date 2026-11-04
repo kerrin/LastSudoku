@@ -2,12 +2,13 @@ using UnityEngine;
 using UnityEngine.UI;
 using Sudoku.Solver;
 using Sudoku.Solver.Rules;
+using Sudoku.UI.Learning;
 
 namespace Sudoku.UI.Panels
 {
     /**
-     * At runtime (Designer/Play mode) injects three buttons into the SidePanel
-     * at the bottom center: Undo, View Changes, Redo.
+     * Adds the change-history controls at the bottom of the SidePanel and the
+     * Learn / Wiki entry just above them.
      * Currently they log clicks; wiring to board functionality will be added later.
      */
     [DisallowMultipleComponent]
@@ -18,6 +19,8 @@ namespace Sudoku.UI.Panels
         public RectTransform ParentPanel;
 
         private GameObject _containerGO;
+        private GameObject _learningButtonGO;
+        private RectTransform _sidePanelRect;
 
         private void OnEnable()
         {
@@ -31,6 +34,14 @@ namespace Sudoku.UI.Panels
             // errors during playmode transitions and activation/deactivation
             // cycles in the Editor. Designers can remove the GameObject
             // manually if they don't want it in the scene.
+        }
+
+        private void Update()
+        {
+            if (_containerGO == null)
+                SetupControls();
+
+            AttachControlsToSidePanel();
         }
 
         private void SetupControls()
@@ -79,6 +90,8 @@ namespace Sudoku.UI.Panels
             containerRT.sizeDelta = new Vector2(360, 48);
             containerRT.anchoredPosition = new Vector2(0, 8); // 8 px above bottom
 
+            EnsureLearningButton(parent);
+
             var layout = _containerGO.GetComponent<HorizontalLayoutGroup>();
             if (layout == null) layout = _containerGO.AddComponent<HorizontalLayoutGroup>();
             layout.childAlignment = TextAnchor.MiddleCenter;
@@ -113,6 +126,165 @@ namespace Sudoku.UI.Panels
 
             // Set initial button state now that controls exist
             UpdateButtonStates();
+        }
+
+        private void EnsureLearningButton(RectTransform parent)
+        {
+            const string buttonName = "LearnWikiButton";
+            var existing = _learningButtonGO != null ? _learningButtonGO.transform : parent.Find(buttonName);
+            if (existing == null)
+            {
+                var canvases = UnityEngine.Object.FindObjectsByType<Canvas>();
+                foreach (var canvas in canvases)
+                {
+                    if (canvas.transform == parent)
+                        continue;
+
+                    existing = canvas.transform.Find(buttonName);
+                    if (existing != null)
+                        break;
+                }
+            }
+
+            if (existing != null)
+            {
+                _learningButtonGO = existing.gameObject;
+                var existingButton = existing.GetComponent<Button>();
+                if (existingButton != null)
+                {
+                    existingButton.onClick.RemoveAllListeners();
+                    existingButton.onClick.AddListener(OpenLearningHub);
+                }
+            }
+            else
+            {
+                _learningButtonGO = new GameObject(buttonName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(Button));
+                _learningButtonGO.transform.SetParent(parent, false);
+            }
+
+            var buttonObject = _learningButtonGO;
+            if (buttonObject.transform.parent != parent)
+                buttonObject.transform.SetParent(parent, false);
+            var rect = buttonObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0f);
+            rect.anchorMax = new Vector2(0.5f, 0f);
+            rect.pivot = new Vector2(0.5f, 0f);
+            rect.sizeDelta = new Vector2(142f, 34f);
+            rect.anchoredPosition = new Vector2(0f, 60f);
+
+            var image = buttonObject.GetComponent<Image>();
+            image.color = new Color(0.20f, 0.24f, 0.30f, 1f);
+            var button = buttonObject.GetComponent<Button>();
+            button.targetGraphic = image;
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(OpenLearningHub);
+
+            var textObject = buttonObject.transform.Find("Text")?.gameObject;
+            if (textObject == null)
+            {
+                textObject = new GameObject("Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+                textObject.transform.SetParent(buttonObject.transform, false);
+            }
+            var textRect = textObject.GetComponent<RectTransform>();
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+
+            var label = textObject.GetComponent<Text>();
+            label.text = "Learn / Wiki";
+            label.alignment = TextAnchor.MiddleCenter;
+            label.color = Color.white;
+            label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (label.font == null)
+                label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            label.fontSize = 14;
+            label.raycastTarget = false;
+        }
+
+        private void AttachControlsToSidePanel()
+        {
+            var sidePanel = ResolveSidePanel();
+            if (sidePanel == null)
+                return;
+
+            bool movedControls = _containerGO != null && _containerGO.transform.parent != sidePanel;
+            if (movedControls)
+            {
+                _containerGO.transform.SetParent(sidePanel, false);
+                var controlsRect = _containerGO.GetComponent<RectTransform>();
+                controlsRect.anchorMin = new Vector2(0.5f, 0f);
+                controlsRect.anchorMax = new Vector2(0.5f, 0f);
+                controlsRect.pivot = new Vector2(0.5f, 0f);
+                controlsRect.sizeDelta = new Vector2(360f, 48f);
+                controlsRect.anchoredPosition = new Vector2(0f, 8f);
+            }
+
+            if (_learningButtonGO == null || _learningButtonGO.transform.parent != sidePanel)
+                EnsureLearningButton(sidePanel);
+
+            PositionLearningButton(sidePanel);
+        }
+
+        private void PositionLearningButton(RectTransform sidePanel)
+        {
+            if (_learningButtonGO == null)
+                return;
+
+            const float undoRowTop = 56f;
+            const float buttonHeight = 34f;
+            const float gap = 8f;
+            float bottomOffset = undoRowTop + gap;
+
+            var directionalPanel = sidePanel.GetComponentInChildren<DirectionalLinkModePanel>(true);
+            if (directionalPanel != null && directionalPanel.transform is RectTransform directionalRect)
+            {
+                var corners = new Vector3[4];
+                directionalRect.GetWorldCorners(corners);
+                float lowestWorldY = Mathf.Min(corners[0].y, corners[3].y);
+                float lowestLocalY = sidePanel.InverseTransformPoint(new Vector3(corners[0].x, lowestWorldY, corners[0].z)).y;
+                float panelBottom = sidePanel.rect.yMin;
+                float directionalBottomOffset = lowestLocalY - panelBottom;
+                float highestAvailableBottom = directionalBottomOffset - buttonHeight - gap;
+                if (highestAvailableBottom >= bottomOffset)
+                    bottomOffset = Mathf.Min(bottomOffset, highestAvailableBottom);
+            }
+
+            var buttonRect = _learningButtonGO.GetComponent<RectTransform>();
+            buttonRect.anchoredPosition = new Vector2(0f, bottomOffset);
+        }
+
+        private RectTransform ResolveSidePanel()
+        {
+            if (_sidePanelRect != null)
+                return _sidePanelRect;
+
+            if (ParentPanel != null && ParentPanel.name == "SidePanel")
+                return _sidePanelRect = ParentPanel;
+
+            var sidePanel = GameObject.Find("SidePanel");
+            if (sidePanel != null && sidePanel.TryGetComponent(out RectTransform sidePanelRect))
+                return _sidePanelRect = sidePanelRect;
+
+            var canvases = UnityEngine.Object.FindObjectsByType<Canvas>();
+            foreach (var canvas in canvases)
+            {
+                var child = canvas.transform.Find("SidePanel") as RectTransform;
+                if (child != null)
+                    return _sidePanelRect = child;
+            }
+            return null;
+        }
+
+        private static void OpenLearningHub()
+        {
+            var hub = UnityEngine.Object.FindAnyObjectByType<LearningHubPanel>();
+            if (hub == null)
+            {
+                Debug.LogError("ChangeLogRuntimeControls: The learning hub is unavailable.");
+                return;
+            }
+            hub.OpenTutorials();
         }
 
         /**

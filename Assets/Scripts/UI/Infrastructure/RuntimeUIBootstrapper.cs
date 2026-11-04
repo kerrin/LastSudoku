@@ -2,6 +2,7 @@ using UnityEngine;
 using Sudoku.UI.Panels;
 using Sudoku.UI.Controllers;
 using Sudoku.UI.Config;
+using Sudoku.UI.Learning;
 
 namespace Sudoku.UI.Infrastructure
 {
@@ -40,6 +41,14 @@ namespace Sudoku.UI.Infrastructure
                 var flowGo = new GameObject("MainMenuFlowController");
                 Object.DontDestroyOnLoad(flowGo);
                 flowGo.AddComponent<MainMenuFlowController>();
+            }
+
+            var learningHubExisting = Object.FindAnyObjectByType<LearningHubPanel>();
+            if (learningHubExisting == null)
+            {
+                var learningHubGo = new GameObject("LearningHubPanel");
+                Object.DontDestroyOnLoad(learningHubGo);
+                learningHubGo.AddComponent<LearningHubPanel>();
             }
         }
     }
