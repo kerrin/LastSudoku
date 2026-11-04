@@ -212,15 +212,63 @@ namespace Sudoku.UI.Config
                     return config;
                 }
 
+                var defaultRules = new List<RuleConfigEntry>();
+                for (int i = 0; i < config.Rules.Count; i++)
+                {
+                    var entry = config.Rules[i];
+                    if (entry == null)
+                    {
+                        continue;
+                    }
+
+                    defaultRules.Add(new RuleConfigEntry
+                    {
+                        RuleTypeName = entry.RuleTypeName,
+                        Enabled = entry.Enabled
+                    });
+                }
+
                 // Overwrite only fields present in json; missing fields keep defaults.
                 JsonUtility.FromJsonOverwrite(json, config);
                 EnsureInitialized(config);
+                MergeMissingRuleDefaults(config, defaultRules);
                 return config;
             }
             catch (Exception ex)
             {
                 Debug.LogWarning($"RuntimeConfigRepository: Failed to load config. {ex.Message}");
                 return RuntimeConfigDefaults.Create();
+            }
+        }
+
+        private static void MergeMissingRuleDefaults(
+            RuntimeConfigData config,
+            List<RuleConfigEntry> defaultRules)
+        {
+            var existingRuleTypeNames = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < config.Rules.Count; i++)
+            {
+                var entry = config.Rules[i];
+                if (entry != null && !string.IsNullOrWhiteSpace(entry.RuleTypeName))
+                {
+                    existingRuleTypeNames.Add(entry.RuleTypeName);
+                }
+            }
+
+            for (int i = 0; i < defaultRules.Count; i++)
+            {
+                var entry = defaultRules[i];
+                if (entry == null || string.IsNullOrWhiteSpace(entry.RuleTypeName) ||
+                    !existingRuleTypeNames.Add(entry.RuleTypeName))
+                {
+                    continue;
+                }
+
+                config.Rules.Add(new RuleConfigEntry
+                {
+                    RuleTypeName = entry.RuleTypeName,
+                    Enabled = entry.Enabled
+                });
             }
         }
 
@@ -277,11 +325,13 @@ namespace Sudoku.UI.Config
             config.Colours ??= new ColourConfigData();
             config.Graphics ??= new GraphicsConfigData();
             config.Rules ??= new List<RuleConfigEntry>();
+
             if (config.Graphics.Width <= 0 || config.Graphics.Height <= 0)
             {
                 config.Graphics.Width = 0;
                 config.Graphics.Height = 0;
             }
+
             config.Generation.MaxAllowedSolutionsWhenNonUnique = Mathf.Clamp(
                 config.Generation.MaxAllowedSolutionsWhenNonUnique,
                 GenerationSettings.MinAllowedSolutionsWhenNonUnique,
