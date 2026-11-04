@@ -71,6 +71,13 @@ namespace Sudoku.Solver.Rules
         /** Label used in result descriptions (Pair, Triple, Quad). */
         protected abstract string SubsetLabel { get; }
 
+        /**
+         * Implemented by derived classes to calculate uncached changes.
+         * This is only called when the cache does not contain a result for the given board state.
+         *
+         * @param board The current state of the sudoku board.
+         * @return A RuleResult object containing the changes to be made and any used cells.
+         */
         protected override RuleResult CalculateChangesInternal(Board board)
         {
             foreach (var unit in EnumerateUnitsInSolverOrder(board))

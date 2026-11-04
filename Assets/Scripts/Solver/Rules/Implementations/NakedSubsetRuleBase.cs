@@ -17,7 +17,11 @@ namespace Sudoku.Solver.Rules
         protected abstract string SubsetLabel { get; }
 
         /**
-         * Find the first applicable naked-subset elimination in rows, columns, then boxes.
+         * Implemented by derived classes to calculate uncached changes.
+         * This is only called when the cache does not contain a result for the given board state.
+         *
+         * @param board The current state of the sudoku board.
+         * @return A RuleResult object containing the changes to be made and any used cells.
          */
         protected override RuleResult CalculateChangesInternal(Board board)
         {

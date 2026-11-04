@@ -77,6 +77,13 @@ namespace Sudoku.Solver.Rules
             return null;
         }
 
+        /**
+         * Implemented by derived classes to calculate uncached changes.
+         * This is only called when the cache does not contain a result for the given board state.
+         *
+         * @param board The current state of the sudoku board.
+         * @return A RuleResult object containing the changes to be made and any used cells.
+         */
         protected override RuleResult CalculateChangesInternal(Board board)
         {
             var result = new RuleResult();

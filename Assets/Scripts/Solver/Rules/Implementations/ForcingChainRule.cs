@@ -61,11 +61,13 @@ namespace Sudoku.Solver.Rules
         }
 
         /**
-         * Calculate candidate removals or placements implied by forcing chains.
+         * Implemented by derived classes to calculate uncached changes.
+         * This is only called when the cache does not contain a result for the given board state.
          *
-         * @param board Current puzzle board.
-         * @returns RuleResult containing one bounded forcing-chain deduction.
+         * @param board The current state of the sudoku board.
+         * @return A RuleResult object containing the changes to be made and any used cells.
          */
+
         protected override RuleResult CalculateChangesInternal(Board board)
         {
             return CalculateChangesInternal(board, null, true);
